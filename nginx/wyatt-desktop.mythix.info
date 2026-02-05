@@ -1,0 +1,20 @@
+server {
+  listen 443 ssl;
+  server_name wyatt-desktop.mythix.info;
+
+  ssl_certificate /var/www/hero/nginx/ssl/public/wyatt_desktop_mythix_info.pem;
+  ssl_certificate_key /var/www/hero/nginx/ssl/private/wyatt_desktop_mythix_info.key;
+
+  ssl_protocols TLSv1.2 TLSv1.3;
+  ssl_ciphers HIGH:!aNULL:!MD5;
+
+  # Node.js server
+  include /var/www/hero/nginx/server.nginx-include;
+}
+
+# Optional: redirect HTTP to HTTPS
+server {
+  listen 80;
+  server_name wyatt-desktop.mythix.info;
+  return 301 https://$host$request_uri;
+}

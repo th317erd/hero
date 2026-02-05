@@ -1,0 +1,72 @@
+'use strict';
+
+import { Router } from 'express';
+import { authenticateUser, generateToken } from '../auth.mjs';
+import { optionalAuth } from '../middleware/auth.mjs';
+import config from '../config.mjs';
+
+const router = Router();
+
+/**
+ * POST /api/login
+ * Authenticate user and set JWT cookie.
+ */
+router.post('/login', async (req, res) => {
+  let { username, password } = req.body;
+
+  if (!username || !password)
+    return res.status(400).json({ error: 'Username and password required' });
+
+  try {
+    let user = await authenticateUser(username, password);
+
+    if (!user)
+      return res.status(401).json({ error: 'Invalid credentials' });
+
+    let token = generateToken(user);
+
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure:   true,
+      sameSite: 'strict',
+      path:     config.basePath,
+      maxAge:   30 * 24 * 60 * 60 * 1000, // 30 days
+    });
+
+    return res.json({
+      success: true,
+      user:    {
+        id:       user.id,
+        username: user.username,
+      },
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    return res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+/**
+ * POST /api/logout
+ * Clear JWT cookie.
+ */
+router.post('/logout', (req, res) => {
+  res.clearCookie('token', { path: config.basePath });
+  return res.json({ success: true });
+});
+
+/**
+ * GET /api/me
+ * Get current user info (requires auth).
+ */
+router.get('/me', optionalAuth, (req, res) => {
+  if (!req.user)
+    return res.status(401).json({ error: 'Not authenticated' });
+
+  return res.json({
+    id:       req.user.id,
+    username: req.user.username,
+  });
+});
+
+export default router;

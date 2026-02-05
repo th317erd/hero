@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hero</title>
+  <base href="/hero/">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Login View -->
+    <div id="login-view" class="view" style="display: none;">
+      <div class="login-container">
+        <h1>Hero</h1>
+        <p class="login-subtitle">AI Agent Chat Interface</p>
+        <form id="login-form">
+          <div class="form-group">
+            <label for="username">Username</label>
+            <input type="text" id="username" name="username" required autocomplete="username">
+          </div>
+          <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" required autocomplete="current-password">
+          </div>
+          <div id="login-error" class="error-message"></div>
+          <button type="submit" class="btn btn-primary btn-block">Log In</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Sessions List View -->
+    <div id="sessions-view" class="view" style="display: none;">
+      <header class="header">
+        <h1>Hero</h1>
+        <div class="header-actions">
+          <button id="agents-btn" class="btn btn-secondary">Agents</button>
+          <button id="processes-btn" class="btn btn-secondary">Processes</button>
+          <button id="new-session-btn" class="btn btn-primary">New Session</button>
+          <button id="logout-btn" class="btn btn-secondary">Logout</button>
+        </div>
+      </header>
+      <main class="sessions-main">
+        <div class="sessions-content">
+          <div class="sessions-header">
+            <h2>Your Sessions</h2>
+          </div>
+          <div id="sessions-list" class="sessions-list">
+            <div class="loading">Loading sessions...</div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- Chat View -->
+    <div id="chat-view" class="view" style="display: none;">
+      <header class="header">
+        <div class="header-left">
+          <button id="back-btn" class="btn btn-icon" title="Back to sessions">&larr;</button>
+          <h1 id="session-title">Session</h1>
+        </div>
+        <div class="header-actions">
+          <select id="session-select" class="session-select">
+            <option value="">Switch session...</option>
+          </select>
+          <button id="clear-btn" class="btn btn-secondary">Clear</button>
+          <button id="chat-logout-btn" class="btn btn-secondary">Logout</button>
+        </div>
+      </header>
+      <main class="chat-main">
+        <div id="messages" class="messages-container"></div>
+      </main>
+      <footer class="chat-footer">
+        <div class="input-container">
+          <textarea id="message-input" placeholder="Type a message... (Enter to send, Shift+Enter for new line)" rows="1"></textarea>
+          <button id="send-btn" class="btn btn-primary">Send</button>
+        </div>
+      </footer>
+    </div>
+
+    <!-- New Session Modal -->
+    <div id="new-session-modal" class="modal-overlay" style="display: none;">
+      <div class="modal">
+        <h3>New Session</h3>
+        <form id="new-session-form">
+          <div class="form-group">
+            <label for="session-name">Session Name</label>
+            <input type="text" id="session-name" name="name" required placeholder="e.g., project-x">
+          </div>
+          <div class="form-group">
+            <label for="agent-select">Agent</label>
+            <select id="agent-select" name="agentId" required>
+              <option value="">Select an agent...</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="system-prompt">System Prompt (optional)</label>
+            <textarea id="system-prompt" name="systemPrompt" rows="3" placeholder="Instructions for the AI agent..."></textarea>
+          </div>
+          <div id="new-session-error" class="error-message"></div>
+          <div class="modal-actions">
+            <button type="button" id="cancel-new-session" class="btn btn-secondary">Cancel</button>
+            <button type="submit" class="btn btn-primary">Create</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- New Agent Modal -->
+    <div id="new-agent-modal" class="modal-overlay" style="display: none;">
+      <div class="modal">
+        <h3>Add Agent</h3>
+        <form id="new-agent-form">
+          <div class="form-group">
+            <label for="agent-name">Agent Name</label>
+            <input type="text" id="agent-name" name="name" required placeholder="e.g., My Claude">
+          </div>
+          <div class="form-group">
+            <label for="agent-type">Type</label>
+            <select id="agent-type" name="type" required>
+              <option value="claude">Claude (Anthropic)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="agent-api-key">API Key</label>
+            <input type="password" id="agent-api-key" name="apiKey" required placeholder="sk-ant-...">
+          </div>
+          <div class="form-group">
+            <label for="agent-api-url">API URL (optional)</label>
+            <input type="url" id="agent-api-url" name="apiUrl" placeholder="https://api.anthropic.com">
+          </div>
+          <div class="form-group">
+            <label>Default Processes</label>
+            <div id="agent-processes-list" class="checkbox-list"></div>
+          </div>
+          <div id="new-agent-error" class="error-message"></div>
+          <div class="modal-actions">
+            <button type="button" id="cancel-new-agent" class="btn btn-secondary">Cancel</button>
+            <button type="submit" class="btn btn-primary">Add Agent</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Processes Modal -->
+    <div id="processes-modal" class="modal-overlay" style="display: none;">
+      <div class="modal modal-lg">
+        <div class="modal-header-tabs">
+          <h3>Processes</h3>
+          <div class="modal-tabs">
+            <button type="button" class="tab-btn active" data-tab="system">System</button>
+            <button type="button" class="tab-btn" data-tab="user">My Processes</button>
+          </div>
+          <button type="button" id="close-processes-modal" class="btn btn-icon">&times;</button>
+        </div>
+        <div id="processes-tab-system" class="tab-content active">
+          <div id="system-processes-list" class="processes-list"></div>
+        </div>
+        <div id="processes-tab-user" class="tab-content">
+          <div class="processes-actions">
+            <button type="button" id="new-process-btn" class="btn btn-primary">New Process</button>
+          </div>
+          <div id="user-processes-list" class="processes-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edit Process Modal -->
+    <div id="edit-process-modal" class="modal-overlay" style="display: none;">
+      <div class="modal modal-lg">
+        <h3 id="edit-process-title">New Process</h3>
+        <form id="edit-process-form">
+          <div class="form-group">
+            <label for="process-name">Name</label>
+            <input type="text" id="process-name" name="name" required placeholder="e.g., my_custom_process">
+            <small class="form-hint">Use lowercase letters, numbers, and underscores only.</small>
+          </div>
+          <div class="form-group">
+            <label for="process-description">Description (optional)</label>
+            <input type="text" id="process-description" name="description" placeholder="Brief description of this process">
+          </div>
+          <div class="form-group">
+            <label for="process-content">Content (Markdown)</label>
+            <textarea id="process-content" name="content" required rows="12" placeholder="Instructions for the AI agent..."></textarea>
+          </div>
+          <div id="edit-process-error" class="error-message"></div>
+          <div class="modal-actions">
+            <button type="button" id="cancel-edit-process" class="btn btn-secondary">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Agents List Modal -->
+    <div id="agents-modal" class="modal-overlay" style="display: none;">
+      <div class="modal modal-lg">
+        <div class="modal-header-tabs">
+          <h3>Agents</h3>
+          <button type="button" id="add-agent-from-list" class="btn btn-primary btn-sm">Add Agent</button>
+          <button type="button" id="close-agents-modal" class="btn btn-icon">&times;</button>
+        </div>
+        <div id="agents-list" class="agents-list"></div>
+      </div>
+    </div>
+
+    <!-- Agent Config Modal -->
+    <div id="agent-config-modal" class="modal-overlay" style="display: none;">
+      <div class="modal modal-lg">
+        <h3>Agent Configuration</h3>
+        <p class="config-description">
+          This JSON is merged into every API call for this agent.
+          Common fields: model, maxTokens, temperature, etc.
+        </p>
+        <form id="agent-config-form">
+          <input type="hidden" id="agent-config-id">
+          <div class="form-group">
+            <label for="agent-config-json">Configuration (JSON)</label>
+            <textarea id="agent-config-json" name="config" rows="15" class="config-editor"
+              placeholder='{ "model": "claude-sonnet-4-20250514", "maxTokens": 4096 }'></textarea>
+          </div>
+          <div id="agent-config-error" class="error-message"></div>
+          <div class="modal-actions">
+            <button type="button" id="cancel-agent-config" class="btn btn-secondary">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Running Operations Panel -->
+    <div id="operations-panel" class="operations-panel" style="display: none;">
+      <div class="operations-header">
+        <span>Running Operations</span>
+        <button type="button" id="toggle-operations" class="btn btn-icon">&#8722;</button>
+      </div>
+      <div id="operations-list" class="operations-list"></div>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>

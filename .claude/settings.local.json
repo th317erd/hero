@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e:*)",
+      "Bash(npm install:*)",
+      "Bash(npm test:*)",
+      "Bash(sudo nginx:*)",
+      "Bash(curl:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)",
+      "Bash(ls:*)",
+      "Bash(xargs:*)",
+      "Bash(nginx -T:*)",
+      "Bash(lsof:*)",
+      "Bash(pgrep:*)",
+      "Bash(node --check:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}
