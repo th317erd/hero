@@ -1,6 +1,6 @@
 'use strict';
 
-import { getHandler, getAvailableCommands } from '../operations/registry.mjs';
+import { getAllAssertionHandlers } from '../assertions/index.mjs';
 
 /**
  * Execute a pipeline of assertions sequentially with middleware chain.
@@ -114,11 +114,11 @@ export async function executeParallel(pipelines, context, callbacks = {}) {
  * @returns {Promise<any>} The final result
  */
 async function executeAssertion(assertion, context, callbacks = {}) {
-  // Get all handlers sorted alphabetically
-  let handlerNames = getAvailableCommands().sort();
-  let handlers     = handlerNames
-    .map((name) => getHandler(name))
+  // Get all assertion handlers
+  let handlers = getAllAssertionHandlers()
     .filter((h) => h && typeof h.execute === 'function');
+
+  let handlerNames = handlers.map((h) => h.name);
 
   // Update context with pipeline info
   let pipelineContext = {

@@ -1,337 +1,6 @@
 'use strict';
 
 // ============================================================================
-// State
-// ============================================================================
-
-let state = {
-  user:              null,
-  sessions:          [],
-  agents:            [],
-  processes:         { system: [], user: [] },
-  currentSession:    null,
-  messages:          [],
-  isLoading:         false,
-  runningOperations: [],
-  editingProcessId:  null,
-  ws:                null,
-  assertions:        {},  // Map of messageId -> [assertion, ...]
-  pendingQuestions:  {},  // Map of assertionId -> { resolve, timeout }
-};
-
-// ============================================================================
-// DOM Elements
-// ============================================================================
-
-const elements = {
-  // Views
-  loginView:    document.getElementById('login-view'),
-  sessionsView: document.getElementById('sessions-view'),
-  chatView:     document.getElementById('chat-view'),
-
-  // Login
-  loginForm:   document.getElementById('login-form'),
-  loginError:  document.getElementById('login-error'),
-
-  // Sessions
-  sessionsList:   document.getElementById('sessions-list'),
-  newSessionBtn:  document.getElementById('new-session-btn'),
-  logoutBtn:      document.getElementById('logout-btn'),
-
-  // Chat
-  sessionTitle:   document.getElementById('session-title'),
-  sessionSelect:  document.getElementById('session-select'),
-  messagesContainer: document.getElementById('messages'),
-  messageInput:   document.getElementById('message-input'),
-  sendBtn:        document.getElementById('send-btn'),
-  clearBtn:       document.getElementById('clear-btn'),
-  backBtn:        document.getElementById('back-btn'),
-  chatLogoutBtn:  document.getElementById('chat-logout-btn'),
-
-  // New Session Modal
-  newSessionModal:  document.getElementById('new-session-modal'),
-  newSessionForm:   document.getElementById('new-session-form'),
-  agentSelect:      document.getElementById('agent-select'),
-  newSessionError:  document.getElementById('new-session-error'),
-  cancelNewSession: document.getElementById('cancel-new-session'),
-
-  // New Agent Modal
-  newAgentModal:        document.getElementById('new-agent-modal'),
-  newAgentForm:         document.getElementById('new-agent-form'),
-  newAgentError:        document.getElementById('new-agent-error'),
-  cancelNewAgent:       document.getElementById('cancel-new-agent'),
-  agentProcessesList:   document.getElementById('agent-processes-list'),
-
-  // Processes
-  processesBtn:         document.getElementById('processes-btn'),
-  processesModal:       document.getElementById('processes-modal'),
-  closeProcessesModal:  document.getElementById('close-processes-modal'),
-  systemProcessesList:  document.getElementById('system-processes-list'),
-  userProcessesList:    document.getElementById('user-processes-list'),
-  newProcessBtn:        document.getElementById('new-process-btn'),
-
-  // Edit Process Modal
-  editProcessModal:     document.getElementById('edit-process-modal'),
-  editProcessTitle:     document.getElementById('edit-process-title'),
-  editProcessForm:      document.getElementById('edit-process-form'),
-  editProcessError:     document.getElementById('edit-process-error'),
-  cancelEditProcess:    document.getElementById('cancel-edit-process'),
-
-  // Operations Panel
-  operationsPanel:      document.getElementById('operations-panel'),
-  operationsList:       document.getElementById('operations-list'),
-  toggleOperations:     document.getElementById('toggle-operations'),
-
-  // Agents
-  agentsBtn:            document.getElementById('agents-btn'),
-  agentsModal:          document.getElementById('agents-modal'),
-  closeAgentsModal:     document.getElementById('close-agents-modal'),
-  addAgentFromList:     document.getElementById('add-agent-from-list'),
-  agentsList:           document.getElementById('agents-list'),
-
-  // Agent Config Modal
-  agentConfigModal:     document.getElementById('agent-config-modal'),
-  agentConfigForm:      document.getElementById('agent-config-form'),
-  agentConfigId:        document.getElementById('agent-config-id'),
-  agentConfigJson:      document.getElementById('agent-config-json'),
-  agentConfigError:     document.getElementById('agent-config-error'),
-  cancelAgentConfig:    document.getElementById('cancel-agent-config'),
-};
-
-// ============================================================================
-// API Functions
-// ============================================================================
-
-async function api(method, path, body) {
-  let options = {
-    method:      method,
-    credentials: 'same-origin',
-    headers:     {},
-  };
-
-  if (body) {
-    options.headers['Content-Type'] = 'application/json';
-    options.body = JSON.stringify(body);
-  }
-
-  let response = await fetch(`api${path}`, options);
-  let data     = await response.json();
-
-  if (!response.ok)
-    throw new Error(data.error || 'Request failed');
-
-  return data;
-}
-
-async function login(username, password) {
-  return await api('POST', '/login', { username, password });
-}
-
-async function logout() {
-  return await api('POST', '/logout');
-}
-
-async function fetchMe() {
-  return await api('GET', '/me');
-}
-
-async function fetchSessions() {
-  let data = await api('GET', '/sessions');
-  return data.sessions;
-}
-
-async function fetchSession(id) {
-  return await api('GET', `/sessions/${id}`);
-}
-
-async function createSession(name, agentId, systemPrompt) {
-  return await api('POST', '/sessions', { name, agentId, systemPrompt });
-}
-
-async function sendMessage(sessionId, content) {
-  return await api('POST', `/sessions/${sessionId}/messages`, { content });
-}
-
-async function clearMessages(sessionId) {
-  return await api('DELETE', `/sessions/${sessionId}/messages`);
-}
-
-async function fetchAgents() {
-  let data = await api('GET', '/agents');
-  return data.agents;
-}
-
-async function createAgent(name, type, apiKey, apiUrl, defaultProcesses) {
-  return await api('POST', '/agents', { name, type, apiKey, apiUrl, defaultProcesses });
-}
-
-async function fetchProcesses() {
-  let data = await api('GET', '/processes');
-  return data;
-}
-
-async function fetchProcess(id) {
-  return await api('GET', `/processes/${id}`);
-}
-
-async function createProcess(name, description, content) {
-  return await api('POST', '/processes', { name, description, content });
-}
-
-async function updateProcess(id, name, description, content) {
-  return await api('PUT', `/processes/${id}`, { name, description, content });
-}
-
-async function deleteProcess(id) {
-  return await api('DELETE', `/processes/${id}`);
-}
-
-async function fetchAgentConfig(id) {
-  let data = await api('GET', `/agents/${id}/config`);
-  return data.config;
-}
-
-async function updateAgentConfig(id, config) {
-  return await api('PUT', `/agents/${id}/config`, { config });
-}
-
-async function deleteAgent(id) {
-  return await api('DELETE', `/agents/${id}`);
-}
-
-// ============================================================================
-// Routing
-// ============================================================================
-
-// Read base path from <base> tag (set by server from package.json config)
-const BASE_PATH = document.querySelector('base')?.getAttribute('href')?.replace(/\/$/, '') || '';
-
-function getRoute() {
-  let path = window.location.pathname;
-
-  // Strip base path
-  if (path.startsWith(BASE_PATH))
-    path = path.slice(BASE_PATH.length) || '/';
-
-  if (path === '/login')
-    return { view: 'login' };
-
-  if (path === '/' || path === '')
-    return { view: 'sessions' };
-
-  let sessionMatch = path.match(/^\/sessions\/(\d+)$/);
-
-  if (sessionMatch)
-    return { view: 'chat', sessionId: parseInt(sessionMatch[1], 10) };
-
-  // Unknown route, default to sessions
-  return { view: 'sessions' };
-}
-
-function navigate(path) {
-  window.history.pushState({}, '', BASE_PATH + path);
-  handleRoute();
-}
-
-async function handleRoute() {
-  let route = getRoute();
-
-  // Check auth for non-login routes
-  if (route.view !== 'login') {
-    try {
-      let me = await fetchMe();
-      state.user = me;
-      connectWebSocket();
-    } catch (error) {
-      // Not authenticated, show login
-      disconnectWebSocket();
-      showView('login');
-      return;
-    }
-  }
-
-  switch (route.view) {
-    case 'login':
-      disconnectWebSocket();
-      showView('login');
-      break;
-
-    case 'sessions':
-      await loadSessions();
-      showView('sessions');
-      break;
-
-    case 'chat':
-      await loadSession(route.sessionId);
-      showView('chat');
-      break;
-
-    default:
-      showView('sessions');
-  }
-}
-
-// ============================================================================
-// Views
-// ============================================================================
-
-function showView(viewName) {
-  elements.loginView.style.display    = (viewName === 'login') ? 'flex' : 'none';
-  elements.sessionsView.style.display = (viewName === 'sessions') ? 'flex' : 'none';
-  elements.chatView.style.display     = (viewName === 'chat') ? 'flex' : 'none';
-}
-
-// ============================================================================
-// Sessions
-// ============================================================================
-
-async function loadSessions() {
-  try {
-    state.sessions = await fetchSessions();
-    state.agents   = await fetchAgents();
-    renderSessionsList();
-  } catch (error) {
-    console.error('Failed to load sessions:', error);
-    elements.sessionsList.innerHTML = '<div class="loading">Failed to load sessions</div>';
-  }
-}
-
-function renderSessionsList() {
-  if (state.sessions.length === 0) {
-    if (state.agents.length === 0) {
-      elements.sessionsList.innerHTML = `
-        <div class="no-sessions">
-          <p>No agents configured yet.</p>
-          <p><span class="no-agents-link" onclick="showNewAgentModal()">Add an agent</span> to get started.</p>
-        </div>
-      `;
-    } else {
-      elements.sessionsList.innerHTML = `
-        <div class="no-sessions">
-          <p>No sessions yet.</p>
-          <p>Click "New Session" to start chatting with an AI agent.</p>
-        </div>
-      `;
-    }
-    return;
-  }
-
-  let html = state.sessions.map((session) => `
-    <div class="session-card" onclick="navigateToSession(${session.id})">
-      <div class="session-card-title">${escapeHtml(session.name)}</div>
-      <div class="session-card-meta">${session.messageCount} messages</div>
-      <div class="session-card-agent">${escapeHtml(session.agent.name)} (${session.agent.type})</div>
-    </div>
-  `).join('');
-
-  elements.sessionsList.innerHTML = html;
-}
-
-function navigateToSession(sessionId) {
-  navigate(`/sessions/${sessionId}`);
-}
-
-// ============================================================================
 // Chat
 // ============================================================================
 
@@ -372,24 +41,45 @@ async function updateSessionSelect() {
 }
 
 function renderMessages() {
-  let html = state.messages.map((message) => renderMessage(message)).join('');
+  // Filter messages based on showHiddenMessages toggle
+  let visibleMessages = state.showHiddenMessages
+    ? state.messages  // Show all messages including hidden ones
+    : state.messages.filter((message) => !message.hidden);
+
+  let html = visibleMessages.map((message) => renderMessage(message)).join('');
   elements.messagesContainer.innerHTML = html;
   scrollToBottom();
 }
 
 function renderMessage(message) {
-  let roleClass = (message.role === 'user') ? 'message-user' : 'message-assistant';
-  let roleLabel = (message.role === 'user') ? 'You' : 'Assistant';
-  let messageId = message.id || '';
+  let roleClass   = (message.role === 'user') ? 'message-user' : 'message-assistant';
+  let agentName   = state.currentSession?.agent?.name || 'Assistant';
+  let roleLabel   = (message.role === 'user') ? 'You' : agentName;
+  let messageId   = message.id || '';
+  let queuedClass = (message.queued) ? ' message-queued' : '';
+  let queuedBadge = (message.queued) ? '<span class="queued-badge">Queued</span>' : '';
+  let hiddenClass = (message.hidden) ? ' message-hidden' : '';
+  let typeBadge   = '';
+
+  // Add type badge for hidden messages
+  if (message.hidden && message.type) {
+    let typeLabels = {
+      system:      'System',
+      interaction: 'Interaction',
+      feedback:    'Feedback',
+    };
+    let label = typeLabels[message.type] || message.type;
+    typeBadge = `<span class="type-badge type-${message.type}">${label}</span>`;
+  }
 
   let contentHtml = '';
 
   if (typeof message.content === 'string') {
-    contentHtml = `<div class="message-content">${escapeHtml(message.content)}</div>`;
+    contentHtml = `<div class="message-content">${renderMarkup(message.content)}</div>`;
   } else if (Array.isArray(message.content)) {
     for (let block of message.content) {
       if (block.type === 'text') {
-        contentHtml += `<div class="message-content">${escapeHtml(block.text)}</div>`;
+        contentHtml += `<div class="message-content">${renderMarkup(block.text)}</div>`;
       } else if (block.type === 'tool_use') {
         contentHtml += renderToolUse(block);
       } else if (block.type === 'tool_result') {
@@ -399,11 +89,11 @@ function renderMessage(message) {
   }
 
   // Add assertion blocks for this message
-  let assertionsHtml = messageId ? renderAssertionsForMessage(messageId) : '';
+  let assertionsHtml = (messageId) ? renderAssertionsForMessage(messageId) : '';
 
   return `
-    <div class="message ${roleClass}" data-message-id="${messageId}">
-      <div class="message-header">${roleLabel}</div>
+    <div class="message ${roleClass}${queuedClass}${hiddenClass}" data-message-id="${messageId}">
+      <div class="message-header">${roleLabel} ${queuedBadge}${typeBadge}</div>
       <div class="message-bubble">
         ${contentHtml}
         ${assertionsHtml}
@@ -455,6 +145,15 @@ function renderAssertionBlock(assertion) {
   if (type === 'response')
     return renderResponseAssertion(assertion);
 
+  if (type === 'link')
+    return renderLinkElement(assertion);
+
+  if (type === 'todo')
+    return renderTodoElement(assertion);
+
+  if (type === 'progress')
+    return renderProgressElement(assertion);
+
   // Default: command assertion
   return `
     <div class="assertion-block assertion-${type}" data-assertion-id="${id}">
@@ -463,8 +162,8 @@ function renderAssertionBlock(assertion) {
         <span class="assertion-name">${escapeHtml(name)}</span>
         <span class="assertion-status ${status}">${status}</span>
       </div>
-      ${preview ? `<div class="assertion-preview"><pre>${escapeHtml(preview)}</pre></div>` : ''}
-      ${result ? `<div class="assertion-result"><pre>${escapeHtml(typeof result === 'string' ? result : JSON.stringify(result, null, 2))}</pre></div>` : ''}
+      ${(preview) ? `<div class="assertion-preview"><pre>${escapeHtml(preview)}</pre></div>` : ''}
+      ${(result) ? `<div class="assertion-result"><pre>${escapeHtml((typeof result === 'string') ? result : JSON.stringify(result, null, 2))}</pre></div>` : ''}
     </div>
   `;
 }
@@ -475,7 +174,7 @@ function renderThinkingAssertion(assertion) {
 
   return `
     <div class="assertion-block thinking" data-assertion-id="${id}">
-      ${isRunning ? `
+      ${(isRunning) ? `
         <div class="thinking-indicator">
           <span></span><span></span><span></span>
         </div>
@@ -486,7 +185,8 @@ function renderThinkingAssertion(assertion) {
 }
 
 function renderQuestionAssertion(assertion) {
-  let { id, name, message, options, status, answer } = assertion;
+  let { id, name, message, options, status, answer, mode, timeout } = assertion;
+  mode = mode || 'demand';
 
   if (status === 'completed' && answer !== undefined) {
     return `
@@ -504,12 +204,19 @@ function renderQuestionAssertion(assertion) {
     ).join('');
   }
 
+  let modeClass   = (mode === 'demand') ? 'question-demand' : 'question-timeout';
+  let modeLabel   = (mode === 'demand') ? 'Required' : `Optional (${Math.round(timeout / 1000)}s)`;
+  let placeholder = (mode === 'demand') ? 'Your response is required...' : 'Type your answer (optional)...';
+
   return `
-    <div class="assertion-block question" data-assertion-id="${id}">
+    <div class="assertion-block question ${modeClass}" data-assertion-id="${id}" data-mode="${mode}" tabindex="0">
+      <div class="question-header">
+        <span class="question-mode-label ${mode}">${modeLabel}</span>
+      </div>
       <div class="question-text">${escapeHtml(message)}</div>
       <div class="question-actions">
         ${optionsHtml}
-        <input type="text" class="question-input" placeholder="Type your answer..." data-assertion-id="${id}">
+        <input type="text" class="question-input" placeholder="${placeholder}" data-assertion-id="${id}" data-mode="${mode}" tabindex="0">
         <button class="btn btn-primary question-submit" data-assertion-id="${id}">Submit</button>
       </div>
     </div>
@@ -524,6 +231,344 @@ function renderResponseAssertion(assertion) {
       <div class="response-text">${escapeHtml(message)}</div>
     </div>
   `;
+}
+
+// ============================================================================
+// Ability Approval UI
+// ============================================================================
+
+function renderAbilityApproval(approval) {
+  let { executionId, abilityName, description, params, dangerLevel, status } = approval;
+
+  // If already resolved, show status
+  if (status === 'approved') {
+    return `
+      <div class="approval-request safe" data-execution-id="${escapeHtml(executionId)}">
+        <div class="approval-header">
+          <span class="approval-icon">✓</span>
+          <span class="approval-title">Approved</span>
+        </div>
+        <div class="approval-body">
+          <div class="approval-ability-name">${escapeHtml(abilityName)}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  if (status === 'denied') {
+    return `
+      <div class="approval-request dangerous" data-execution-id="${escapeHtml(executionId)}">
+        <div class="approval-header">
+          <span class="approval-icon">✕</span>
+          <span class="approval-title">Denied</span>
+        </div>
+        <div class="approval-body">
+          <div class="approval-ability-name">${escapeHtml(abilityName)}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  // Pending approval request
+  let dangerClass = (dangerLevel === 'dangerous') ? 'dangerous' : ((dangerLevel === 'safe') ? 'safe' : '');
+  let paramsHtml  = (params) ? `<pre class="approval-params">${escapeHtml(JSON.stringify(params, null, 2))}</pre>` : '';
+
+  return `
+    <div class="approval-request ${dangerClass}" data-execution-id="${escapeHtml(executionId)}">
+      <div class="approval-header">
+        <span class="approval-icon">🔒</span>
+        <span class="approval-title">Permission Required</span>
+      </div>
+      <div class="approval-body">
+        <div class="approval-ability-name">${escapeHtml(abilityName)}</div>
+        ${(description) ? `<div class="approval-description">${escapeHtml(description)}</div>` : ''}
+        ${paramsHtml}
+      </div>
+      <div class="approval-actions">
+        <button class="btn-approve" onclick="handleAbilityApprove('${escapeHtml(executionId)}')">
+          <span>👍</span> Approve
+        </button>
+        <button class="btn-deny" onclick="handleAbilityDeny('${escapeHtml(executionId)}')">
+          <span>👎</span> Deny
+        </button>
+      </div>
+      <label class="approval-remember">
+        <input type="checkbox" id="remember-${escapeHtml(executionId)}">
+        <span>Remember for this session</span>
+      </label>
+    </div>
+  `;
+}
+
+function renderAbilityQuestion(question) {
+  let { questionId, prompt, type, options, status, answer, defaultValue, timeout } = question;
+
+  // If already answered, show the answer
+  if (status === 'answered' && answer !== undefined) {
+    return `
+      <div class="ability-question" data-question-id="${escapeHtml(questionId)}">
+        <div class="question-header">
+          <span class="question-icon">💬</span>
+          <span>Question Answered</span>
+        </div>
+        <div class="question-prompt">${escapeHtml(prompt)}</div>
+        <div class="question-answer">Answer: <strong>${escapeHtml(String(answer))}</strong></div>
+      </div>
+    `;
+  }
+
+  // Render based on question type
+  let inputHtml = '';
+
+  if (type === 'binary') {
+    inputHtml = `
+      <div class="question-binary">
+        <button class="btn-yes" onclick="handleAbilityQuestionAnswer('${escapeHtml(questionId)}', true)">👍</button>
+        <button class="btn-no" onclick="handleAbilityQuestionAnswer('${escapeHtml(questionId)}', false)">👎</button>
+      </div>
+    `;
+  } else if (type === 'number' || type === 'float') {
+    let step = (type === 'float') ? '0.01' : '1';
+    inputHtml = `
+      <input type="number" step="${step}" class="question-input" id="ability-q-${escapeHtml(questionId)}"
+             placeholder="Enter a ${type}..." value="${defaultValue || ''}">
+      <button class="btn btn-primary" onclick="submitAbilityQuestionInput('${escapeHtml(questionId)}', '${type}')">Submit</button>
+    `;
+  } else if (options && options.length > 0) {
+    // Multiple choice
+    inputHtml = `
+      <div class="question-choices">
+        ${options.map((opt) => `
+          <button class="question-choice" onclick="handleAbilityQuestionAnswer('${escapeHtml(questionId)}', '${escapeHtml(String(opt))}')">${escapeHtml(String(opt))}</button>
+        `).join('')}
+      </div>
+    `;
+  } else {
+    // Free-form string
+    inputHtml = `
+      <input type="text" class="question-input" id="ability-q-${escapeHtml(questionId)}"
+             placeholder="Type your answer..." value="${defaultValue || ''}">
+      <button class="btn btn-primary" onclick="submitAbilityQuestionInput('${escapeHtml(questionId)}', 'string')">Submit</button>
+    `;
+  }
+
+  let timeoutHtml = (timeout) ? `<div class="question-timeout">Timeout: ${Math.round(timeout / 1000)}s</div>` : '';
+
+  return `
+    <div class="ability-question" data-question-id="${escapeHtml(questionId)}">
+      <div class="question-header">
+        <span class="question-icon">❓</span>
+        <span>Question</span>
+      </div>
+      <div class="question-prompt">${escapeHtml(prompt)}</div>
+      ${inputHtml}
+      ${timeoutHtml}
+    </div>
+  `;
+}
+
+function handleAbilityApprove(executionId) {
+  let rememberCheckbox = document.getElementById(`remember-${executionId}`);
+  let rememberForSession = rememberCheckbox?.checked || false;
+
+  sendAbilityApprovalResponse(executionId, true, null, rememberForSession);
+}
+
+function handleAbilityDeny(executionId) {
+  let reason = prompt('Reason for denial (optional):');
+  sendAbilityApprovalResponse(executionId, false, reason, false);
+}
+
+function sendAbilityApprovalResponse(executionId, approved, reason, rememberForSession) {
+  if (!state.ws || state.ws.readyState !== WebSocket.OPEN)
+    return;
+
+  state.ws.send(JSON.stringify({
+    type: 'ability_approval_response',
+    executionId,
+    approved,
+    reason,
+    rememberForSession,
+  }));
+
+  // Update local state
+  if (state.pendingApprovals[executionId]) {
+    state.pendingApprovals[executionId].status = (approved) ? 'approved' : 'denied';
+    updateAbilityApprovalUI(executionId);
+  }
+}
+
+function handleAbilityQuestionAnswer(questionId, answer) {
+  sendAbilityQuestionAnswer(questionId, answer);
+}
+
+function submitAbilityQuestionInput(questionId, type) {
+  let input = document.getElementById(`ability-q-${questionId}`);
+  if (!input)
+    return;
+
+  let value = input.value;
+
+  if (type === 'number')
+    value = parseInt(value, 10);
+  else if (type === 'float')
+    value = parseFloat(value);
+
+  sendAbilityQuestionAnswer(questionId, value);
+}
+
+function sendAbilityQuestionAnswer(questionId, answer) {
+  if (!state.ws || state.ws.readyState !== WebSocket.OPEN)
+    return;
+
+  state.ws.send(JSON.stringify({
+    type: 'ability_question_answer',
+    questionId,
+    answer,
+  }));
+
+  // Update local state
+  if (state.pendingAbilityQs[questionId]) {
+    state.pendingAbilityQs[questionId].status = 'answered';
+    state.pendingAbilityQs[questionId].answer = answer;
+    updateAbilityQuestionUI(questionId);
+  }
+}
+
+function updateAbilityApprovalUI(executionId) {
+  let approval = state.pendingApprovals[executionId];
+  if (!approval)
+    return;
+
+  let el = document.querySelector(`[data-execution-id="${executionId}"]`);
+  if (el)
+    el.outerHTML = renderAbilityApproval(approval);
+}
+
+function updateAbilityQuestionUI(questionId) {
+  let question = state.pendingAbilityQs[questionId];
+  if (!question)
+    return;
+
+  let el = document.querySelector(`[data-question-id="${questionId}"]`);
+  if (el)
+    el.outerHTML = renderAbilityQuestion(question);
+}
+
+function renderLinkElement(assertion) {
+  let { id, mode, url, messageId, text, label } = assertion;
+  let icon = (mode === 'clipboard') ? '📋' : ((mode === 'internal') ? '↓' : '🔗');
+  let clickAction = '';
+
+  if (mode === 'external') {
+    clickAction = `onclick="window.open('${escapeHtml(url)}', '_blank')"`;
+  } else if (mode === 'internal') {
+    clickAction = `onclick="scrollToMessage('${escapeHtml(messageId)}')"`;
+  } else if (mode === 'clipboard') {
+    clickAction = `onclick="copyToClipboard('${escapeHtml(text)}', this)"`;
+  }
+
+  return `
+    <div class="element-link" data-element-id="${id}">
+      <button class="link-button link-${mode}" ${clickAction}>
+        <span class="link-icon">${icon}</span>
+        <span class="link-label">${escapeHtml(label)}</span>
+        ${(mode === 'clipboard') ? '<span class="link-copied" style="display:none">Copied!</span>' : ''}
+      </button>
+    </div>
+  `;
+}
+
+function renderTodoElement(assertion) {
+  let { id, title, items, collapsed } = assertion;
+  items = items || [];
+
+  let completedCount = items.filter((i) => i.status === 'completed').length;
+  let totalCount     = items.length;
+  let progressPct    = (totalCount > 0) ? Math.round((completedCount / totalCount) * 100) : 0;
+
+  let itemsHtml = items.map((item) => {
+    let statusIcon = (item.status === 'completed') ? '✓' : ((item.status === 'in_progress') ? '⏳' : '○');
+    return `
+      <li class="todo-item ${item.status}" data-item-id="${item.id}">
+        <span class="todo-status">${statusIcon}</span>
+        <span class="todo-text">${escapeHtml(item.text)}</span>
+      </li>
+    `;
+  }).join('');
+
+  return `
+    <div class="element-todo ${(collapsed) ? 'collapsed' : ''}" data-element-id="${id}">
+      <div class="todo-header" onclick="toggleTodoCollapse('${id}')">
+        <span class="todo-title">${escapeHtml(title || 'Tasks')}</span>
+        <span class="todo-progress">${completedCount}/${totalCount}</span>
+        <span class="todo-toggle">${(collapsed) ? '▶' : '▼'}</span>
+      </div>
+      <div class="todo-progress-bar">
+        <div class="todo-progress-fill" style="width: ${progressPct}%"></div>
+      </div>
+      <ul class="todo-items" ${(collapsed) ? 'style="display:none"' : ''}>
+        ${itemsHtml}
+      </ul>
+    </div>
+  `;
+}
+
+function renderProgressElement(assertion) {
+  let { id, percentage, label, status } = assertion;
+  percentage = Math.max(0, Math.min(100, Number(percentage) || 0));
+
+  return `
+    <div class="element-progress" data-element-id="${id}">
+      <div class="progress-header">
+        <span class="progress-label">${escapeHtml(label || 'Progress')}</span>
+        <span class="progress-percentage">${percentage}%</span>
+      </div>
+      <div class="progress-bar-container">
+        <div class="progress-bar" style="width: ${percentage}%"></div>
+      </div>
+      ${(status) ? `<div class="progress-status">${escapeHtml(status)}</div>` : ''}
+    </div>
+  `;
+}
+
+// Element interaction helpers
+function scrollToMessage(messageId) {
+  let msgEl = document.querySelector(`[data-message-id="${messageId}"]`);
+  if (msgEl) {
+    msgEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    msgEl.classList.add('highlight');
+    setTimeout(() => msgEl.classList.remove('highlight'), 2000);
+  }
+}
+
+function copyToClipboard(text, buttonEl) {
+  navigator.clipboard.writeText(text).then(() => {
+    let copiedSpan = buttonEl.querySelector('.link-copied');
+    let labelSpan  = buttonEl.querySelector('.link-label');
+    if (copiedSpan && labelSpan) {
+      labelSpan.style.display  = 'none';
+      copiedSpan.style.display = 'inline';
+      setTimeout(() => {
+        labelSpan.style.display  = 'inline';
+        copiedSpan.style.display = 'none';
+      }, 1500);
+    }
+  }).catch((err) => {
+    console.error('Failed to copy:', err);
+  });
+}
+
+function toggleTodoCollapse(elementId) {
+  let todoEl = document.querySelector(`[data-element-id="${elementId}"]`);
+  if (!todoEl) return;
+
+  let isCollapsed = todoEl.classList.toggle('collapsed');
+  let itemsEl     = todoEl.querySelector('.todo-items');
+  let toggleEl    = todoEl.querySelector('.todo-toggle');
+
+  if (itemsEl)  itemsEl.style.display  = (isCollapsed) ? 'none' : 'block';
+  if (toggleEl) toggleEl.textContent   = (isCollapsed) ? '▶' : '▼';
 }
 
 function renderAssertionsForMessage(messageId) {
@@ -567,26 +612,61 @@ function hideTypingIndicator() {
 async function handleSendMessage() {
   let content = elements.messageInput.value.trim();
 
-  if (!content || state.isLoading || !state.currentSession)
+  if (!content || !state.currentSession)
     return;
 
-  state.isLoading = true;
-  elements.sendBtn.disabled     = true;
-  elements.messageInput.value   = '';
+  // Clear input immediately
+  elements.messageInput.value        = '';
   elements.messageInput.style.height = 'auto';
 
-  // Check for commands
+  // Check for commands (always process immediately)
   if (content.startsWith('/')) {
     await handleCommand(content);
-    state.isLoading = false;
-    elements.sendBtn.disabled = false;
     elements.messageInput.focus();
     return;
   }
 
-  // Add user message optimistically
-  state.messages.push({ role: 'user', content: content });
+  // If busy, queue the message instead
+  if (state.isLoading) {
+    queueMessage(content);
+    elements.messageInput.focus();
+    return;
+  }
+
+  // Process the message (use streaming or batch based on mode)
+  if (state.streamingMode)
+    await processMessageStream(content);
+  else
+    await processMessage(content);
+}
+
+function queueMessage(content) {
+  let queueId = `queued-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+  // Add to queue
+  state.messageQueue.push({ id: queueId, content });
+
+  // Add queued message to UI immediately
+  state.messages.push({ role: 'user', content, queued: true, queueId });
   renderMessages();
+  scrollToBottom();
+}
+
+async function processMessage(content) {
+  state.isLoading           = true;
+  elements.sendBtn.disabled = true;
+
+  // Add user message optimistically (if not already in messages from queue)
+  let existingQueued = state.messages.find((m) => m.queued && m.content === content);
+  if (existingQueued) {
+    // Remove queued styling
+    existingQueued.queued = false;
+    delete existingQueued.queueId;
+    renderMessages();
+  } else {
+    state.messages.push({ role: 'user', content: content });
+    renderMessages();
+  }
   scrollToBottom();
 
   // Show typing indicator
@@ -613,9 +693,402 @@ async function handleSendMessage() {
     scrollToBottom();
   }
 
-  state.isLoading = false;
+  state.isLoading           = false;
   elements.sendBtn.disabled = false;
   elements.messageInput.focus();
+
+  // Process any queued messages
+  await processMessageQueue();
+}
+
+async function processMessageQueue() {
+  if (state.messageQueue.length === 0)
+    return;
+
+  // Get next message from queue
+  let queued = state.messageQueue.shift();
+
+  // Process it (use streaming or batch based on mode)
+  if (state.streamingMode)
+    await processMessageStream(queued.content);
+  else
+    await processMessage(queued.content);
+}
+
+// ============================================================================
+// Streaming Message Processing
+// ============================================================================
+
+/**
+ * Process a message with streaming response.
+ * Shows progressive text and HML element updates in real-time.
+ */
+async function processMessageStream(content) {
+  state.isLoading           = true;
+  elements.sendBtn.disabled = true;
+
+  let now = new Date().toISOString();
+
+  // Add user message optimistically
+  let existingQueued = state.messages.find((m) => m.queued && m.content === content);
+  if (existingQueued) {
+    existingQueued.queued    = false;
+    existingQueued.createdAt = now;
+    delete existingQueued.queueId;
+    renderMessages();
+  } else {
+    state.messages.push({ role: 'user', content: content, createdAt: now });
+    renderMessages();
+  }
+  scrollToBottom();
+
+  // Initialize streaming message state
+  state.streamingMessage = {
+    id:       null,
+    content:  '',
+    elements: {},  // Map of elementId -> element state
+  };
+
+  // Create streaming message placeholder
+  createStreamingMessagePlaceholder();
+
+  try {
+    await sendMessageStream(state.currentSession.id, content, {
+      onStart: (data) => {
+        state.streamingMessage.id = data.messageId;
+        updateStreamingHeader(data.agentName || 'Assistant');
+      },
+
+      onText: (data) => {
+        state.streamingMessage.content += data.text;
+        updateStreamingContent(state.streamingMessage.content);
+        scrollToBottom();
+      },
+
+      onElementStart: (data) => {
+        state.streamingMessage.elements[data.id] = {
+          id:         data.id,
+          type:       data.type,
+          attributes: data.attributes,
+          content:    '',
+          status:     'streaming',
+          executable: data.executable,
+        };
+        renderStreamingElement(data.id);
+        scrollToBottom();
+      },
+
+      onElementUpdate: (data) => {
+        if (state.streamingMessage.elements[data.id]) {
+          state.streamingMessage.elements[data.id].content = data.content;
+          renderStreamingElement(data.id);
+        }
+      },
+
+      onElementComplete: (data) => {
+        if (state.streamingMessage.elements[data.id]) {
+          state.streamingMessage.elements[data.id].content = data.content;
+          state.streamingMessage.elements[data.id].status  = (data.executable) ? 'pending' : 'complete';
+          renderStreamingElement(data.id);
+        }
+      },
+
+      onElementExecuting: (data) => {
+        if (state.streamingMessage.elements[data.id]) {
+          state.streamingMessage.elements[data.id].status = 'executing';
+          renderStreamingElement(data.id);
+        }
+      },
+
+      onElementResult: (data) => {
+        if (state.streamingMessage.elements[data.id]) {
+          state.streamingMessage.elements[data.id].status = 'complete';
+          state.streamingMessage.elements[data.id].result = data.result;
+          renderStreamingElement(data.id);
+        }
+      },
+
+      onElementError: (data) => {
+        if (state.streamingMessage.elements[data.id]) {
+          state.streamingMessage.elements[data.id].status = 'error';
+          state.streamingMessage.elements[data.id].error  = data.error;
+          renderStreamingElement(data.id);
+        }
+      },
+
+      onToolUseStart: (data) => {
+        // Show tool use in streaming UI
+        appendStreamingToolUse(data);
+      },
+
+      onToolResult: (data) => {
+        // Update tool result in streaming UI
+        updateStreamingToolResult(data);
+      },
+
+      onComplete: (data) => {
+        // Finalize the streaming message
+        finalizeStreamingMessage(data);
+      },
+
+      onError: (data) => {
+        showStreamingError(data.error);
+      },
+    });
+
+    // Ensure streaming message is finalized even if onComplete wasn't called
+    if (state.streamingMessage) {
+      finalizeStreamingMessage({
+        content: state.streamingMessage.content,
+        messageId: state.streamingMessage.id,
+      });
+    }
+  } catch (error) {
+    showStreamingError(error.message);
+  }
+
+  state.isLoading           = false;
+  elements.sendBtn.disabled = false;
+  elements.messageInput.focus();
+
+  // Process any queued messages
+  await processMessageQueue();
+}
+
+/**
+ * Create the streaming message placeholder in the chat.
+ */
+function createStreamingMessagePlaceholder() {
+  let agentName = state.currentSession?.agent?.name || 'Assistant';
+
+  let html = `
+    <div class="message message-assistant message-streaming" id="streaming-message">
+      <div class="message-header">${escapeHtml(agentName)}</div>
+      <div class="message-bubble">
+        <div class="streaming-content"></div>
+        <div class="streaming-elements"></div>
+        <div class="streaming-indicator">
+          <span></span><span></span><span></span>
+        </div>
+      </div>
+    </div>
+  `;
+
+  elements.messagesContainer.insertAdjacentHTML('beforeend', html);
+}
+
+/**
+ * Update the streaming message header (e.g., with agent name).
+ */
+function updateStreamingHeader(agentName) {
+  let el = document.querySelector('#streaming-message .message-header');
+  if (el)
+    el.textContent = agentName;
+}
+
+/**
+ * Update the streaming content with new text.
+ */
+function updateStreamingContent(content) {
+  let el = document.querySelector('#streaming-message .streaming-content');
+  if (el)
+    el.innerHTML = renderMarkup(content);
+}
+
+/**
+ * Render a streaming HML element.
+ */
+function renderStreamingElement(elementId) {
+  let element   = state.streamingMessage.elements[elementId];
+  let container = document.querySelector('#streaming-message .streaming-elements');
+
+  if (!element || !container) return;
+
+  let existingEl = container.querySelector(`[data-element-id="${elementId}"]`);
+  let html       = renderStreamingElementHtml(element);
+
+  if (existingEl) {
+    existingEl.outerHTML = html;
+  } else {
+    container.insertAdjacentHTML('beforeend', html);
+  }
+}
+
+/**
+ * Generate HTML for a streaming HML element.
+ */
+function renderStreamingElementHtml(element) {
+  let statusClass = `streaming-element-${element.status}`;
+  let statusIcon  = getStreamingStatusIcon(element.status);
+  let typeIcon    = getElementTypeIcon(element.type);
+
+  let contentHtml = '';
+  if (element.content) {
+    contentHtml = `<div class="streaming-element-content">${escapeHtml(element.content)}</div>`;
+  }
+
+  let resultHtml = '';
+  if (element.result) {
+    let resultText = (typeof element.result === 'string') ? element.result : JSON.stringify(element.result, null, 2);
+    resultHtml = `<div class="streaming-element-result"><pre>${escapeHtml(resultText)}</pre></div>`;
+  }
+
+  let errorHtml = '';
+  if (element.error) {
+    errorHtml = `<div class="streaming-element-error">${escapeHtml(element.error)}</div>`;
+  }
+
+  return `
+    <div class="streaming-element ${statusClass}" data-element-id="${element.id}">
+      <div class="streaming-element-header">
+        <span class="streaming-element-icon">${typeIcon}</span>
+        <span class="streaming-element-type">${escapeHtml(element.type)}</span>
+        <span class="streaming-element-status">${statusIcon}</span>
+      </div>
+      ${contentHtml}
+      ${resultHtml}
+      ${errorHtml}
+    </div>
+  `;
+}
+
+/**
+ * Get status icon for streaming element.
+ */
+function getStreamingStatusIcon(status) {
+  switch (status) {
+    case 'streaming':  return '<span class="status-streaming">...</span>';
+    case 'pending':    return '<span class="status-pending">⏳</span>';
+    case 'executing':  return '<span class="status-executing"><span class="spinner"></span></span>';
+    case 'complete':   return '<span class="status-complete">✓</span>';
+    case 'error':      return '<span class="status-error">✗</span>';
+    default:           return '';
+  }
+}
+
+/**
+ * Get icon for element type.
+ */
+function getElementTypeIcon(type) {
+  switch (type) {
+    case 'websearch': return '🔍';
+    case 'bash':      return '$';
+    case 'ask':       return '❓';
+    case 'thinking':  return '💭';
+    case 'todo':      return '📋';
+    case 'progress':  return '📊';
+    case 'link':      return '🔗';
+    case 'copy':      return '📋';
+    case 'result':    return '📄';
+    default:          return '▪';
+  }
+}
+
+/**
+ * Append tool use to streaming message.
+ */
+function appendStreamingToolUse(data) {
+  let container = document.querySelector('#streaming-message .streaming-elements');
+  if (!container) return;
+
+  let html = `
+    <div class="streaming-tool-use" data-tool-id="${escapeHtml(data.toolId || '')}">
+      <div class="streaming-tool-header">
+        <span class="streaming-tool-icon">⚙</span>
+        <span class="streaming-tool-name">${escapeHtml(data.name || 'Tool')}</span>
+        <span class="streaming-tool-status"><span class="spinner"></span></span>
+      </div>
+    </div>
+  `;
+
+  container.insertAdjacentHTML('beforeend', html);
+}
+
+/**
+ * Update tool result in streaming message.
+ */
+function updateStreamingToolResult(data) {
+  let el = document.querySelector(`#streaming-message .streaming-tool-use[data-tool-id="${data.toolId}"]`);
+  if (!el) return;
+
+  let statusEl = el.querySelector('.streaming-tool-status');
+  if (statusEl)
+    statusEl.innerHTML = '<span class="status-complete">✓</span>';
+
+  let resultHtml = `<div class="streaming-tool-result"><pre>${escapeHtml(data.content || '')}</pre></div>`;
+  el.insertAdjacentHTML('beforeend', resultHtml);
+}
+
+/**
+ * Finalize the streaming message and add to state.
+ * Idempotent - safe to call multiple times.
+ */
+function finalizeStreamingMessage(data) {
+  // Skip if already finalized
+  if (!state.streamingMessage) return;
+
+  // Remove streaming indicator
+  let indicator = document.querySelector('#streaming-message .streaming-indicator');
+  if (indicator)
+    indicator.remove();
+
+  // Remove streaming class
+  let streamingEl = document.getElementById('streaming-message');
+  if (streamingEl) {
+    streamingEl.classList.remove('message-streaming');
+    streamingEl.removeAttribute('id');
+  }
+
+  // Add finalized message to state
+  let now = new Date().toISOString();
+  state.messages.push({
+    id:        state.streamingMessage.id,
+    role:      'assistant',
+    content:   data.content || state.streamingMessage.content,
+    createdAt: now,
+  });
+
+  // Clear streaming state
+  state.streamingMessage = null;
+}
+
+/**
+ * Show error in streaming message.
+ */
+function showStreamingError(errorMessage) {
+  let streamingEl = document.getElementById('streaming-message');
+  if (!streamingEl) return;
+
+  // Remove streaming indicator
+  let indicator = streamingEl.querySelector('.streaming-indicator');
+  if (indicator)
+    indicator.remove();
+
+  // Add error message
+  let bubble = streamingEl.querySelector('.message-bubble');
+  if (bubble) {
+    bubble.insertAdjacentHTML('beforeend', `
+      <div class="streaming-error">
+        <span class="error-icon">⚠</span>
+        <span class="error-text">${escapeHtml(errorMessage)}</span>
+      </div>
+    `);
+  }
+
+  // Remove streaming class and id
+  streamingEl.classList.remove('message-streaming');
+  streamingEl.classList.add('message-error');
+  streamingEl.removeAttribute('id');
+
+  // Add error to state
+  state.messages.push({
+    role:      'assistant',
+    content:   [{ type: 'text', text: `Error: ${errorMessage}` }],
+    createdAt: new Date().toISOString(),
+  });
+
+  // Clear streaming state
+  state.streamingMessage = null;
 }
 
 async function handleCommand(content) {
@@ -629,12 +1102,28 @@ async function handleCommand(content) {
       break;
 
     case 'help':
+      await handleHelpCommand();
+      break;
+
+    case 'session':
       state.messages.push({
         role:    'assistant',
-        content: [{ type: 'text', text: 'Available commands:\n/clear - Clear all messages\n/help - Show this help' }],
+        content: [{ type: 'text', text: `Current session: ${state.currentSession?.name || 'None'}\nSession ID: ${state.currentSession?.id || 'N/A'}` }],
       });
       renderMessages();
       scrollToBottom();
+      break;
+
+    case 'archive':
+      await handleArchiveCommand();
+      break;
+
+    case 'ability':
+      await handleAbilityCommand(args);
+      break;
+
+    case 'stream':
+      handleStreamCommand(args);
       break;
 
     default:
@@ -657,6 +1146,371 @@ async function handleClearMessages() {
     renderMessages();
   } catch (error) {
     console.error('Failed to clear messages:', error);
+  }
+}
+
+async function handleHelpCommand() {
+  try {
+    let response = await fetch(`${BASE_PATH}/api/help`);
+    let help     = await response.json();
+
+    let text = '# Hero Help\n\n';
+
+    // Built-in commands
+    text += '## Commands\n';
+    for (let cmd of help.commands.builtin)
+      text += `  /${cmd.name} - ${cmd.description}\n`;
+
+    if (help.commands.user.length > 0) {
+      text += '\n### User Commands\n';
+      for (let cmd of help.commands.user)
+        text += `  /${cmd.name} - ${cmd.description || 'No description'}\n`;
+    }
+
+    // Operation handlers
+    text += '\n## Operations\n';
+    for (let handler of help.handlers)
+      text += `  ${handler.name} - ${handler.description}\n`;
+
+    // Assertion types
+    text += '\n## Assertion Types\n';
+    for (let assertion of help.assertions)
+      text += `  ${assertion.type} - ${assertion.description}\n`;
+
+    // Abilities
+    text += '\n## Abilities\n';
+    text += '### System\n';
+    for (let ability of help.processes.system)
+      text += `  ${ability.name} - ${ability.description || 'No description'}\n`;
+
+    if (help.processes.user.length > 0) {
+      text += '\n### User Abilities\n';
+      for (let ability of help.processes.user)
+        text += `  ${ability.name} - ${ability.description || 'No description'}\n`;
+    }
+
+    state.messages.push({
+      role:    'assistant',
+      content: [{ type: 'text', text }],
+    });
+    renderMessages();
+    scrollToBottom();
+  } catch (error) {
+    console.error('Failed to fetch help:', error);
+    state.messages.push({
+      role:    'assistant',
+      content: [{ type: 'text', text: 'Failed to load help information.' }],
+    });
+    renderMessages();
+    scrollToBottom();
+  }
+}
+
+function handleStreamCommand(args) {
+  args = args.toLowerCase().trim();
+
+  if (args === 'on' || args === 'enable') {
+    state.streamingMode = true;
+    state.messages.push({
+      role:    'assistant',
+      content: [{ type: 'text', text: 'Streaming mode enabled. Responses will appear progressively.' }],
+    });
+  } else if (args === 'off' || args === 'disable') {
+    state.streamingMode = false;
+    state.messages.push({
+      role:    'assistant',
+      content: [{ type: 'text', text: 'Streaming mode disabled. Responses will appear after completion.' }],
+    });
+  } else {
+    let modeText = (state.streamingMode) ? 'enabled' : 'disabled';
+    state.messages.push({
+      role:    'assistant',
+      content: [{ type: 'text', text: `Streaming mode is currently ${modeText}.\n\nUsage:\n/stream on  - Enable streaming\n/stream off - Disable streaming` }],
+    });
+  }
+
+  renderMessages();
+  scrollToBottom();
+}
+
+async function handleArchiveCommand() {
+  if (!state.currentSession) {
+    state.messages.push({
+      role:    'assistant',
+      content: [{ type: 'text', text: 'No active session to archive.' }],
+    });
+    renderMessages();
+    scrollToBottom();
+    return;
+  }
+
+  try {
+    await fetch(`${BASE_PATH}/api/sessions/${state.currentSession.id}/archive`, {
+      method: 'POST',
+    });
+
+    state.messages.push({
+      role:    'assistant',
+      content: [{ type: 'text', text: `Session "${state.currentSession.name}" has been archived.` }],
+    });
+    renderMessages();
+    scrollToBottom();
+
+    // Reload sessions
+    state.sessions = await fetchSessions();
+    renderSessionsList();
+  } catch (error) {
+    console.error('Failed to archive session:', error);
+    state.messages.push({
+      role:    'assistant',
+      content: [{ type: 'text', text: 'Failed to archive session.' }],
+    });
+    renderMessages();
+    scrollToBottom();
+  }
+}
+
+async function handleAbilityCommand(args) {
+  let parts      = args.trim().split(/\s+/);
+  let subcommand = parts[0]?.toLowerCase() || 'list';
+  let name       = parts.slice(1).join(' ');
+
+  switch (subcommand) {
+    case 'create':
+    case 'new':
+      showAbilityModal();
+      break;
+
+    case 'edit':
+      if (!name) {
+        state.messages.push({
+          role:    'assistant',
+          content: [{ type: 'text', text: 'Usage: /ability edit <name>' }],
+        });
+        renderMessages();
+        scrollToBottom();
+        return;
+      }
+      await editAbility(name);
+      break;
+
+    case 'delete':
+      if (!name) {
+        state.messages.push({
+          role:    'assistant',
+          content: [{ type: 'text', text: 'Usage: /ability delete <name>' }],
+        });
+        renderMessages();
+        scrollToBottom();
+        return;
+      }
+      await deleteAbilityByName(name);
+      break;
+
+    case 'list':
+    default:
+      await listAbilities();
+      break;
+  }
+}
+
+async function listAbilities() {
+  try {
+    let response = await fetch(`${BASE_PATH}/api/abilities`);
+    let data     = await response.json();
+
+    let text = '# Abilities\n\n';
+
+    // Group by type
+    let processes = data.abilities.filter((a) => a.type === 'process');
+    let functions = data.abilities.filter((a) => a.type === 'function');
+
+    if (functions.length > 0) {
+      text += '## Functions\n';
+      for (let ability of functions) {
+        let danger = (ability.dangerLevel !== 'safe') ? ` [${ability.dangerLevel}]` : '';
+        text += `  **${ability.name}**${danger} - ${ability.description || 'No description'} (${ability.source})\n`;
+      }
+      text += '\n';
+    }
+
+    if (processes.length > 0) {
+      text += '## Process Abilities\n';
+      for (let ability of processes) {
+        let danger = (ability.dangerLevel !== 'safe') ? ` [${ability.dangerLevel}]` : '';
+        text += `  **${ability.name}**${danger} - ${ability.description || 'No description'} (${ability.source})\n`;
+      }
+    }
+
+    if (data.abilities.length === 0)
+      text += 'No abilities configured.\n';
+
+    text += '\nCommands: /ability create, /ability edit <name>, /ability delete <name>';
+
+    state.messages.push({
+      role:    'assistant',
+      content: [{ type: 'text', text }],
+    });
+    renderMessages();
+    scrollToBottom();
+  } catch (error) {
+    console.error('Failed to list abilities:', error);
+    state.messages.push({
+      role:    'assistant',
+      content: [{ type: 'text', text: 'Failed to load abilities.' }],
+    });
+    renderMessages();
+    scrollToBottom();
+  }
+}
+
+async function editAbility(name) {
+  try {
+    let response = await fetch(`${BASE_PATH}/api/abilities`);
+    let data     = await response.json();
+
+    let ability = data.abilities.find((a) => a.name === name && a.source === 'user');
+
+    if (!ability) {
+      state.messages.push({
+        role:    'assistant',
+        content: [{ type: 'text', text: `Ability "${name}" not found or cannot be edited (only user abilities can be edited).` }],
+      });
+      renderMessages();
+      scrollToBottom();
+      return;
+    }
+
+    showAbilityModal(ability);
+  } catch (error) {
+    console.error('Failed to edit ability:', error);
+  }
+}
+
+async function deleteAbilityByName(name) {
+  try {
+    let response = await fetch(`${BASE_PATH}/api/abilities`);
+    let data     = await response.json();
+
+    let ability = data.abilities.find((a) => a.name === name && a.source === 'user');
+
+    if (!ability) {
+      state.messages.push({
+        role:    'assistant',
+        content: [{ type: 'text', text: `Ability "${name}" not found or cannot be deleted (only user abilities can be deleted).` }],
+      });
+      renderMessages();
+      scrollToBottom();
+      return;
+    }
+
+    if (!confirm(`Delete ability "${name}"?`))
+      return;
+
+    await fetch(`${BASE_PATH}/api/abilities/${ability.id}`, { method: 'DELETE' });
+
+    state.messages.push({
+      role:    'assistant',
+      content: [{ type: 'text', text: `Ability "${name}" deleted.` }],
+    });
+    renderMessages();
+    scrollToBottom();
+  } catch (error) {
+    console.error('Failed to delete ability:', error);
+    state.messages.push({
+      role:    'assistant',
+      content: [{ type: 'text', text: 'Failed to delete ability.' }],
+    });
+    renderMessages();
+    scrollToBottom();
+  }
+}
+
+function showAbilityModal(ability = null) {
+  elements.abilityModalError.textContent = '';
+  elements.abilityForm.reset();
+
+  if (ability) {
+    elements.abilityModalTitle.textContent = 'Edit Ability';
+    elements.abilityEditId.value           = ability.id;
+    elements.abilityName.value             = ability.name;
+    elements.abilityCategory.value         = ability.category || '';
+    elements.abilityDescription.value      = ability.description || '';
+    elements.abilityContent.value          = ability.content || '';
+    elements.abilityAutoApprove.checked    = ability.autoApprove || false;
+    elements.abilityDangerLevel.value      = ability.dangerLevel || 'safe';
+  } else {
+    elements.abilityModalTitle.textContent = 'Create Ability';
+    elements.abilityEditId.value           = '';
+  }
+
+  elements.abilityModal.style.display = 'flex';
+}
+
+function hideAbilityModal() {
+  elements.abilityModal.style.display = 'none';
+}
+
+async function handleSaveAbility(e) {
+  e.preventDefault();
+
+  let id          = elements.abilityEditId.value;
+  let name        = elements.abilityName.value.trim();
+  let category    = elements.abilityCategory.value.trim() || null;
+  let description = elements.abilityDescription.value.trim() || null;
+  let content     = elements.abilityContent.value;
+  let autoApprove = elements.abilityAutoApprove.checked;
+  let dangerLevel = elements.abilityDangerLevel.value;
+
+  if (!name || !content) {
+    elements.abilityModalError.textContent = 'Name and content are required.';
+    return;
+  }
+
+  // Validate name format
+  if (!/^[a-z][a-z0-9_]*$/.test(name)) {
+    elements.abilityModalError.textContent = 'Name must start with a lowercase letter and contain only lowercase letters, numbers, and underscores.';
+    return;
+  }
+
+  try {
+    let data = {
+      name,
+      type:        'process',
+      category,
+      description,
+      content,
+      autoApprove,
+      dangerLevel,
+    };
+
+    if (id) {
+      // Update existing
+      await fetch(`${BASE_PATH}/api/abilities/${id}`, {
+        method:  'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(data),
+      });
+    } else {
+      // Create new
+      await fetch(`${BASE_PATH}/api/abilities`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(data),
+      });
+    }
+
+    hideAbilityModal();
+
+    state.messages.push({
+      role:    'assistant',
+      content: [{ type: 'text', text: `Ability "${name}" ${(id) ? 'updated' : 'created'}.` }],
+    });
+    renderMessages();
+    scrollToBottom();
+  } catch (error) {
+    console.error('Failed to save ability:', error);
+    elements.abilityModalError.textContent = 'Failed to save ability.';
   }
 }
 
@@ -685,15 +1539,43 @@ function hideNewSessionModal() {
   elements.newSessionModal.style.display = 'none';
 }
 
-function showNewAgentModal() {
+async function showNewAgentModal() {
   elements.newAgentError.textContent = '';
   elements.newAgentForm.reset();
-  populateAgentProcesses();
+
+  // Always refresh abilities when opening
+  state.abilities = { system: [], user: [] };
+  await populateAgentAbilities();
+
+  filterModelsByType();  // Initialize model filtering
   elements.newAgentModal.style.display = 'flex';
 }
 
 function hideNewAgentModal() {
   elements.newAgentModal.style.display = 'none';
+}
+
+function filterModelsByType() {
+  let agentType    = document.getElementById('agent-type').value;
+  let modelSelect  = document.getElementById('agent-model');
+  let claudeModels = document.getElementById('claude-models');
+  let openaiModels = document.getElementById('openai-models');
+
+  // Show/hide model optgroups based on type
+  if (claudeModels)
+    claudeModels.style.display = (agentType === 'claude') ? '' : 'none';
+
+  if (openaiModels)
+    openaiModels.style.display = (agentType === 'openai') ? '' : 'none';
+
+  // Reset selection if current model doesn't match type
+  let selectedOption = modelSelect.options[modelSelect.selectedIndex];
+  if (selectedOption && selectedOption.parentElement) {
+    let parentGroup = selectedOption.parentElement;
+    if (parentGroup.id && !parentGroup.id.includes(agentType)) {
+      modelSelect.value = '';
+    }
+  }
 }
 
 async function handleCreateSession(e) {
@@ -722,12 +1604,13 @@ async function handleCreateAgent(e) {
 
   let name   = document.getElementById('agent-name').value.trim();
   let type   = document.getElementById('agent-type').value;
+  let model  = document.getElementById('agent-model').value;
   let apiKey = document.getElementById('agent-api-key').value;
   let apiUrl = document.getElementById('agent-api-url').value.trim() || null;
 
-  // Collect selected processes
-  let defaultProcesses = Array.from(
-    elements.agentProcessesList.querySelectorAll('input[name="defaultProcesses"]:checked')
+  // Collect selected abilities
+  let defaultAbilities = Array.from(
+    elements.agentAbilitiesList.querySelectorAll('input[name="defaultAbilities"]:checked')
   ).map((cb) => cb.value);
 
   if (!name || !type || !apiKey) {
@@ -735,8 +1618,13 @@ async function handleCreateAgent(e) {
     return;
   }
 
+  // Build config with model if specified
+  let config = {};
+  if (model)
+    config.model = model;
+
   try {
-    await createAgent(name, type, apiKey, apiUrl, defaultProcesses);
+    await createAgent(name, type, apiKey, apiUrl, defaultAbilities, config);
     state.agents = await fetchAgents();
     hideNewAgentModal();
 
@@ -800,7 +1688,7 @@ function connectWebSocket() {
   if (!token)
     return;
 
-  let protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  let protocol = (window.location.protocol === 'https:') ? 'wss:' : 'ws:';
   let wsUrl    = `${protocol}//${window.location.host}${BASE_PATH}/ws?token=${token}`;
 
   state.ws = new WebSocket(wsUrl);
@@ -869,6 +1757,125 @@ function handleWebSocketMessage(message) {
     case 'message_append':
       handleMessageAppend(message);
       break;
+
+    // Element message types
+    case 'element_new':
+      handleElementNew(message);
+      break;
+
+    case 'element_update':
+      handleElementUpdate(message);
+      break;
+
+    case 'todo_item_update':
+      handleTodoItemUpdate(message);
+      break;
+
+    // Ability approval requests
+    case 'ability_approval_request':
+      handleAbilityApprovalRequest(message);
+      break;
+
+    case 'ability_approval_timeout':
+      handleAbilityApprovalTimeout(message);
+      break;
+
+    // Ability questions
+    case 'ability_question':
+      handleAbilityQuestionRequest(message);
+      break;
+
+    case 'ability_question_timeout':
+      handleAbilityQuestionTimeout(message);
+      break;
+  }
+}
+
+function handleAbilityApprovalRequest(message) {
+  let { executionId, sessionId, abilityName, description, params, dangerLevel, messageId } = message;
+
+  // Only handle if for current session
+  if (state.currentSession?.id !== sessionId)
+    return;
+
+  // Store in pending approvals
+  state.pendingApprovals[executionId] = {
+    executionId,
+    abilityName,
+    description,
+    params,
+    dangerLevel,
+    messageId,
+    status: 'pending',
+  };
+
+  // Append approval UI to the message or to the messages container
+  let approvalHtml = renderAbilityApproval(state.pendingApprovals[executionId]);
+
+  if (messageId) {
+    let messageEl = document.querySelector(`[data-message-id="${messageId}"] .message-bubble`);
+    if (messageEl)
+      messageEl.insertAdjacentHTML('beforeend', approvalHtml);
+    else
+      elements.messagesContainer.insertAdjacentHTML('beforeend', approvalHtml);
+  } else {
+    elements.messagesContainer.insertAdjacentHTML('beforeend', approvalHtml);
+  }
+
+  scrollToBottom();
+}
+
+function handleAbilityApprovalTimeout(message) {
+  let { executionId } = message;
+
+  if (state.pendingApprovals[executionId]) {
+    state.pendingApprovals[executionId].status = 'denied';
+    updateAbilityApprovalUI(executionId);
+  }
+}
+
+function handleAbilityQuestionRequest(message) {
+  let { questionId, sessionId, prompt, type, options, defaultValue, timeout, messageId } = message;
+
+  // Only handle if for current session
+  if (state.currentSession?.id !== sessionId)
+    return;
+
+  // Store in pending questions
+  state.pendingAbilityQs[questionId] = {
+    questionId,
+    prompt,
+    type,
+    options,
+    defaultValue,
+    timeout,
+    messageId,
+    status: 'pending',
+  };
+
+  // Append question UI
+  let questionHtml = renderAbilityQuestion(state.pendingAbilityQs[questionId]);
+
+  if (messageId) {
+    let messageEl = document.querySelector(`[data-message-id="${messageId}"] .message-bubble`);
+    if (messageEl)
+      messageEl.insertAdjacentHTML('beforeend', questionHtml);
+    else
+      elements.messagesContainer.insertAdjacentHTML('beforeend', questionHtml);
+  } else {
+    elements.messagesContainer.insertAdjacentHTML('beforeend', questionHtml);
+  }
+
+  scrollToBottom();
+}
+
+function handleAbilityQuestionTimeout(message) {
+  let { questionId, defaultValue } = message;
+
+  if (state.pendingAbilityQs[questionId]) {
+    state.pendingAbilityQs[questionId].status = 'answered';
+    state.pendingAbilityQs[questionId].answer = defaultValue;
+    updateAbilityQuestionUI(questionId);
   }
 }
 
@@ -905,7 +1912,8 @@ function handleAssertionUpdate(message) {
 }
 
 function handleQuestionPrompt(message) {
-  let { messageId, assertionId, question, options } = message;
+  let { messageId, assertionId, question, options, mode, timeout } = message;
+  mode = mode || 'demand';
 
   if (!state.assertions[messageId])
     state.assertions[messageId] = [];
@@ -919,17 +1927,37 @@ function handleQuestionPrompt(message) {
       name:      'ask_user',
       message:   question,
       options:   options || [],
+      mode:      mode,
+      timeout:   timeout || 0,
+      default:   message.default,
       status:    'waiting',
     };
     state.assertions[messageId].push(assertion);
   } else {
     assertion.message = question;
     assertion.options = options || [];
+    assertion.mode    = mode;
+    assertion.timeout = timeout || 0;
+    assertion.default = message.default;
     assertion.status  = 'waiting';
+  }
+
+  // Track demand questions for main input targeting
+  if (mode === 'demand') {
+    state.activeDemandQuestion = { messageId, assertionId };
   }
 
   updateAssertionUI(messageId, assertionId);
   scrollToBottom();
+
+  // Focus the question input for demand questions
+  if (mode === 'demand') {
+    setTimeout(() => {
+      let input = document.querySelector(`.question-input[data-assertion-id="${assertionId}"]`);
+      if (input)
+        input.focus();
+    }, 100);
+  }
 }
 
 function handleMessageAppend(message) {
@@ -955,7 +1983,50 @@ function handleMessageAppend(message) {
   // Update the message in the DOM
   let msgEl = document.querySelector(`[data-message-id="${messageId}"] .message-content`);
   if (msgEl)
-    msgEl.textContent = typeof msg.content === 'string' ? msg.content : msg.content.find((b) => b.type === 'text')?.text || '';
+    msgEl.textContent = (typeof msg.content === 'string') ? msg.content : msg.content.find((b) => b.type === 'text')?.text || '';
+}
+
+function handleElementNew(message) {
+  let { messageId, element } = message;
+
+  if (!state.assertions[messageId])
+    state.assertions[messageId] = [];
+
+  // Elements are stored as assertions
+  state.assertions[messageId].push(element);
+  updateAssertionUI(messageId, element.id);
+}
+
+function handleElementUpdate(message) {
+  let { messageId, elementId, updates } = message;
+
+  if (!state.assertions[messageId])
+    return;
+
+  let element = state.assertions[messageId].find((a) => a.id === elementId);
+  if (!element)
+    return;
+
+  // Apply updates
+  Object.assign(element, updates);
+  updateAssertionUI(messageId, elementId);
+}
+
+function handleTodoItemUpdate(message) {
+  let { messageId, elementId, itemId, status } = message;
+
+  if (!state.assertions[messageId])
+    return;
+
+  let todoElement = state.assertions[messageId].find((a) => a.id === elementId);
+  if (!todoElement || !todoElement.items)
+    return;
+
+  let item = todoElement.items.find((i) => i.id === itemId);
+  if (item) {
+    item.status = status;
+    updateAssertionUI(messageId, elementId);
+  }
 }
 
 function updateAssertionUI(messageId, assertionId) {
@@ -1031,6 +2102,11 @@ function submitQuestionAnswer(assertionId, answer) {
       assertion.status = 'completed';
       assertion.answer = answer;
       updateAssertionUI(msgId, assertionId);
+
+      // Clear active demand question if this was it
+      if (state.activeDemandQuestion?.assertionId === assertionId)
+        state.activeDemandQuestion = null;
+
       break;
     }
   }
@@ -1089,172 +2165,202 @@ function renderOperationsPanel() {
 }
 
 // ============================================================================
-// Processes
+// Abilities
 // ============================================================================
 
-async function loadProcesses() {
+async function loadAbilities() {
   try {
-    let data = await fetchProcesses();
-    state.processes.system = data.system || [];
-    state.processes.user   = data.user || [];
+    let data = await fetchAbilities();
+    state.abilities.system = data.system || [];
+    state.abilities.user   = data.user || [];
   } catch (error) {
-    console.error('Failed to load processes:', error);
+    console.error('Failed to load abilities:', error);
   }
 }
 
-function showProcessesModal() {
-  loadProcesses().then(() => {
-    renderSystemProcesses();
-    renderUserProcesses();
-    elements.processesModal.style.display = 'flex';
+function showAbilitiesModal() {
+  loadAbilities().then(() => {
+    renderSystemAbilities();
+    renderUserAbilities();
+    elements.abilitiesModal.style.display = 'flex';
   });
 }
 
-function hideProcessesModal() {
-  elements.processesModal.style.display = 'none';
+function hideAbilitiesModal() {
+  elements.abilitiesModal.style.display = 'none';
 }
 
-function renderSystemProcesses() {
-  if (state.processes.system.length === 0) {
-    elements.systemProcessesList.innerHTML = '<div class="empty-state">No system processes available.</div>';
+function renderSystemAbilities() {
+  if (state.abilities.system.length === 0) {
+    elements.systemAbilitiesList.innerHTML = '<div class="empty-state">No system abilities available.</div>';
     return;
   }
 
-  let html = state.processes.system.map((p) => `
-    <div class="process-item">
-      <div class="process-info">
-        <div class="process-name">${escapeHtml(p.name)}</div>
-        <div class="process-description">${escapeHtml(p.description || 'No description')}</div>
+  let html = state.abilities.system.map((a) => `
+    <div class="ability-item">
+      <div class="ability-info">
+        <div class="ability-name">${escapeHtml(a.name)}</div>
+        <div class="ability-description">${escapeHtml(a.description || 'No description')}</div>
       </div>
     </div>
   `).join('');
 
-  elements.systemProcessesList.innerHTML = html;
+  elements.systemAbilitiesList.innerHTML = html;
 }
 
-function renderUserProcesses() {
-  if (state.processes.user.length === 0) {
-    elements.userProcessesList.innerHTML = '<div class="empty-state">No custom processes yet. Create one to get started.</div>';
+function renderUserAbilities() {
+  if (state.abilities.user.length === 0) {
+    elements.userAbilitiesList.innerHTML = '<div class="empty-state">No custom abilities yet. Create one to get started.</div>';
     return;
   }
 
-  let html = state.processes.user.map((p) => `
-    <div class="process-item">
-      <div class="process-info">
-        <div class="process-name">${escapeHtml(p.name)}</div>
-        <div class="process-description">${escapeHtml(p.description || 'No description')}</div>
+  let html = state.abilities.user.map((a) => `
+    <div class="ability-item">
+      <div class="ability-info">
+        <div class="ability-name">${escapeHtml(a.name)}</div>
+        <div class="ability-description">${escapeHtml(a.description || 'No description')}</div>
       </div>
-      <div class="process-actions">
-        <button class="btn btn-secondary" onclick="editProcess(${p.id})">Edit</button>
-        <button class="btn btn-secondary" onclick="confirmDeleteProcess(${p.id}, '${escapeHtml(p.name)}')">Delete</button>
+      <div class="ability-actions">
+        <button class="btn btn-secondary" onclick="editAbility(${a.id})">Edit</button>
+        <button class="btn btn-secondary" onclick="confirmDeleteAbility(${a.id}, '${escapeHtml(a.name)}')">Delete</button>
       </div>
     </div>
   `).join('');
 
-  elements.userProcessesList.innerHTML = html;
+  elements.userAbilitiesList.innerHTML = html;
 }
 
-function showNewProcessModal() {
-  state.editingProcessId = null;
-  elements.editProcessTitle.textContent = 'New Process';
-  elements.editProcessForm.reset();
-  elements.editProcessError.textContent = '';
-  elements.editProcessModal.style.display = 'flex';
+function showNewAbilityModal() {
+  state.editingAbilityId = null;
+  elements.editAbilityTitle.textContent = 'New Ability';
+  elements.editAbilityForm.reset();
+  elements.editAbilityError.textContent = '';
+  elements.editAbilityModal.style.display = 'flex';
 }
 
-function hideEditProcessModal() {
-  elements.editProcessModal.style.display = 'none';
-  state.editingProcessId = null;
+function hideEditAbilityModal() {
+  elements.editAbilityModal.style.display = 'none';
+  state.editingAbilityId = null;
 }
 
-async function editProcess(id) {
+async function editAbility(id) {
   try {
-    let process = await fetchProcess(id);
-    state.editingProcessId = id;
-    elements.editProcessTitle.textContent = 'Edit Process';
-    document.getElementById('process-name').value        = process.name;
-    document.getElementById('process-description').value = process.description || '';
-    document.getElementById('process-content').value     = process.content;
-    elements.editProcessError.textContent = '';
-    elements.editProcessModal.style.display = 'flex';
+    let ability = await fetchAbility(id);
+    state.editingAbilityId = id;
+    elements.editAbilityTitle.textContent = 'Edit Ability';
+    document.getElementById('ability-name').value        = ability.name;
+    document.getElementById('ability-description').value = ability.description || '';
+    document.getElementById('ability-content').value     = ability.content;
+    elements.editAbilityError.textContent = '';
+    elements.editAbilityModal.style.display = 'flex';
   } catch (error) {
-    console.error('Failed to load process:', error);
+    console.error('Failed to load ability:', error);
   }
 }
 
-async function handleSaveProcess(e) {
+async function handleSaveAbility(e) {
   e.preventDefault();
 
-  let name        = document.getElementById('process-name').value.trim();
-  let description = document.getElementById('process-description').value.trim() || null;
-  let content     = document.getElementById('process-content').value;
+  let name        = document.getElementById('ability-name').value.trim();
+  let description = document.getElementById('ability-description').value.trim() || null;
+  let content     = document.getElementById('ability-content').value;
 
   // Validate name format
   if (!/^[a-z0-9_]+$/.test(name)) {
-    elements.editProcessError.textContent = 'Name must contain only lowercase letters, numbers, and underscores';
+    elements.editAbilityError.textContent = 'Name must contain only lowercase letters, numbers, and underscores';
     return;
   }
 
   try {
-    if (state.editingProcessId) {
-      await updateProcess(state.editingProcessId, name, description, content);
+    if (state.editingAbilityId) {
+      await updateAbility(state.editingAbilityId, name, description, content);
     } else {
-      await createProcess(name, description, content);
+      await createAbility(name, description, content);
     }
 
-    hideEditProcessModal();
-    await loadProcesses();
-    renderUserProcesses();
+    hideEditAbilityModal();
+    await loadAbilities();
+    renderUserAbilities();
   } catch (error) {
-    elements.editProcessError.textContent = error.message;
+    elements.editAbilityError.textContent = error.message;
   }
 }
 
-async function confirmDeleteProcess(id, name) {
-  if (!confirm(`Delete process "${name}"?`))
+async function confirmDeleteAbility(id, name) {
+  if (!confirm(`Delete ability "${name}"?`))
     return;
 
   try {
-    await deleteProcess(id);
-    await loadProcesses();
-    renderUserProcesses();
+    await deleteAbility(id);
+    await loadAbilities();
+    renderUserAbilities();
   } catch (error) {
-    console.error('Failed to delete process:', error);
+    console.error('Failed to delete ability:', error);
   }
 }
 
-function switchProcessTab(tab) {
+function switchAbilityTab(tab) {
   document.querySelectorAll('.tab-btn').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.tab === tab);
   });
 
   document.querySelectorAll('.tab-content').forEach((content) => {
-    content.classList.toggle('active', content.id === `processes-tab-${tab}`);
+    content.classList.toggle('active', content.id === `abilities-tab-${tab}`);
   });
 }
 
-async function populateAgentProcesses() {
-  await loadProcesses();
+async function populateAgentAbilities() {
+  await loadAbilities();
 
-  let allProcesses = [
-    ...state.processes.system.map((p) => ({ ...p, type: 'system' })),
-    ...state.processes.user.map((p) => ({ ...p, type: 'user' })),
+  let allAbilities = [
+    ...state.abilities.system.map((a) => ({ ...a, type: 'system' })),
+    ...state.abilities.user.map((a) => ({ ...a, type: 'user' })),
   ];
 
-  if (allProcesses.length === 0) {
-    elements.agentProcessesList.innerHTML = '<div class="empty-state">No processes available.</div>';
+  if (allAbilities.length === 0) {
+    elements.agentAbilitiesList.innerHTML = '<div class="empty-state">No abilities available.</div>';
     return;
   }
 
-  let html = allProcesses.map((p) => `
+  // Add Select All checkbox at the top
+  let html = `
+    <div class="select-all-container">
+      <label class="checkbox-item">
+        <input type="checkbox" id="select-all-abilities" onchange="toggleAllAbilities(this.checked)">
+        <span><strong>Select All</strong></span>
+      </label>
+    </div>
+  `;
+
+  html += allAbilities.map((a) => `
     <label class="checkbox-item">
-      <input type="checkbox" name="defaultProcesses" value="${escapeHtml(p.name)}">
-      <span>${escapeHtml(p.name)}</span>
-      <span class="process-type">${p.type}</span>
+      <input type="checkbox" name="defaultAbilities" value="${escapeHtml(a.name)}" onchange="updateSelectAllState()">
+      <span>${escapeHtml(a.name)}</span>
+      <span class="ability-type">${a.type}</span>
     </label>
   `).join('');
 
-  elements.agentProcessesList.innerHTML = html;
+  elements.agentAbilitiesList.innerHTML = html;
+}
+
+function toggleAllAbilities(checked) {
+  let checkboxes = elements.agentAbilitiesList.querySelectorAll('input[name="defaultAbilities"]');
+  for (let cb of checkboxes)
+    cb.checked = checked;
+}
+
+function updateSelectAllState() {
+  let checkboxes = elements.agentAbilitiesList.querySelectorAll('input[name="defaultAbilities"]');
+  let selectAll  = document.getElementById('select-all-abilities');
+
+  if (!selectAll)
+    return;
+
+  let allChecked  = Array.from(checkboxes).every((cb) => cb.checked);
+  let someChecked = Array.from(checkboxes).some((cb) => cb.checked);
+
+  selectAll.checked       = allChecked;
+  selectAll.indeterminate = someChecked && !allChecked;
 }
 
 // ============================================================================
@@ -1272,22 +2378,30 @@ function hideAgentsModal() {
 
 function renderAgentsList() {
   if (state.agents.length === 0) {
-    elements.agentsList.innerHTML = '<div class="empty-state">No agents configured yet.</div>';
+    elements.agentsList.innerHTML = '<div class="empty-state">No agents configured yet. Add one to get started.</div>';
     return;
   }
 
-  let html = state.agents.map((agent) => `
-    <div class="agent-item">
-      <div class="agent-info">
-        <div class="agent-name">${escapeHtml(agent.name)}</div>
-        <div class="agent-type">${escapeHtml(agent.type)}</div>
+  let html = state.agents.map((agent) => {
+    // Get model from config if available
+    let model = agent.config?.model || 'default';
+
+    return `
+      <div class="agent-item">
+        <div class="agent-info">
+          <div class="agent-name">${escapeHtml(agent.name)}</div>
+          <div class="agent-meta">
+            <span class="agent-type">${escapeHtml(agent.type)}</span>
+            <span class="agent-model">${escapeHtml(model)}</span>
+          </div>
+        </div>
+        <div class="agent-actions">
+          <button class="btn btn-secondary btn-sm" onclick="showAgentConfigModal(${agent.id})">Config</button>
+          <button class="btn btn-secondary btn-sm" onclick="confirmDeleteAgent(${agent.id}, '${escapeHtml(agent.name)}')">Delete</button>
+        </div>
       </div>
-      <div class="agent-actions">
-        <button class="btn btn-secondary btn-sm" onclick="showAgentConfigModal(${agent.id})">Config</button>
-        <button class="btn btn-secondary btn-sm" onclick="confirmDeleteAgent(${agent.id}, '${escapeHtml(agent.name)}')">Delete</button>
-      </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 
   elements.agentsList.innerHTML = html;
 }
@@ -1352,21 +2466,6 @@ async function confirmDeleteAgent(agentId, name) {
 }
 
 // ============================================================================
-// Utilities
-// ============================================================================
-
-function escapeHtml(text) {
-  let div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-function autoResizeTextarea(textarea) {
-  textarea.style.height = 'auto';
-  textarea.style.height = Math.min(textarea.scrollHeight, 150) + 'px';
-}
-
-// ============================================================================
 // Event Listeners
 // ============================================================================
 
@@ -1381,6 +2480,31 @@ elements.newSessionBtn.addEventListener('click', () => {
     showNewSessionModal();
 });
 elements.logoutBtn.addEventListener('click', handleLogout);
+
+// Session search
+let searchDebounce = null;
+if (elements.sessionSearch) {
+  elements.sessionSearch.addEventListener('input', (e) => {
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(() => {
+      state.searchQuery = e.target.value.trim();
+      renderSessionsList();
+    }, 200);
+  });
+}
+
+// Toggle hidden sessions (archived, agent, etc.)
+if (elements.toggleArchived) {
+  elements.toggleArchived.addEventListener('click', async () => {
+    state.showHidden = !state.showHidden;
+    elements.toggleArchived.classList.toggle('active', state.showHidden);
+    elements.toggleArchived.title = (state.showHidden) ? 'Hide archived/agent sessions' : 'Show all sessions';
+
+    // Reload sessions with new filter
+    state.sessions = await fetchSessions();
+    renderSessionsList();
+  });
+}
 
 // Chat
 elements.sendBtn.addEventListener('click', handleSendMessage);
@@ -1403,11 +2527,24 @@ elements.sessionSelect.addEventListener('change', () => {
     navigate(`/sessions/${sessionId}`);
 });
 
+// Show hidden messages toggle
+if (elements.showHiddenToggle) {
+  elements.showHiddenToggle.addEventListener('change', () => {
+    state.showHiddenMessages = elements.showHiddenToggle.checked;
+    renderMessages();
+  });
+}
+
 // Modals
 elements.newSessionForm.addEventListener('submit', handleCreateSession);
 elements.cancelNewSession.addEventListener('click', hideNewSessionModal);
 elements.newAgentForm.addEventListener('submit', handleCreateAgent);
 elements.cancelNewAgent.addEventListener('click', hideNewAgentModal);
+
+// Agent type change - filter models
+let agentTypeSelect = document.getElementById('agent-type');
+if (agentTypeSelect)
+  agentTypeSelect.addEventListener('change', filterModelsByType);
 
 // Close modals on overlay click
 elements.newSessionModal.addEventListener('click', (e) => {
@@ -1419,26 +2556,26 @@ elements.newAgentModal.addEventListener('click', (e) => {
     hideNewAgentModal();
 });
 
-// Processes
-elements.processesBtn.addEventListener('click', showProcessesModal);
-elements.closeProcessesModal.addEventListener('click', hideProcessesModal);
-elements.processesModal.addEventListener('click', (e) => {
-  if (e.target === elements.processesModal)
-    hideProcessesModal();
+// Abilities
+elements.abilitiesBtn.addEventListener('click', showAbilitiesModal);
+elements.closeAbilitiesModal.addEventListener('click', hideAbilitiesModal);
+elements.abilitiesModal.addEventListener('click', (e) => {
+  if (e.target === elements.abilitiesModal)
+    hideAbilitiesModal();
 });
-elements.newProcessBtn.addEventListener('click', showNewProcessModal);
+elements.newAbilityBtn.addEventListener('click', showNewAbilityModal);
 
-// Processes tab switching
+// Abilities tab switching
 document.querySelectorAll('.tab-btn').forEach((btn) => {
-  btn.addEventListener('click', () => switchProcessTab(btn.dataset.tab));
+  btn.addEventListener('click', () => switchAbilityTab(btn.dataset.tab));
 });
 
-// Edit Process Modal
-elements.editProcessForm.addEventListener('submit', handleSaveProcess);
-elements.cancelEditProcess.addEventListener('click', hideEditProcessModal);
-elements.editProcessModal.addEventListener('click', (e) => {
-  if (e.target === elements.editProcessModal)
-    hideEditProcessModal();
+// Edit Ability Modal
+elements.editAbilityForm.addEventListener('submit', handleSaveAbility);
+elements.cancelEditAbility.addEventListener('click', hideEditAbilityModal);
+elements.editAbilityModal.addEventListener('click', (e) => {
+  if (e.target === elements.editAbilityModal)
+    hideEditAbilityModal();
 });
 
 // Agents Modal
@@ -1460,6 +2597,16 @@ elements.agentConfigModal.addEventListener('click', (e) => {
   if (e.target === elements.agentConfigModal)
     hideAgentConfigModal();
 });
+
+// Ability Modal
+if (elements.abilityForm) {
+  elements.abilityForm.addEventListener('submit', handleSaveAbility);
+  elements.cancelAbilityModal.addEventListener('click', hideAbilityModal);
+  elements.abilityModal.addEventListener('click', (e) => {
+    if (e.target === elements.abilityModal)
+      hideAbilityModal();
+  });
+}
 
 // Operations panel toggle
 elements.toggleOperations.addEventListener('click', () => {

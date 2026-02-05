@@ -4,7 +4,13 @@ import { Router } from 'express';
 import { getDatabase } from '../database.mjs';
 import { encryptWithKey, decryptWithKey } from '../encryption.mjs';
 import { requireAuth, getDataKey } from '../middleware/auth.mjs';
-import { getSystemProcessNames, getSystemProcess } from '../lib/processes/index.mjs';
+import {
+  getSystemProcessNames,
+  getSystemProcess,
+  getSystemProcessWithMetadata,
+  getAllSystemProcesses,
+  parseProcessContent,
+} from '../lib/processes/index.mjs';
 
 const router = Router();
 
@@ -26,13 +32,15 @@ router.get('/', (req, res) => {
     ORDER BY name
   `).all(req.user.id);
 
-  // Get system process names
-  let systemNames = getSystemProcessNames();
+  // Get system processes with metadata
+  let systemProcesses = getAllSystemProcesses();
 
   return res.json({
-    system: systemNames.map((name) => ({
-      name,
-      type: 'system',
+    system: systemProcesses.map((p) => ({
+      name:        p.name,
+      description: p.description,
+      properties:  p.properties,
+      type:        'system',
     })),
     user: userProcesses.map((p) => ({
       id:          p.id,
@@ -99,15 +107,17 @@ router.post('/', (req, res) => {
  */
 router.get('/system/:name', (req, res) => {
   let name    = req.params.name;
-  let content = getSystemProcess(name);
+  let process = getSystemProcessWithMetadata(name);
 
-  if (!content)
+  if (!process)
     return res.status(404).json({ error: 'System process not found' });
 
   return res.json({
     name,
-    content,
-    type: 'system',
+    content:     process.content,
+    description: process.metadata.description,
+    properties:  process.metadata.properties,
+    type:        'system',
   });
 });
 
@@ -127,14 +137,19 @@ router.get('/:id', (req, res) => {
     return res.status(404).json({ error: 'Process not found' });
 
   try {
-    let dataKey = getDataKey(req);
-    let content = decryptWithKey(process.encrypted_content, dataKey);
+    let dataKey    = getDataKey(req);
+    let rawContent = decryptWithKey(process.encrypted_content, dataKey);
+
+    // Parse metadata from content
+    let { content, metadata } = parseProcessContent(rawContent);
 
     return res.json({
       id:          process.id,
       name:        process.name,
-      description: process.description,
+      description: metadata.description || process.description,
+      properties:  metadata.properties,
       content:     content,
+      rawContent:  rawContent,  // Include raw for editing
       type:        'user',
       createdAt:   process.created_at,
       updatedAt:   process.updated_at,

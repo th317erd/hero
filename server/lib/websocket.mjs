@@ -2,11 +2,17 @@
 
 import { WebSocketServer } from 'ws';
 import { verifyToken } from '../auth.mjs';
-import { subscribeToUpdates, abortCommand, getRunningCommands } from './operations/executor.mjs';
 import { answerQuestion, cancelQuestion } from './assertions/pending-questions.mjs';
+import { handleApprovalResponse, cancelApproval } from './abilities/approval.mjs';
+import { handleQuestionAnswer as handleAbilityQuestionAnswer, cancelQuestion as cancelAbilityQuestion } from './abilities/question.mjs';
+import { getInteractionBus } from './interactions/bus.mjs';
+import { getSessionFunctions, getUserFunctions } from './interactions/registry.mjs';
 
 // Connected clients (userId -> Set of WebSocket connections)
 const clients = new Map();
+
+// Interaction bus connection (set up during init)
+let interactionBusConnected = false;
 
 /**
  * Initialize WebSocket server.
@@ -15,6 +21,23 @@ const clients = new Map();
  */
 export function initWebSocket(server) {
   let wss = new WebSocketServer({ server, path: '/ws' });
+
+  // Connect interaction bus to WebSocket (once)
+  if (!interactionBusConnected) {
+    let bus = getInteractionBus();
+
+    // When interaction bus needs user input, broadcast via WebSocket
+    bus.on('user_interaction', (interaction) => {
+      if (interaction.user_id) {
+        broadcastToUser(interaction.user_id, {
+          type:        'interaction_request',
+          interaction: interaction,
+        });
+      }
+    });
+
+    interactionBusConnected = true;
+  }
 
   wss.on('connection', (ws, req) => {
     // Extract token from query string
@@ -44,23 +67,27 @@ export function initWebSocket(server) {
 
     console.log(`WebSocket client connected for user ${userId}`);
 
-    // Subscribe to command updates for this user
-    let unsubscribe = subscribeToUpdates(userId, (commandState) => {
-      if (ws.readyState === ws.OPEN) {
+    // Get interaction bus for this connection
+    let bus = getInteractionBus();
+
+    // Subscribe to interaction events for this user
+    let onInteraction = (interaction) => {
+      if (interaction.user_id === userId && ws.readyState === ws.OPEN) {
         ws.send(JSON.stringify({
-          type:    'command_update',
-          command: commandState,
+          type:        'interaction',
+          interaction: interaction,
         }));
       }
-    });
+    };
+    bus.on('interaction', onInteraction);
 
-    // Send current running commands on connect
-    let running = getRunningCommands(userId);
+    // Send current running functions on connect
+    let runningFunctions = getUserFunctions(userId, true);
 
-    if (running.length > 0) {
+    if (runningFunctions.length > 0) {
       ws.send(JSON.stringify({
-        type:     'running_commands',
-        commands: running,
+        type:      'running_functions',
+        functions: runningFunctions.map((f) => f.toJSON()),
       }));
     }
 
@@ -71,13 +98,17 @@ export function initWebSocket(server) {
 
         switch (message.type) {
           case 'abort':
-            if (message.commandId) {
-              let aborted = abortCommand(message.commandId);
+          case 'cancel_function':
+            if (message.functionId || message.commandId) {
+              let funcId = message.functionId || message.commandId;
+              let { getFunctionInstance } = require('./interactions/registry.mjs');
+              let func = getFunctionInstance(funcId, null, userId);
+              let cancelled = (func) ? func.cancel('Cancelled by user') : false;
 
               ws.send(JSON.stringify({
-                type:      'abort_result',
-                commandId: message.commandId,
-                success:   aborted,
+                type:       'cancel_result',
+                functionId: funcId,
+                success:    cancelled,
               }));
             }
             break;
@@ -105,6 +136,79 @@ export function initWebSocket(server) {
               }));
             }
             break;
+
+          // Ability approval responses
+          case 'ability_approval_response':
+            if (message.executionId) {
+              handleApprovalResponse(
+                message.executionId,
+                message.approved,
+                message.reason,
+                message.rememberForSession
+              );
+
+              ws.send(JSON.stringify({
+                type:        'ability_approval_result',
+                executionId: message.executionId,
+                success:     true,
+              }));
+            }
+            break;
+
+          case 'ability_approval_cancel':
+            if (message.executionId) {
+              cancelApproval(message.executionId);
+
+              ws.send(JSON.stringify({
+                type:        'ability_approval_cancel_result',
+                executionId: message.executionId,
+                success:     true,
+              }));
+            }
+            break;
+
+          // Ability question answers
+          case 'ability_question_answer':
+            if (message.questionId && message.answer !== undefined) {
+              let answered = handleAbilityQuestionAnswer(message.questionId, message.answer);
+
+              ws.send(JSON.stringify({
+                type:       'ability_question_answer_result',
+                questionId: message.questionId,
+                success:    answered,
+              }));
+            }
+            break;
+
+          case 'ability_question_cancel':
+            if (message.questionId) {
+              cancelAbilityQuestion(message.questionId);
+
+              ws.send(JSON.stringify({
+                type:       'ability_question_cancel_result',
+                questionId: message.questionId,
+                success:    true,
+              }));
+            }
+            break;
+
+          // Interaction bus responses
+          case 'interaction_response':
+            if (message.interactionId) {
+              let bus      = getInteractionBus();
+              let resolved = bus.respond(
+                message.interactionId,
+                message.payload,
+                message.success !== false
+              );
+
+              ws.send(JSON.stringify({
+                type:          'interaction_response_result',
+                interactionId: message.interactionId,
+                success:       resolved,
+              }));
+            }
+            break;
         }
       } catch (e) {
         console.error('WebSocket message parse error:', e);
@@ -118,7 +222,9 @@ export function initWebSocket(server) {
       if (clients.get(userId)?.size === 0)
         clients.delete(userId);
 
-      unsubscribe();
+      // Remove interaction event listener
+      bus.off('interaction', onInteraction);
+
       console.log(`WebSocket client disconnected for user ${userId}`);
     });
 
@@ -162,8 +268,12 @@ export function getClientCount(userId) {
   return clients.get(userId)?.size || 0;
 }
 
+// Alias for compatibility
+export const broadcast = broadcastToUser;
+
 export default {
   initWebSocket,
   broadcastToUser,
+  broadcast,
   getClientCount,
 };

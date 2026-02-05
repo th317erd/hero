@@ -1,17 +1,16 @@
 'use strict';
 
-import { getHandler } from '../operations/registry.mjs';
+import { callSystemMethod, getSystemMethod } from '../interactions/functions/system.mjs';
 
 /**
  * Command assertion handler.
  *
- * Executes the named command/function and returns its result.
- * This handler looks up the command by name in the registry
- * and delegates execution to that handler.
+ * Executes the named command/function via the InteractionBus.
+ * This handler routes to @system methods.
  */
 export default {
   name:        'assertion_command',
-  description: 'Execute a command/function',
+  description: 'Execute a command/function via InteractionBus',
 
   /**
    * Execute a command assertion.
@@ -26,12 +25,11 @@ export default {
     if (assertion.assertion !== 'command')
       return next(assertion);
 
-    // Look up the named handler
-    let handler = getHandler(assertion.name);
+    // Check if system method exists
+    let method = getSystemMethod(assertion.name);
 
-    if (!handler) {
-      // No handler found for this command name
-      // Return error result but continue pipeline
+    if (!method) {
+      // No method found for this command name
       let result = {
         error:   true,
         message: `Unknown command: ${assertion.name}`,
@@ -41,18 +39,20 @@ export default {
     }
 
     try {
-      // Execute the handler
-      // Pass a wrapped next that attaches the result
-      let result = await handler.execute(assertion, context, async (msg) => {
-        // Handler called next, continue pipeline with result
-        return msg;
+      // Execute via InteractionBus
+      let result = await callSystemMethod(assertion.name, {
+        message: assertion.message,
+        ...assertion,
+      }, {
+        sessionId: context.sessionId,
+        userId:    context.userId,
       });
 
       // Attach result and continue
       return next({ ...assertion, result });
 
     } catch (error) {
-      // Handler threw an error
+      // Method threw an error
       let result = {
         error:   true,
         message: error.message,

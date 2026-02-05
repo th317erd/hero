@@ -7,8 +7,11 @@ import { decryptWithKey } from '../encryption.mjs';
 import { requireAuth, getDataKey } from '../middleware/auth.mjs';
 import { createAgent, getAgentTypes } from '../lib/agents/index.mjs';
 import { getSystemProcess, isSystemProcess, injectProcesses } from '../lib/processes/index.mjs';
-import { detectOperations, formatOperationFeedback, executeOperations } from '../lib/operations/index.mjs';
+import { detectInteractions, executeInteractions, formatInteractionFeedback } from '../lib/interactions/index.mjs';
 import { buildContext } from '../lib/pipeline/context.mjs';
+import { processMarkup, hasExecutableElements } from '../lib/markup/index.mjs';
+import { getStartupAbilities } from '../lib/abilities/registry.mjs';
+import { loadUserAbilities } from '../lib/abilities/loaders/user.mjs';
 
 const router = Router();
 
@@ -27,7 +30,7 @@ router.get('/:sessionId/messages', (req, res) => {
     return res.status(404).json({ error: 'Session not found' });
 
   let messages = db.prepare(`
-    SELECT id, role, content, created_at
+    SELECT id, role, content, hidden, type, created_at
     FROM messages
     WHERE session_id = ?
     ORDER BY created_at ASC
@@ -38,6 +41,8 @@ router.get('/:sessionId/messages', (req, res) => {
       id:        m.id,
       role:      m.role,
       content:   JSON.parse(m.content),
+      hidden:    !!m.hidden,
+      type:      m.type || 'message',
       createdAt: m.created_at,
     })),
   });
@@ -77,9 +82,13 @@ router.post('/:sessionId/messages', async (req, res) => {
   try {
     let dataKey = getDataKey(req);
 
+    // Load user abilities (ensures user's _onstart_* abilities are available)
+    // This also loads any plugin abilities the user has configured
+    loadUserAbilities(req.user.id, dataKey);
+
     // Decrypt agent credentials
-    let apiKey      = session.encrypted_api_key ? decryptWithKey(session.encrypted_api_key, dataKey) : null;
-    let agentConfig = session.encrypted_config ? JSON.parse(decryptWithKey(session.encrypted_config, dataKey)) : {};
+    let apiKey      = (session.encrypted_api_key) ? decryptWithKey(session.encrypted_api_key, dataKey) : null;
+    let agentConfig = (session.encrypted_config) ? JSON.parse(decryptWithKey(session.encrypted_config, dataKey)) : {};
 
     // Build process map for injection
     let defaultProcesses = JSON.parse(session.default_processes || '[]');
@@ -126,6 +135,47 @@ router.post('/:sessionId/messages', async (req, res) => {
       content: JSON.parse(m.content),
     }));
 
+    // If this is the first message, inject startup abilities
+    if (existingMessages.length === 0) {
+      let startupAbilities = getStartupAbilities();
+
+      if (startupAbilities.length > 0) {
+        // Combine all startup ability contents into a single setup message
+        let startupContent = startupAbilities
+          .filter((a) => a.type === 'process' && a.content)
+          .map((a) => a.content)
+          .join('\n\n---\n\n');
+
+        if (startupContent) {
+          // Store startup messages as hidden (hidden=1) with type='system' so they're not displayed in UI
+          db.prepare(`
+            INSERT INTO messages (session_id, role, content, hidden, type)
+            VALUES (?, 'user', ?, 1, 'system')
+          `).run(req.params.sessionId, JSON.stringify(`[System Initialization]\n\n${startupContent}`));
+
+          // Add to messages array for the AI
+          messages.push({
+            role:    'user',
+            content: `[System Initialization]\n\n${startupContent}`,
+          });
+
+          // Also add a placeholder assistant acknowledgment to set up the conversation flow
+          let ackContent = 'Understood. I\'ve processed the initialization instructions. Ready to assist.';
+          db.prepare(`
+            INSERT INTO messages (session_id, role, content, hidden, type)
+            VALUES (?, 'assistant', ?, 1, 'system')
+          `).run(req.params.sessionId, JSON.stringify(ackContent));
+
+          messages.push({
+            role:    'assistant',
+            content: ackContent,
+          });
+
+          console.log(`Injected ${startupAbilities.length} startup abilities for session ${req.params.sessionId}`);
+        }
+      }
+    }
+
     // Store user message (original, without process injection)
     db.prepare(`
       INSERT INTO messages (session_id, role, content)
@@ -148,43 +198,41 @@ router.post('/:sessionId/messages', async (req, res) => {
 
     let response = await agent.sendMessage(messages);
 
-    // Operation execution loop - detect and execute operations, feed results back
+    // Interaction execution loop - detect and execute interactions, feed results back
     let maxIterations = 10; // Prevent infinite loops
     let iterations    = 0;
 
     while (iterations < maxIterations) {
       iterations++;
 
-      // Check if response is an operation block
-      let operationBlock = detectOperations(response.content);
+      // Check if response is an interaction block
+      let interactionBlock = detectInteractions(response.content);
 
-      if (!operationBlock)
-        break; // Not an operation block, exit loop
+      if (!interactionBlock)
+        break; // Not an interaction block, exit loop
 
-      // Store the operation request from assistant
+      // Store the interaction request from assistant (hidden interaction message)
       db.prepare(`
-        INSERT INTO messages (session_id, role, content)
-        VALUES (?, 'assistant', ?)
+        INSERT INTO messages (session_id, role, content, hidden, type)
+        VALUES (?, 'assistant', ?, 1, 'interaction')
       `).run(req.params.sessionId, JSON.stringify(response.content));
 
-      // Build rich context for operation execution
-      let messageId = randomUUID();
-      let context   = buildContext({
-        req,
+      // Build context for interaction execution
+      let interactionContext = {
         sessionId: req.params.sessionId,
+        userId:    req.user.id,
         dataKey:   dataKey,
-        messageId: messageId,
-      });
+      };
 
-      let results = await executeOperations(operationBlock, context);
+      let results = await executeInteractions(interactionBlock, interactionContext);
 
       // Format results as feedback for AI
-      let feedback = formatOperationFeedback(results);
+      let feedback = formatInteractionFeedback(results);
 
-      // Store feedback as system/user message
+      // Store feedback as hidden feedback message
       db.prepare(`
-        INSERT INTO messages (session_id, role, content)
-        VALUES (?, 'user', ?)
+        INSERT INTO messages (session_id, role, content, hidden, type)
+        VALUES (?, 'user', ?, 1, 'feedback')
       `).run(req.params.sessionId, JSON.stringify(feedback));
 
       // Add to message history and continue conversation
@@ -195,11 +243,29 @@ router.post('/:sessionId/messages', async (req, res) => {
       response = await agent.sendMessage(messages);
     }
 
+    // Process HML markup elements in the response
+    let finalContent = response.content;
+
+    if (typeof finalContent === 'string' && hasExecutableElements(finalContent)) {
+      // Build context for HML execution
+      let hmlContext = buildContext({
+        req,
+        sessionId: req.params.sessionId,
+        dataKey:   dataKey,
+        messageId: randomUUID(),
+      });
+
+      let markupResult = await processMarkup(finalContent, hmlContext);
+
+      if (markupResult.modified)
+        finalContent = markupResult.text;
+    }
+
     // Store final assistant response
     db.prepare(`
       INSERT INTO messages (session_id, role, content)
       VALUES (?, 'assistant', ?)
-    `).run(req.params.sessionId, JSON.stringify(response.content));
+    `).run(req.params.sessionId, JSON.stringify(finalContent));
 
     // Store any tool result messages that occurred during the agentic loop
     if (response.toolMessages && response.toolMessages.length > 0) {
@@ -210,10 +276,10 @@ router.post('/:sessionId/messages', async (req, res) => {
     }
 
     return res.json({
-      content:      response.content,
-      toolCalls:    response.toolCalls || [],
-      stopReason:   response.stopReason,
-      operationLog: iterations > 1 ? `Executed ${iterations - 1} operation cycles` : null,
+      content:        finalContent,
+      toolCalls:      response.toolCalls || [],
+      stopReason:     response.stopReason,
+      interactionLog: (iterations > 1) ? `Executed ${iterations - 1} interaction cycles` : null,
     });
   } catch (error) {
     console.error('Message error:', error);

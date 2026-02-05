@@ -17,22 +17,38 @@ router.use(requireAuth);
 router.get('/', (req, res) => {
   let db     = getDatabase();
   let agents = db.prepare(`
-    SELECT id, name, type, api_url, default_processes, created_at, updated_at
+    SELECT id, name, type, api_url, encrypted_config, default_processes, created_at, updated_at
     FROM agents
     WHERE user_id = ?
     ORDER BY name
   `).all(req.user.id);
 
+  let dataKey = getDataKey(req);
+
   return res.json({
-    agents: agents.map((a) => ({
-      id:               a.id,
-      name:             a.name,
-      type:             a.type,
-      apiUrl:           a.api_url,
-      defaultProcesses: JSON.parse(a.default_processes || '[]'),
-      createdAt:        a.created_at,
-      updatedAt:        a.updated_at,
-    })),
+    agents: agents.map((a) => {
+      // Decrypt config to get model info
+      let config = {};
+      if (a.encrypted_config) {
+        try {
+          let decrypted = decryptWithKey(a.encrypted_config, dataKey);
+          config = JSON.parse(decrypted);
+        } catch (e) {
+          // Ignore decryption errors
+        }
+      }
+
+      return {
+        id:               a.id,
+        name:             a.name,
+        type:             a.type,
+        apiUrl:           a.api_url,
+        config:           config,
+        defaultAbilities: JSON.parse(a.default_processes || '[]'),
+        createdAt:        a.created_at,
+        updatedAt:        a.updated_at,
+      };
+    }),
   });
 });
 
@@ -41,7 +57,9 @@ router.get('/', (req, res) => {
  * Create a new agent.
  */
 router.post('/', (req, res) => {
-  let { name, type, apiUrl, apiKey, config: agentConfig, defaultProcesses } = req.body;
+  // Accept both defaultAbilities (new) and defaultProcesses (legacy)
+  let { name, type, apiUrl, apiKey, config: agentConfig, defaultAbilities, defaultProcesses } = req.body;
+  let abilities = defaultAbilities || defaultProcesses || [];
 
   if (!name || !type)
     return res.status(400).json({ error: 'Name and type are required' });
@@ -52,9 +70,9 @@ router.post('/', (req, res) => {
   if (!validTypes.includes(type))
     return res.status(400).json({ error: `Invalid agent type. Valid types: ${validTypes.join(', ')}` });
 
-  // Validate defaultProcesses if provided
-  if (defaultProcesses !== undefined && !Array.isArray(defaultProcesses))
-    return res.status(400).json({ error: 'defaultProcesses must be an array' });
+  // Validate defaultAbilities if provided
+  if (!Array.isArray(abilities))
+    return res.status(400).json({ error: 'defaultAbilities must be an array' });
 
   let db = getDatabase();
 
@@ -68,21 +86,21 @@ router.post('/', (req, res) => {
     let dataKey = getDataKey(req);
 
     // Encrypt sensitive fields
-    let encryptedApiKey = apiKey ? encryptWithKey(apiKey, dataKey) : null;
-    let encryptedConfig = agentConfig ? encryptWithKey(JSON.stringify(agentConfig), dataKey) : null;
-    let processesJson   = JSON.stringify(defaultProcesses || []);
+    let encryptedApiKey = (apiKey) ? encryptWithKey(apiKey, dataKey) : null;
+    let encryptedConfig = (agentConfig) ? encryptWithKey(JSON.stringify(agentConfig), dataKey) : null;
+    let abilitiesJson   = JSON.stringify(abilities);
 
     let result = db.prepare(`
       INSERT INTO agents (user_id, name, type, api_url, encrypted_api_key, encrypted_config, default_processes)
       VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(req.user.id, name, type, apiUrl || null, encryptedApiKey, encryptedConfig, processesJson);
+    `).run(req.user.id, name, type, apiUrl || null, encryptedApiKey, encryptedConfig, abilitiesJson);
 
     return res.status(201).json({
       id:               result.lastInsertRowid,
       name:             name,
       type:             type,
       apiUrl:           apiUrl || null,
-      defaultProcesses: defaultProcesses || [],
+      defaultAbilities: abilities,
       createdAt:        new Date().toISOString(),
     });
   } catch (error) {
@@ -123,7 +141,7 @@ router.get('/:id', (req, res) => {
       type:             agent.type,
       apiUrl:           agent.api_url,
       config:           agentConfig,
-      defaultProcesses: JSON.parse(agent.default_processes || '[]'),
+      defaultAbilities: JSON.parse(agent.default_processes || '[]'),
       hasApiKey:        !!agent.encrypted_api_key,
       createdAt:        agent.created_at,
       updatedAt:        agent.updated_at,
@@ -139,7 +157,9 @@ router.get('/:id', (req, res) => {
  * Update an agent.
  */
 router.put('/:id', (req, res) => {
-  let { name, type, apiUrl, apiKey, config: agentConfig, defaultProcesses } = req.body;
+  // Accept both defaultAbilities (new) and defaultProcesses (legacy)
+  let { name, type, apiUrl, apiKey, config: agentConfig, defaultAbilities, defaultProcesses } = req.body;
+  let abilities = (defaultAbilities !== undefined) ? defaultAbilities : defaultProcesses;
 
   let db    = getDatabase();
   let agent = db.prepare('SELECT id FROM agents WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
@@ -147,9 +167,9 @@ router.put('/:id', (req, res) => {
   if (!agent)
     return res.status(404).json({ error: 'Agent not found' });
 
-  // Validate defaultProcesses if provided
-  if (defaultProcesses !== undefined && !Array.isArray(defaultProcesses))
-    return res.status(400).json({ error: 'defaultProcesses must be an array' });
+  // Validate defaultAbilities if provided
+  if (abilities !== undefined && !Array.isArray(abilities))
+    return res.status(400).json({ error: 'defaultAbilities must be an array' });
 
   try {
     let dataKey = getDataKey(req);
@@ -183,20 +203,20 @@ router.put('/:id', (req, res) => {
     }
 
     if (apiKey !== undefined) {
-      let encryptedApiKey = apiKey ? encryptWithKey(apiKey, dataKey) : null;
+      let encryptedApiKey = (apiKey) ? encryptWithKey(apiKey, dataKey) : null;
       updates.push('encrypted_api_key = ?');
       values.push(encryptedApiKey);
     }
 
     if (agentConfig !== undefined) {
-      let encryptedConfig = agentConfig ? encryptWithKey(JSON.stringify(agentConfig), dataKey) : null;
+      let encryptedConfig = (agentConfig) ? encryptWithKey(JSON.stringify(agentConfig), dataKey) : null;
       updates.push('encrypted_config = ?');
       values.push(encryptedConfig);
     }
 
-    if (defaultProcesses !== undefined) {
+    if (abilities !== undefined) {
       updates.push('default_processes = ?');
-      values.push(JSON.stringify(defaultProcesses));
+      values.push(JSON.stringify(abilities));
     }
 
     if (updates.length === 0)

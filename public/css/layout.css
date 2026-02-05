@@ -1,0 +1,74 @@
+/* Hero - Layout Styles */
+/* Header and responsive */
+
+/* Logo */
+.logo {
+  height: 36px;
+  width: auto;
+  display: block;
+}
+
+.logo-lg {
+  height: 48px;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-left h1 {
+  margin: 0;
+  line-height: 1;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 20px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.header h1 {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.session-select {
+  width: auto;
+  min-width: 150px;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .header {
+    padding: 12px 16px;
+  }
+
+  .header h1 {
+    font-size: 16px;
+  }
+
+  .header-actions {
+    gap: 4px;
+  }
+
+  .btn {
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+
+  .session-select {
+    display: none;
+  }
+}

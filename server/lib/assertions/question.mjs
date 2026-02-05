@@ -14,7 +14,12 @@ export { answerQuestion, cancelQuestion } from './pending-questions.mjs';
  * Question assertion handler.
  *
  * Prompts the user for input via WebSocket.
- * Supports both blocking (wait forever) and non-blocking (with timeout) modes.
+ *
+ * Supports two modes:
+ * - "demand": Wait forever until user responds (default)
+ * - "timeout": Wait for specified time, then use default value
+ *
+ * For timeout mode, a default value MUST be provided.
  */
 export default {
   name:        'assertion_question',
@@ -37,13 +42,19 @@ export default {
       id,
       name,
       message,
-      blocking = true,
-      timeout  = 0,        // 0 = no timeout (block forever)
-      options  = null,     // Optional predefined answers
+      mode     = 'demand',   // 'demand' (wait forever) or 'timeout' (with default)
+      timeout  = 30000,      // Default 30s timeout for timeout mode
+      options  = null,       // Optional predefined answers
     } = assertion;
 
-    // Default value for non-blocking questions
-    let defaultValue = assertion.default || null;
+    // Default value - REQUIRED for timeout mode
+    let defaultValue = assertion.default;
+
+    // Validate timeout mode has a default
+    if (mode === 'timeout' && defaultValue === undefined) {
+      console.warn(`Question "${id}" is in timeout mode but has no default value. Using empty string.`);
+      defaultValue = '';
+    }
 
     // Broadcast question to user via WebSocket
     broadcastToUser(context.userId, {
@@ -52,8 +63,9 @@ export default {
       assertionId: id,
       question:    message,
       options:     options,
-      blocking:    blocking,
-      timeout:     timeout,
+      mode:        mode,
+      timeout:     (mode === 'timeout') ? timeout : 0,
+      default:     defaultValue,
     });
 
     // Create promise that resolves when user answers
@@ -61,26 +73,17 @@ export default {
       // Store resolver for this question
       setPendingQuestion(id, resolve, reject);
 
-      // Set up timeout if specified
-      if (timeout > 0) {
+      // Set up timeout only for timeout mode
+      if (mode === 'timeout' && timeout > 0) {
         setTimeout(() => {
           if (hasPendingQuestion(id)) {
             removePendingQuestion(id);
-
-            if (blocking) {
-              // Blocking question timed out - use default or error
-              if (defaultValue !== null) {
-                resolve(defaultValue);
-              } else {
-                reject(new Error('Question timed out'));
-              }
-            } else {
-              // Non-blocking - just resolve with default
-              resolve(defaultValue);
-            }
+            // Timeout mode - resolve with default value
+            resolve(defaultValue);
           }
         }, timeout);
       }
+      // For demand mode, we wait forever (no timeout)
     });
 
     // Clean up

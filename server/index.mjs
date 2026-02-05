@@ -11,6 +11,8 @@ import { getDatabase, closeDatabase } from './database.mjs';
 import { requireAuth, optionalAuth } from './middleware/auth.mjs';
 import routes from './routes/index.mjs';
 import { loadSystemProcesses } from './lib/processes/index.mjs';
+import { initializeAbilities } from './lib/abilities/index.mjs';
+import { initializeInteractions } from './lib/interactions/index.mjs';
 import { initWebSocket } from './lib/websocket.mjs';
 import './lib/assertions/index.mjs';  // Register assertion handlers
 
@@ -28,8 +30,14 @@ const indexHtml = indexHtmlTemplate.replace(
 // Initialize database on startup
 getDatabase();
 
-// Load system processes
+// Load system processes (legacy)
 await loadSystemProcesses();
+
+// Initialize abilities system
+await initializeAbilities();
+
+// Initialize interactions system (InteractionBus + system methods)
+initializeInteractions();
 
 const app = express();
 
@@ -44,6 +52,8 @@ app.use('/api', routes);
 // Static files
 app.use('/css', express.static(join(__dirname, '..', 'public', 'css')));
 app.use('/js', express.static(join(__dirname, '..', 'public', 'js')));
+app.use('/assets', express.static(join(__dirname, '..', 'public', 'assets')));
+app.use('/favicon.ico', express.static(join(__dirname, '..', 'public', 'favicon.ico')));
 
 // Login page - accessible without auth
 app.get('/login', optionalAuth, (req, res) => {
