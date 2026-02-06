@@ -10,9 +10,9 @@
 .message-content h4,
 .message-content h5,
 .message-content h6 {
-  margin: 0.3em 0 0.15em;
+  margin: 0;
   font-weight: 600;
-  line-height: 1.1;
+  line-height: 1.2;
 }
 
 .message-content h1:first-child,
@@ -27,7 +27,7 @@
 .message-content h4 { font-size: 1em; }
 
 .message-content p {
-  margin: 0.1em 0;
+  margin: 0;
 }
 
 .message-content p:first-child {
@@ -44,7 +44,7 @@
 
 .message-content ul,
 .message-content ol {
-  margin: 0.1em 0;
+  margin: 0;
   padding-left: 1.5em;
   list-style-position: inside;
 }
@@ -52,7 +52,7 @@
 .message-content li {
   margin: 0;
   padding-left: 0.25em;
-  line-height: 1.1;
+  line-height: 1.35;
 }
 
 .message-content blockquote {
