@@ -77,6 +77,10 @@
           <h1 id="session-title">Session</h1>
         </div>
         <div class="header-actions">
+          <label class="checkbox-label">
+            <input type="checkbox" id="show-hidden-toggle">
+            <span>Show hidden</span>
+          </label>
           <select id="session-select" class="session-select">
             <option value="">Switch session...</option>
           </select>
@@ -85,12 +89,6 @@
         </div>
       </header>
       <main class="chat-main">
-        <div class="chat-toolbar">
-          <label class="checkbox-label">
-            <input type="checkbox" id="show-hidden-toggle">
-            <span>Show hidden messages</span>
-          </label>
-        </div>
         <div id="messages" class="messages-container"></div>
       </main>
       <footer class="chat-footer">
@@ -227,6 +225,11 @@
             <input type="text" id="ability-description" name="description" placeholder="Brief description of this ability">
           </div>
           <div class="form-group">
+            <label for="edit-ability-applies">When to Use</label>
+            <input type="text" id="edit-ability-applies" name="applies" placeholder="e.g., when user asks about coding, for file operations, always">
+            <small class="form-hint">Describe the context or trigger for this ability (helps the agent know when to apply it)</small>
+          </div>
+          <div class="form-group">
             <label for="ability-content">Content (Markdown)</label>
             <textarea id="ability-content" name="content" required rows="12" placeholder="Instructions for the AI agent..."></textarea>
           </div>
@@ -301,6 +304,11 @@
             <input type="text" id="ability-description" name="description" placeholder="Brief description of this ability">
           </div>
           <div class="form-group">
+            <label for="ability-applies">When to Use</label>
+            <input type="text" id="ability-applies" name="applies" placeholder="e.g., when user asks about coding, for file operations, always">
+            <small class="form-hint">Describe the context or trigger for this ability (helps the agent know when to apply it)</small>
+          </div>
+          <div class="form-group">
             <label for="ability-content">Content (Markdown)</label>
             <textarea id="ability-content" name="content" required rows="12" placeholder="Instructions for the AI agent..."></textarea>
             <small class="skill-template-hint">Template variables: {{DATE}}, {{TIME}}, {{USER_NAME}}, {{SESSION_NAME}}</small>
@@ -342,6 +350,7 @@
   <script src="js/markup.js"></script>
   <script src="js/state.js"></script>
   <script src="js/utils.js"></script>
+  <script src="js/debug.js"></script>
   <script src="js/api.js"></script>
   <script src="js/routing.js"></script>
   <script src="js/sessions.js"></script>

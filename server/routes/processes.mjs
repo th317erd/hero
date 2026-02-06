@@ -67,9 +67,9 @@ router.post('/', (req, res) => {
   if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(name))
     return res.status(400).json({ error: 'Process name must start with a letter and contain only letters, numbers, and underscores' });
 
-  // Disallow system_ prefix for user processes
-  if (name.toLowerCase().startsWith('system_'))
-    return res.status(400).json({ error: 'Process name cannot start with "system_"' });
+  // Disallow _ prefix for user processes (reserved for system)
+  if (name.startsWith('_'))
+    return res.status(400).json({ error: 'Process name cannot start with "_" (reserved for system)' });
 
   let db = getDatabase();
 
@@ -183,9 +183,9 @@ router.put('/:id', (req, res) => {
       if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(name))
         return res.status(400).json({ error: 'Process name must start with a letter and contain only letters, numbers, and underscores' });
 
-      // Disallow system_ prefix
-      if (name.toLowerCase().startsWith('system_'))
-        return res.status(400).json({ error: 'Process name cannot start with "system_"' });
+      // Disallow _ prefix (reserved for system)
+      if (name.startsWith('_'))
+        return res.status(400).json({ error: 'Process name cannot start with "_" (reserved for system)' });
 
       // Check for duplicate name (excluding current process)
       let existing = db.prepare('SELECT id FROM processes WHERE user_id = ? AND name = ? AND id != ?').get(req.user.id, name, req.params.id);

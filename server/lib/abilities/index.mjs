@@ -5,6 +5,14 @@
 // ============================================================================
 // Unified system for processes and functions with permission management.
 
+// Import for internal use
+import {
+  getAllAbilities as _getAllAbilities,
+  getAbilitiesByType as _getAbilitiesByType,
+  getAbilitiesBySource as _getAbilitiesBySource,
+  getAbilitiesByCategory as _getAbilitiesByCategory,
+} from './registry.mjs';
+
 // Re-export everything from submodules
 export {
   registerAbility,
@@ -134,23 +142,25 @@ export function loadAllAbilitiesForUser(userId, dataKey, plugins = []) {
  * @returns {Array} Serialized abilities
  */
 export function getAbilitiesForApi(filters = {}) {
-  let { serializeAllAbilities, getAbilitiesByType, getAbilitiesBySource, getAbilitiesByCategory, getAllAbilities } = require('./registry.mjs');
-
   let abilities;
 
   if (filters.type) {
-    abilities = getAbilitiesByType(filters.type);
+    abilities = _getAbilitiesByType(filters.type);
   } else if (filters.source) {
-    abilities = getAbilitiesBySource(filters.source);
+    abilities = _getAbilitiesBySource(filters.source);
   } else if (filters.category) {
-    abilities = getAbilitiesByCategory(filters.category);
+    abilities = _getAbilitiesByCategory(filters.category);
   } else {
-    abilities = getAllAbilities();
+    abilities = _getAllAbilities();
   }
 
-  // Serialize (remove execute functions)
+  // Serialize (remove execute functions, fix IDs for user abilities)
   return abilities.map((a) => {
     let { execute, ...rest } = a;
+    // Convert "user-{id}" back to numeric id for frontend
+    if (rest.source === 'user' && typeof rest.id === 'string' && rest.id.startsWith('user-')) {
+      rest.id = parseInt(rest.id.replace('user-', ''), 10);
+    }
     return rest;
   });
 }

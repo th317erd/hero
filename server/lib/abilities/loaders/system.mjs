@@ -19,7 +19,7 @@ const PROCESSES_DIR = join(__dirname, '../../processes');
 
 /**
  * Load all system processes from .md files as abilities.
- * Files are named system_<basename> (e.g., act.md -> system_act)
+ * Files are named _<basename> (e.g., think.md -> _think)
  *
  * @returns {Promise<number>} Number of abilities loaded
  */
@@ -43,8 +43,8 @@ export async function loadSystemAbilities() {
       let baseName = basename(entry, '.md');
 
       // For _onstart_* files, keep the name as-is for proper startup sorting
-      // For other files, prefix with system_
-      let name = baseName.startsWith('_onstart_') ? baseName : 'system_' + baseName;
+      // For other files, prefix with _
+      let name = baseName.startsWith('_onstart_') ? baseName : '_' + baseName;
       let raw  = await readFile(join(PROCESSES_DIR, entry), 'utf8');
       let { content, metadata } = parseProcessContent(raw);
 

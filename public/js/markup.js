@@ -18,10 +18,48 @@ const ALLOWED_ELEMENTS = [
   'websearch', 'bash', 'ask', 'thinking'
 ];
 
-// Dangerous attributes to strip
+// Dangerous tags to completely remove (content and all)
+// Note: SVG is allowed but sanitized for dangerous attributes
+const DANGEROUS_TAGS = [
+  'script',       // JavaScript execution
+  'iframe',       // Embed external content
+  'embed',        // Plugin execution
+  'object',       // Plugin execution
+  'style',        // CSS injection attacks
+  'base',         // Hijacks all relative URLs
+  'meta',         // Can redirect page
+  'form',         // Phishing attacks
+  'input',        // Form elements (phishing)
+  'button',       // Form submission
+  'textarea',     // Form elements
+  'select',       // Form elements
+  'math',         // XSS vectors in some browsers
+  'noscript',     // Can leak info
+  'template',     // Can hide malicious content
+  'slot',         // Shadow DOM manipulation
+  'interaction',  // Our protocol tag - should be processed server-side, strip from display
+];
+
+// Dangerous attributes to strip from ALL elements
 const DANGEROUS_ATTRS = [
-  'onclick', 'onerror', 'onload', 'onmouseover', 'onfocus', 'onblur',
-  'onsubmit', 'onreset', 'onselect', 'onchange', 'onkeydown', 'onkeyup'
+  // Event handlers
+  'onclick', 'ondblclick', 'onmousedown', 'onmouseup', 'onmouseover',
+  'onmousemove', 'onmouseout', 'onmouseenter', 'onmouseleave',
+  'onkeydown', 'onkeyup', 'onkeypress',
+  'onfocus', 'onblur', 'onchange', 'oninput', 'onsubmit', 'onreset',
+  'onselect', 'onload', 'onerror', 'onabort', 'onunload', 'onresize',
+  'onscroll', 'oncontextmenu', 'ondrag', 'ondragend', 'ondragenter',
+  'ondragleave', 'ondragover', 'ondragstart', 'ondrop',
+  'oncopy', 'oncut', 'onpaste', 'onwheel', 'ontouchstart', 'ontouchend',
+  'ontouchmove', 'ontouchcancel', 'onanimationstart', 'onanimationend',
+  'onanimationiteration', 'ontransitionend', 'onpointerdown', 'onpointerup',
+  'onpointermove', 'onpointerenter', 'onpointerleave', 'onpointercancel',
+  // Other dangerous attributes
+  'formaction',   // Form hijacking
+  'xlink:href',   // SVG links (can be javascript:)
+  'data',         // Object tag data
+  'srcdoc',       // Iframe content
+  'sandbox',      // Can be used to weaken security
 ];
 
 // ============================================================================
@@ -60,8 +98,20 @@ function renderMarkup(content) {
  * Sanitize content by removing dangerous elements and attributes.
  */
 function sanitizeContent(container) {
-  // Remove script tags
-  container.querySelectorAll('script').forEach((el) => el.remove());
+  // Remove all dangerous tags completely
+  for (let tag of DANGEROUS_TAGS) {
+    container.querySelectorAll(tag).forEach((el) => el.remove());
+  }
+
+  // Add target="_blank" to all links for security and UX
+  container.querySelectorAll('a[href]').forEach((el) => {
+    let href = el.getAttribute('href');
+    // Only add target="_blank" for external links (not anchors)
+    if (href && !href.startsWith('#')) {
+      el.setAttribute('target', '_blank');
+      el.setAttribute('rel', 'noopener noreferrer');
+    }
+  });
 
   // Remove dangerous attributes from all elements
   container.querySelectorAll('*').forEach((el) => {
@@ -69,11 +119,38 @@ function sanitizeContent(container) {
       el.removeAttribute(attr);
     }
 
-    // Also remove javascript: URLs
-    if (el.hasAttribute('href')) {
-      let href = el.getAttribute('href');
-      if (href && href.toLowerCase().startsWith('javascript:'))
-        el.setAttribute('href', '#');
+    // Remove javascript: and data: URLs from href/src attributes
+    for (let urlAttr of ['href', 'src', 'action', 'poster', 'background']) {
+      if (el.hasAttribute(urlAttr)) {
+        let value = el.getAttribute(urlAttr);
+        if (value) {
+          let lower = value.toLowerCase().trim();
+          if (lower.startsWith('javascript:') || lower.startsWith('data:text/html')) {
+            el.setAttribute(urlAttr, '#');
+          }
+        }
+      }
+    }
+
+    // Remove SVG-specific dangerous attributes
+    if (el.tagName && el.tagName.toLowerCase() === 'svg') {
+      el.removeAttribute('onload');
+      el.removeAttribute('onerror');
+    }
+
+    // Check for SVG children with dangerous attributes
+    if (el.closest && el.closest('svg')) {
+      el.removeAttribute('onload');
+      el.removeAttribute('onerror');
+      el.removeAttribute('onbegin');
+      el.removeAttribute('onend');
+      el.removeAttribute('onrepeat');
+
+      // Remove xlink:href with javascript:
+      let xlinkHref = el.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+      if (xlinkHref && xlinkHref.toLowerCase().trim().startsWith('javascript:')) {
+        el.removeAttributeNS('http://www.w3.org/1999/xlink', 'href');
+      }
     }
   });
 }
@@ -376,6 +453,115 @@ function copyToClipboard(text, button) {
 
 // Make copyToClipboard available globally
 window.copyToClipboard = copyToClipboard;
+
+// ============================================================================
+// Hero Interaction WebComponent
+// ============================================================================
+
+/**
+ * <hero-interaction> WebComponent
+ * Displays a jiggling brain emoji while processing interactions.
+ */
+class HeroInteraction extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: 'open' });
+  }
+
+  connectedCallback() {
+    this.render();
+  }
+
+  static get observedAttributes() {
+    return ['status', 'message'];
+  }
+
+  attributeChangedCallback() {
+    this.render();
+  }
+
+  render() {
+    let status  = this.getAttribute('status') || 'processing';
+    let message = this.getAttribute('message') || '';
+
+    // Default messages based on status
+    if (!message) {
+      switch (status) {
+        case 'processing':
+          message = 'Thinking...';
+          break;
+        case 'searching':
+          message = 'Searching...';
+          break;
+        case 'waiting':
+          message = 'Waiting...';
+          break;
+        case 'complete':
+          message = 'Done';
+          break;
+        default:
+          message = 'Processing...';
+      }
+    }
+
+    let isActive = (status !== 'complete' && status !== 'error');
+
+    this.shadowRoot.innerHTML = `
+      <style>
+        :host {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .brain {
+          font-size: 1.2em;
+          display: inline-block;
+        }
+
+        .brain.active {
+          animation: jiggle 0.4s ease-in-out infinite;
+        }
+
+        @keyframes jiggle {
+          0%, 100% {
+            transform: rotate(0deg) scale(1);
+          }
+          25% {
+            transform: rotate(-8deg) scale(1.05);
+          }
+          50% {
+            transform: rotate(0deg) scale(1);
+          }
+          75% {
+            transform: rotate(8deg) scale(1.05);
+          }
+        }
+
+        .message {
+          color: inherit;
+          opacity: 0.8;
+        }
+
+        :host([status="complete"]) .brain {
+          animation: none;
+        }
+
+        :host([status="error"]) .brain::after {
+          content: "❌";
+          font-size: 0.6em;
+          position: relative;
+          top: -0.3em;
+        }
+      </style>
+      <span class="brain ${(isActive) ? 'active' : ''}" role="img" aria-label="thinking">🧠</span>
+      <span class="message">${message}</span>
+    `;
+  }
+}
+
+// Register the WebComponent
+customElements.define('hero-interaction', HeroInteraction);
 
 // Export for use in app.js
 window.renderMarkup = renderMarkup;

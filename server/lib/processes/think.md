@@ -47,7 +47,7 @@ Assertions in an array execute one after another:
 ```json
 [
   { "id": "1", "assertion": "thinking", "name": "status", "message": "Searching..." },
-  { "id": "2", "assertion": "command", "name": "system_web_search", "message": "best hiking boots" },
+  { "id": "2", "assertion": "command", "name": "_web_search", "message": "best hiking boots" },
   { "id": "3", "assertion": "response", "name": "notify", "message": "Found results!" }
 ]
 ```
@@ -59,7 +59,7 @@ Assertions grouped by key execute in parallel:
 ```json
 {
   "search_task": [
-    { "id": "s1", "assertion": "command", "name": "system_web_search", "message": "weather NYC" }
+    { "id": "s1", "assertion": "command", "name": "_web_search", "message": "weather NYC" }
   ],
   "notify_task": [
     { "id": "n1", "assertion": "response", "name": "notify", "message": "Searching..." }
@@ -206,7 +206,7 @@ Display a progress bar with percentage and status text.
 
 ## Available Commands
 
-- `system_web_search`: Search the web for information
+- `_web_search`: Search the web for information
 
 ## Response Format
 
@@ -214,7 +214,7 @@ When taking action, respond ONLY with the JSON block - no other text:
 
 ```json
 [
-  { "id": "unique-uuid-here", "assertion": "command", "name": "system_web_search", "message": "search query" }
+  { "id": "unique-uuid-here", "assertion": "command", "name": "_web_search", "message": "search query" }
 ]
 ```
 
@@ -224,7 +224,7 @@ When taking action, respond ONLY with the JSON block - no other text:
 
 ```json
 [
-  { "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890", "assertion": "command", "name": "system_web_search", "message": "best running shoes 2024" }
+  { "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890", "assertion": "command", "name": "_web_search", "message": "best running shoes 2024" }
 ]
 ```
 
@@ -233,7 +233,7 @@ When taking action, respond ONLY with the JSON block - no other text:
 ```json
 [
   { "id": "uuid-1", "assertion": "thinking", "name": "status", "message": "Searching for running shoes..." },
-  { "id": "uuid-2", "assertion": "command", "name": "system_web_search", "message": "best running shoes 2024" },
+  { "id": "uuid-2", "assertion": "command", "name": "_web_search", "message": "best running shoes 2024" },
   { "id": "uuid-3", "assertion": "response", "name": "notify", "message": "Here's what I found:" }
 ]
 ```
@@ -243,10 +243,10 @@ When taking action, respond ONLY with the JSON block - no other text:
 ```json
 {
   "weather_search": [
-    { "id": "w1", "assertion": "command", "name": "system_web_search", "message": "weather in New York" }
+    { "id": "w1", "assertion": "command", "name": "_web_search", "message": "weather in New York" }
   ],
   "news_search": [
-    { "id": "n1", "assertion": "command", "name": "system_web_search", "message": "weather in Los Angeles" }
+    { "id": "n1", "assertion": "command", "name": "_web_search", "message": "weather in Los Angeles" }
   ]
 }
 ```

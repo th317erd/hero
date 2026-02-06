@@ -6,7 +6,7 @@
 // Loads user-defined abilities from the database.
 
 import { getDatabase } from '../../../database.mjs';
-import { decryptWithKey } from '../../../encryption.mjs';
+import { decryptWithKey, encryptWithKey } from '../../../encryption.mjs';
 import { registerAbility, clearAbilitiesBySource, unregisterAbility } from '../registry.mjs';
 import { parseProcessContent } from '../../processes/index.mjs';
 
@@ -126,7 +126,6 @@ export function loadUserAbilities(userId, dataKey) {
  */
 export function saveUserAbility(userId, dataKey, ability) {
   let db = getDatabase();
-  let { encryptWithKey } = require('../../../encryption.mjs');
 
   let encryptedContent = ability.content
     ? encryptWithKey(ability.content, dataKey)
@@ -167,7 +166,6 @@ export function saveUserAbility(userId, dataKey, ability) {
  */
 export function updateUserAbility(userId, abilityId, dataKey, updates) {
   let db = getDatabase();
-  let { encryptWithKey } = require('../../../encryption.mjs');
 
   let fields = [];
   let values = [];

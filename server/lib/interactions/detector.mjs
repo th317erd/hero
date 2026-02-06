@@ -4,11 +4,11 @@
 // Interaction Detector
 // ============================================================================
 // Detects and executes interaction requests from AI agent responses.
-// The AI can request interactions by outputting a JSON code block.
+// The AI requests interactions by outputting <interaction> tags containing JSON.
 //
 // Flow:
-// 1. Agent outputs JSON block with interactions
-// 2. System detects and parses interactions
+// 1. Agent outputs <interaction>JSON</interaction> tag(s) anywhere in response
+// 2. System detects and parses all interaction tags
 // 3. For each interaction:
 //    a. Check permissions via allowed()
 //    b. Send 'pending' status to agent
@@ -18,6 +18,53 @@
 
 import { getInteractionBus, queueAgentMessage, TARGETS } from './bus.mjs';
 import { checkSystemMethodAllowed } from './functions/system.mjs';
+
+// Regex to find <interaction> tag starts
+const INTERACTION_START_REGEX = /<interaction>\s*/g;
+
+// Maximum parse attempts per tag to prevent infinite loops
+const MAX_PARSE_ATTEMPTS = 5;
+
+/**
+ * Find the closing </interaction> for a tag that produces valid JSON.
+ * Handles cases where the JSON payload itself contains </interaction> sequences.
+ *
+ * Strategy: Try parsing at each </interaction> we find. If JSON.parse throws,
+ * move cursor forward and keep looking until we find valid JSON,
+ * hit EOF, or exceed max attempts.
+ *
+ * @param {string} text - Full text
+ * @param {number} startIndex - Index after the opening <interaction>
+ * @returns {Object|null} { endIndex, json } or null if no valid close found
+ */
+function findValidClosing(text, startIndex) {
+  let searchFrom = startIndex;
+  let attempts = 0;
+  const CLOSE_TAG = '</interaction>';
+
+  while (attempts < MAX_PARSE_ATTEMPTS) {
+    let closeIndex = text.indexOf(CLOSE_TAG, searchFrom);
+
+    if (closeIndex === -1) {
+      return null; // No more closing tags - EOF
+    }
+
+    // Try to parse the content up to this </interaction>
+    let jsonStr = text.slice(startIndex, closeIndex).trim();
+
+    try {
+      let parsed = JSON.parse(jsonStr);
+      return { endIndex: closeIndex + CLOSE_TAG.length, json: parsed };
+    } catch (e) {
+      // Invalid JSON - this </interaction> might be inside a string, keep looking
+      searchFrom = closeIndex + CLOSE_TAG.length;
+      attempts++;
+    }
+  }
+
+  // Exceeded max attempts - give up on this tag
+  return null;
+}
 
 /**
  * Extract text content from response content (handles both string and array formats).
@@ -64,55 +111,67 @@ function validateInteraction(interaction) {
 }
 
 /**
- * Detect if response contains an interaction block.
- * Pattern: trimmed content starts with ```json and ends with ```
+ * Detect interaction tags anywhere in the response.
+ * Pattern: <interaction>JSON</interaction> (can appear multiple times, interlaced with text)
+ *
+ * Handles edge cases where JSON payload contains </interaction> sequences by finding
+ * the closing tag that produces valid JSON.
  *
  * Interaction format:
  *   Single: { interaction_id, target_id, target_property, payload }
  *   Array:  [{ interaction_id, target_id, target_property, payload }, ...]
  *
  * @param {string|Array} content - Response content
- * @returns {Object|null} Parsed interactions, or null if not an interaction block
+ * @returns {Object|null} Parsed interactions, or null if no valid interaction tags found
  */
 export function detectInteractions(content) {
-  let text    = extractTextContent(content);
-  let trimmed = text.trim();
+  let text = extractTextContent(content);
 
-  // Must start with ```json and end with ```
-  if (!trimmed.startsWith('```json') || !trimmed.endsWith('```'))
-    return null;
+  // Find all <interaction> tags
+  let allInteractions = [];
+  let match;
 
-  // Extract JSON content
-  let jsonStr = trimmed.slice(7, -3).trim();
+  // Reset regex state
+  INTERACTION_START_REGEX.lastIndex = 0;
 
-  try {
-    let parsed = JSON.parse(jsonStr);
+  while ((match = INTERACTION_START_REGEX.exec(text)) !== null) {
+    let startIndex = match.index + match[0].length;
+
+    // Find valid closing that produces valid JSON
+    let result = findValidClosing(text, startIndex);
+
+    if (!result) {
+      continue; // No valid closing found for this tag
+    }
+
+    let parsed = result.json;
 
     // Single interaction object
     if (!Array.isArray(parsed)) {
-      if (!validateInteraction(parsed))
-        return null;
-
-      return {
-        mode:         'single',
-        interactions: [parsed],
-      };
+      if (validateInteraction(parsed)) {
+        allInteractions.push(parsed);
+      }
+    } else {
+      // Array of interactions
+      for (let interaction of parsed) {
+        if (validateInteraction(interaction)) {
+          allInteractions.push(interaction);
+        }
+      }
     }
 
-    // Array of interactions
-    for (let interaction of parsed) {
-      if (!validateInteraction(interaction))
-        return null;
-    }
+    // Move past this tag to avoid re-matching
+    INTERACTION_START_REGEX.lastIndex = result.endIndex;
+  }
 
-    return {
-      mode:         'sequential',
-      interactions: parsed,
-    };
-
-  } catch (e) {
+  if (allInteractions.length === 0) {
     return null;
   }
+
+  return {
+    mode:         (allInteractions.length === 1) ? 'single' : 'sequential',
+    interactions: allInteractions,
+  };
 }
 
 /**

@@ -83,7 +83,7 @@ export function parseProcessContent(raw) {
 
 /**
  * Load all system processes from the processes directory.
- * Markdown files are loaded as system_<basename> (e.g., act.md -> system_act)
+ * Markdown files are loaded as _<basename> (e.g., think.md -> _think)
  */
 export async function loadSystemProcesses() {
   let entries = await readdir(__dirname);
@@ -96,7 +96,7 @@ export async function loadSystemProcesses() {
     if (entry.startsWith('__'))
       continue;
 
-    let name = 'system_' + basename(entry, '.md');
+    let name = '_' + basename(entry, '.md');
     let raw  = await readFile(join(__dirname, entry), 'utf8');
     let { content, metadata } = parseProcessContent(raw);
 
@@ -110,7 +110,7 @@ export async function loadSystemProcesses() {
 /**
  * Get a system process by name.
  *
- * @param {string} name - Process name (e.g., 'system_act')
+ * @param {string} name - Process name (e.g., '_think')
  * @returns {string | undefined} Process content or undefined
  */
 export function getSystemProcess(name) {
@@ -121,7 +121,7 @@ export function getSystemProcess(name) {
 /**
  * Get a system process with metadata.
  *
- * @param {string} name - Process name (e.g., 'system_act')
+ * @param {string} name - Process name (e.g., '_think')
  * @returns {{ content: string, metadata: object } | undefined}
  */
 export function getSystemProcessWithMetadata(name) {
@@ -158,12 +158,13 @@ export function getAllSystemProcesses() {
 
 /**
  * Check if a process name is a system process.
+ * System processes start with a single underscore (e.g., '_think')
  *
  * @param {string} name - Process name
  * @returns {boolean}
  */
 export function isSystemProcess(name) {
-  return name.startsWith('system_');
+  return name.startsWith('_') && !name.startsWith('__');
 }
 
 /**

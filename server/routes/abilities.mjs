@@ -28,6 +28,10 @@ router.get('/', (req, res) => {
   let { type, source, category } = req.query;
 
   try {
+    // Ensure user abilities are loaded into registry
+    let dataKey = getDataKey(req);
+    loadUserAbilities(req.user.id, dataKey);
+
     let abilities = getAbilitiesForApi({ type, source, category });
 
     return res.json({
@@ -57,9 +61,9 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: 'Name must start with a letter and contain only lowercase letters, numbers, and underscores' });
   }
 
-  // Prevent system_ prefix
-  if (name.startsWith('system_')) {
-    return res.status(400).json({ error: 'Cannot create abilities with "system_" prefix' });
+  // Prevent _ prefix (reserved for system abilities)
+  if (name.startsWith('_')) {
+    return res.status(400).json({ error: 'Cannot create abilities with "_" prefix (reserved for system)' });
   }
 
   // Validate type
@@ -195,8 +199,8 @@ router.put('/:id', (req, res) => {
     if (!/^[a-z][a-z0-9_]*$/.test(name)) {
       return res.status(400).json({ error: 'Invalid name format' });
     }
-    if (name.startsWith('system_')) {
-      return res.status(400).json({ error: 'Cannot use "system_" prefix' });
+    if (name.startsWith('_')) {
+      return res.status(400).json({ error: 'Cannot use "_" prefix (reserved for system)' });
     }
 
     let duplicate = db.prepare(`

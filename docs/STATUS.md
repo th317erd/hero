@@ -4,6 +4,51 @@ Last updated: 2026-02-05
 
 ## Recent Changes
 
+### UI/UX Improvements (Complete)
+Various improvements to the chat interface and styling.
+
+**CSS changes:**
+- Tightened line spacing in chat messages (line-height: 1.15)
+- Added dedicated link color variables (`--link`, `--link-hover`, `--info`)
+- Fixed bullet point overflow with `list-style-position: inside`
+- Reduced margins on paragraphs, lists, and headings for compact display
+
+**Link handling:**
+- All markdown links now open in new tabs (`target="_blank"`)
+- Added `rel="noopener noreferrer"` for security
+- Links use new light blue color (`#64b5f6`) that fits the dark theme
+
+**Message timestamps:**
+- "Just now" only shows for first 5 minutes
+- After 5 minutes, shows human-readable time (e.g., "2:30 PM", "yesterday 4:15 PM")
+
+### Content Accumulation Fix (Complete)
+Fixed issue where interaction responses would replace original message content.
+
+**Problem:** When an agent sent a message with an `<interaction>` tag, the follow-up response would completely replace the original text.
+
+**Solution:** Server now accumulates all content segments (initial message + follow-up responses) and combines them in the final output.
+
+**Changes:**
+- `server/routes/messages-stream.mjs` - Track `contentSegments` array instead of replacing `currentContent`
+- Added regex to strip leaked feedback format (`[@system:...]`) from final output
+- Clean up extra whitespace in combined content
+
+### System Prefix Rename (Complete)
+Changed system ability prefix from `system_` to `_` for cleaner naming.
+
+**Changes:**
+- Renamed `act.md` → `think.md`
+- Updated `isSystemProcess()` to check for `_` prefix
+- Changed `system_web_search` → `_web_search`
+- Updated validation to prevent user abilities starting with `_`
+
+### Abilities UI Enhancements (Complete)
+- Added "applies" field to ability edit modal (describes when to use the ability)
+- Added type badges: green "function", purple "command", blue "ability"
+- Fixed user abilities not showing in list (added `loadUserAbilities()` call)
+- Added sessionStorage persistence for modal draft fields
+
 ### Interactions System (Complete)
 Implemented a unified InteractionBus system for agent↔system↔user communication with function registration pattern.
 

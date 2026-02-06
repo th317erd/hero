@@ -74,15 +74,29 @@ async function sendMessage(sessionId, content) {
  * @returns {Promise<object>} Final response
  */
 async function sendMessageStream(sessionId, content, callbacks = {}) {
+  debug('API', 'sendMessageStream called', { sessionId, contentLength: content.length });
+
   return new Promise((resolve, reject) => {
-    fetch(`${BASE_PATH}/api/sessions/${sessionId}/messages/stream`, {
+    let url = `${BASE_PATH}/api/sessions/${sessionId}/messages/stream`;
+    debug('API', 'Fetching stream URL:', url);
+
+    fetch(url, {
       method:      'POST',
       headers:     { 'Content-Type': 'application/json' },
       body:        JSON.stringify({ content }),
       credentials: 'same-origin',
     }).then(async (response) => {
+      debug('API', 'Stream response received', {
+        status:      response.status,
+        ok:          response.ok,
+        headers:     Object.fromEntries(response.headers.entries()),
+        bodyUsed:    response.bodyUsed,
+        redirected:  response.redirected,
+      });
+
       if (!response.ok) {
         let error = await response.json().catch(() => ({ error: 'Stream failed' }));
+        debug('API', 'Stream error response:', error);
         reject(new Error(error.error || 'Stream failed'));
         return;
       }
@@ -92,100 +106,193 @@ async function sendMessageStream(sessionId, content, callbacks = {}) {
       let buffer      = '';
       let fullContent = '';
       let messageId   = null;
+      let chunkCount  = 0;
+      let eventCount  = 0;
 
-      while (true) {
-        let { done, value } = await reader.read();
+      debug('API', 'Starting to read stream...');
 
-        if (done)
-          break;
+      try {
+        while (true) {
+          let readResult;
+          try {
+            readResult = await reader.read();
+          } catch (readError) {
+            debug('API', 'reader.read() threw error:', readError.message);
+            throw readError;
+          }
 
-        buffer += decoder.decode(value, { stream: true });
+          let { done, value } = readResult;
 
-        // Parse SSE events from buffer
-        let lines = buffer.split('\n');
-        buffer    = lines.pop(); // Keep incomplete line in buffer
+          if (done) {
+            debug('API', 'Stream done', { chunkCount, eventCount, fullContentLength: fullContent.length });
+            break;
+          }
 
-        let eventType = null;
-        let eventData = null;
+          chunkCount++;
+          let chunk = decoder.decode(value, { stream: true });
+          debug('API', `Chunk #${chunkCount} received`, { length: chunk.length, preview: chunk.slice(0, 100) });
 
-        for (let line of lines) {
-          if (line.startsWith('event: ')) {
-            eventType = line.slice(7).trim();
-          } else if (line.startsWith('data: ')) {
-            eventData = line.slice(6);
-          } else if (line === '' && eventType && eventData) {
-            // End of event
-            try {
-              let data = JSON.parse(eventData);
+          buffer += chunk;
 
-              // Track message ID
-              if (data.messageId)
-                messageId = data.messageId;
+          // Parse SSE events from buffer
+          let lines = buffer.split('\n');
+          buffer    = lines.pop(); // Keep incomplete line in buffer
 
-              // Call appropriate callback
-              switch (eventType) {
-                case 'message_start':
-                  callbacks.onStart?.(data);
-                  break;
+          let eventType = null;
+          let eventData = null;
 
-                case 'text':
-                  fullContent += data.text;
-                  callbacks.onText?.(data);
-                  break;
+          for (let line of lines) {
+            if (line.startsWith('event: ')) {
+              eventType = line.slice(7).trim();
+            } else if (line.startsWith('data: ')) {
+              eventData = line.slice(6);
+            } else if (line === '' && eventType && eventData) {
+              // End of event
+              eventCount++;
+              debug('API', `Event #${eventCount}:`, eventType);
 
-                case 'element_start':
-                  callbacks.onElementStart?.(data);
-                  break;
+              try {
+                let data = JSON.parse(eventData);
+                debug('API', `Event data:`, data);
 
-                case 'element_update':
-                  callbacks.onElementUpdate?.(data);
-                  break;
+                // Track message ID
+                if (data.messageId)
+                  messageId = data.messageId;
 
-                case 'element_complete':
-                  callbacks.onElementComplete?.(data);
-                  break;
+                // Call appropriate callback
+                switch (eventType) {
+                  case 'message_start':
+                    debug('API', 'Calling onStart callback');
+                    callbacks.onStart?.(data);
+                    break;
 
-                case 'element_executing':
-                  callbacks.onElementExecuting?.(data);
-                  break;
+                  case 'text':
+                    fullContent += data.text;
+                    debug('API', 'Calling onText callback', { textLength: data.text.length, totalLength: fullContent.length });
+                    callbacks.onText?.(data);
+                    break;
 
-                case 'element_result':
-                  callbacks.onElementResult?.(data);
-                  break;
+                  case 'element_start':
+                    debug('API', 'Calling onElementStart callback');
+                    callbacks.onElementStart?.(data);
+                    break;
 
-                case 'element_error':
-                  callbacks.onElementError?.(data);
-                  break;
+                  case 'element_update':
+                    debug('API', 'Calling onElementUpdate callback');
+                    callbacks.onElementUpdate?.(data);
+                    break;
 
-                case 'tool_use_start':
-                  callbacks.onToolUseStart?.(data);
-                  break;
+                  case 'element_complete':
+                    debug('API', 'Calling onElementComplete callback');
+                    callbacks.onElementComplete?.(data);
+                    break;
 
-                case 'tool_result':
-                  callbacks.onToolResult?.(data);
-                  break;
+                  case 'element_executing':
+                    debug('API', 'Calling onElementExecuting callback');
+                    callbacks.onElementExecuting?.(data);
+                    break;
 
-                case 'message_complete':
-                  callbacks.onComplete?.(data);
-                  break;
+                  case 'element_result':
+                    debug('API', 'Calling onElementResult callback');
+                    callbacks.onElementResult?.(data);
+                    break;
 
-                case 'error':
-                  callbacks.onError?.(data);
-                  reject(new Error(data.error));
-                  return;
+                  case 'element_error':
+                    debug('API', 'Calling onElementError callback');
+                    callbacks.onElementError?.(data);
+                    break;
+
+                  case 'tool_use_start':
+                    debug('API', 'Calling onToolUseStart callback');
+                    callbacks.onToolUseStart?.(data);
+                    break;
+
+                  case 'tool_result':
+                    debug('API', 'Calling onToolResult callback');
+                    callbacks.onToolResult?.(data);
+                    break;
+
+                  // Interaction events (for <interaction> tag handling)
+                  case 'interaction_detected':
+                    debug('API', 'Calling onInteractionDetected callback');
+                    callbacks.onInteractionDetected?.(data);
+                    break;
+
+                  case 'interaction_result':
+                    debug('API', 'Calling onInteractionResult callback');
+                    callbacks.onInteractionResult?.(data);
+                    break;
+
+                  case 'interaction_continuing':
+                    debug('API', 'Calling onInteractionContinuing callback');
+                    callbacks.onInteractionContinuing?.(data);
+                    break;
+
+                  case 'interaction_complete':
+                    console.log('[TRACE-API] interaction_complete event received:', {
+                      hasContent:      !!data.content,
+                      contentLength:   data.content?.length,
+                      contentPreview:  data.content?.slice(0, 100),
+                    });
+                    debug('API', 'Interaction complete, updating fullContent');
+                    // Update the accumulated content with the final clean content
+                    if (data.content) {
+                      fullContent = data.content;
+                    }
+                    callbacks.onInteractionComplete?.(data);
+                    break;
+
+                  case 'interaction_error':
+                    debug('API', 'Calling onInteractionError callback');
+                    callbacks.onInteractionError?.(data);
+                    break;
+
+                  case 'rate_limit_wait':
+                    debug('API', 'Rate limit wait:', data);
+                    callbacks.onRateLimitWait?.(data);
+                    break;
+
+                  case 'message_complete':
+                    console.log('[TRACE-API] message_complete event received:', {
+                      hasContent:      !!data.content,
+                      contentLength:   data.content?.length,
+                      contentPreview:  data.content?.slice(0, 100),
+                    });
+                    debug('API', 'Calling onComplete callback');
+                    callbacks.onComplete?.(data);
+                    break;
+
+                  case 'error':
+                    debug('API', 'Stream error event:', data);
+                    callbacks.onError?.(data);
+                    reject(new Error(data.error));
+                    return;
+
+                  default:
+                    debug('API', 'Unknown event type:', eventType);
+                }
+              } catch (e) {
+                console.error('Failed to parse SSE event:', e);
+                debug('API', 'Parse error:', e.message, 'Raw data:', eventData);
               }
-            } catch (e) {
-              console.error('Failed to parse SSE event:', e);
-            }
 
-            eventType = null;
-            eventData = null;
+              eventType = null;
+              eventData = null;
+            }
           }
         }
+      } catch (streamError) {
+        debug('API', 'Stream processing error:', streamError.message);
+        reject(streamError);
+        return;
       }
 
+      debug('API', 'Stream complete, resolving', { fullContentLength: fullContent.length, messageId });
       resolve({ content: fullContent, messageId });
-    }).catch(reject);
+    }).catch((error) => {
+      debug('API', 'Fetch error:', error.message);
+      reject(error);
+    });
   });
 }
 
@@ -213,12 +320,12 @@ async function fetchAbility(id) {
   return await api('GET', `/abilities/${id}`);
 }
 
-async function createAbility(name, description, content) {
-  return await api('POST', '/abilities', { name, description, content, type: 'process' });
+async function createAbility(name, description, applies, content) {
+  return await api('POST', '/abilities', { name, description, applies, content, type: 'process' });
 }
 
-async function updateAbility(id, name, description, content) {
-  return await api('PUT', `/abilities/${id}`, { name, description, content });
+async function updateAbility(id, name, description, applies, content) {
+  return await api('PUT', `/abilities/${id}`, { name, description, applies, content });
 }
 
 async function deleteAbility(id) {

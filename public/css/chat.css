@@ -44,6 +44,18 @@
   text-align: right;
 }
 
+.message-timestamp {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  padding: 0 12px;
+  opacity: 0.7;
+}
+
+.message-user .message-timestamp {
+  text-align: right;
+}
+
 .message-bubble {
   padding: 12px 16px;
   border-radius: var(--radius-lg);
@@ -65,7 +77,7 @@
 .message-content {
   font-family: var(--font-mono);
   font-size: 14px;
-  line-height: 1.6;
+  line-height: 1.15;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -264,37 +276,25 @@
 
 .streaming-indicator {
   display: flex;
-  gap: 4px;
+  align-items: center;
   padding: 8px 0;
   margin-top: 8px;
   border-top: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 0.9em;
 }
 
-.streaming-indicator span {
-  width: 6px;
-  height: 6px;
-  background: var(--accent);
-  border-radius: 50%;
-  animation: streaming-pulse 1s infinite ease-in-out;
-}
-
-.streaming-indicator span:nth-child(2) {
-  animation-delay: 0.15s;
-}
-
-.streaming-indicator span:nth-child(3) {
-  animation-delay: 0.3s;
-}
-
-@keyframes streaming-pulse {
-  0%, 100% {
-    opacity: 0.3;
-    transform: scale(0.8);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1);
-  }
+/* Streaming Status (for interaction processing) */
+.streaming-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-top: 8px;
+  background: var(--surface-light);
+  border-radius: 6px;
+  font-size: 0.9em;
+  color: var(--text-secondary);
 }
 
 /* Streaming Elements */
@@ -487,22 +487,8 @@
 }
 
 /* ============================================================================
-   Chat Toolbar
+   Checkbox Label
    ============================================================================ */
-
-.chat-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 8px 16px;
-  margin-bottom: 8px;
-  background: var(--bg-tertiary);
-  border-radius: var(--radius-sm);
-  max-width: 900px;
-  width: 100%;
-  margin-left: auto;
-  margin-right: auto;
-}
 
 .checkbox-label {
   display: flex;
@@ -596,9 +582,5 @@
 
   .input-container {
     gap: 8px;
-  }
-
-  .chat-toolbar {
-    padding: 8px 12px;
   }
 }

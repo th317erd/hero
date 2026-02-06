@@ -308,3 +308,34 @@
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* ============================================================================
+   Ability Type Badges
+   ============================================================================ */
+
+.ability-type-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.ability-type-badge.function {
+  background: color-mix(in srgb, var(--success) 20%, transparent);
+  color: var(--success);
+}
+
+.ability-type-badge.command {
+  background: color-mix(in srgb, #a855f7 20%, transparent);
+  color: #a855f7;
+}
+
+.ability-type-badge.ability {
+  background: color-mix(in srgb, var(--info, #3b82f6) 20%, transparent);
+  color: var(--info, #3b82f6);
+}

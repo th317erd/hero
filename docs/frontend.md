@@ -406,6 +406,7 @@ messageInput.addEventListener('keydown', (e) => {
   --bg-tertiary:   #0f3460;
   --accent:        #e94560;
   --accent-hover:  #ff6b6b;
+  --accent-muted:  rgba(233, 69, 96, 0.3);
   --text-primary:  #eaeaea;
   --text-secondary: #a0a0a0;
   --text-muted:    #666;
@@ -413,11 +414,16 @@ messageInput.addEventListener('keydown', (e) => {
   --success:       #4ecdc4;
   --error:         #ff6b6b;
   --warning:       #ffd93d;
+  --info:          #64b5f6;
+  --link:          #64b5f6;
+  --link-hover:    #90caf9;
 
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'Roboto Mono', 'Ubuntu Mono', 'Fira Code', Consolas, monospace;
 }
 ```
+
+All `<a>` tags use the link color by default and open in new tabs.
 
 ### Session Row Styling
 

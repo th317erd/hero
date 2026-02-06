@@ -59,6 +59,7 @@ function renderMessage(message) {
   let queuedClass = (message.queued) ? ' message-queued' : '';
   let queuedBadge = (message.queued) ? '<span class="queued-badge">Queued</span>' : '';
   let hiddenClass = (message.hidden) ? ' message-hidden' : '';
+  let errorClass  = (message.type === 'error') ? ' message-error' : '';
   let typeBadge   = '';
 
   // Add type badge for hidden messages
@@ -74,7 +75,16 @@ function renderMessage(message) {
 
   let contentHtml = '';
 
-  if (typeof message.content === 'string') {
+  // Handle error messages specially
+  if (message.type === 'error') {
+    let errorText = (typeof message.content === 'string') ? message.content : 'An error occurred';
+    contentHtml = `
+      <div class="streaming-error">
+        <span class="error-icon">⚠</span>
+        <span class="error-text">${escapeHtml(errorText)}</span>
+      </div>
+    `;
+  } else if (typeof message.content === 'string') {
     contentHtml = `<div class="message-content">${renderMarkup(message.content)}</div>`;
   } else if (Array.isArray(message.content)) {
     for (let block of message.content) {
@@ -91,13 +101,21 @@ function renderMessage(message) {
   // Add assertion blocks for this message
   let assertionsHtml = (messageId) ? renderAssertionsForMessage(messageId) : '';
 
+  // Format timestamp
+  let timestampHtml = '';
+  if (message.createdAt) {
+    let timeStr = formatRelativeDate(message.createdAt);
+    timestampHtml = `<div class="message-timestamp">${timeStr}</div>`;
+  }
+
   return `
-    <div class="message ${roleClass}${queuedClass}${hiddenClass}" data-message-id="${messageId}">
+    <div class="message ${roleClass}${queuedClass}${hiddenClass}${errorClass}" data-message-id="${messageId}">
       <div class="message-header">${roleLabel} ${queuedBadge}${typeBadge}</div>
       <div class="message-bubble">
         ${contentHtml}
         ${assertionsHtml}
       </div>
+      ${timestampHtml}
     </div>
   `;
 }
@@ -724,6 +742,8 @@ async function processMessageQueue() {
  * Shows progressive text and HML element updates in real-time.
  */
 async function processMessageStream(content) {
+  debug('App', 'processMessageStream called', { contentLength: content.length });
+
   state.isLoading           = true;
   elements.sendBtn.disabled = true;
 
@@ -732,11 +752,13 @@ async function processMessageStream(content) {
   // Add user message optimistically
   let existingQueued = state.messages.find((m) => m.queued && m.content === content);
   if (existingQueued) {
+    debug('App', 'Found existing queued message, updating');
     existingQueued.queued    = false;
     existingQueued.createdAt = now;
     delete existingQueued.queueId;
     renderMessages();
   } else {
+    debug('App', 'Adding new user message');
     state.messages.push({ role: 'user', content: content, createdAt: now });
     renderMessages();
   }
@@ -748,24 +770,30 @@ async function processMessageStream(content) {
     content:  '',
     elements: {},  // Map of elementId -> element state
   };
+  debug('App', 'Initialized streaming message state');
 
   // Create streaming message placeholder
   createStreamingMessagePlaceholder();
+  debug('App', 'Created streaming placeholder');
 
   try {
+    debug('App', 'Calling sendMessageStream', { sessionId: state.currentSession.id });
     await sendMessageStream(state.currentSession.id, content, {
       onStart: (data) => {
+        debug('App', 'onStart callback', data);
         state.streamingMessage.id = data.messageId;
         updateStreamingHeader(data.agentName || 'Assistant');
       },
 
       onText: (data) => {
+        debug('App', 'onText callback', { textLength: data.text.length, totalContent: state.streamingMessage.content.length });
         state.streamingMessage.content += data.text;
         updateStreamingContent(state.streamingMessage.content);
         scrollToBottom();
       },
 
       onElementStart: (data) => {
+        debug('App', 'onElementStart callback', data);
         state.streamingMessage.elements[data.id] = {
           id:         data.id,
           type:       data.type,
@@ -826,27 +854,103 @@ async function processMessageStream(content) {
         updateStreamingToolResult(data);
       },
 
+      // Interaction events (for <interaction> tag handling)
+      onInteractionDetected: (data) => {
+        debug('App', 'Interaction detected', { count: data.count, iteration: data.iteration });
+        // Strip interaction tags from displayed content
+        if (state.streamingMessage) {
+          let cleanContent = stripInteractionTags(state.streamingMessage.content);
+          state.streamingMessage.content = cleanContent;
+          updateStreamingContent(cleanContent);
+        }
+        // Show indicator that interaction is being processed
+        showStreamingStatus('Processing interaction...');
+      },
+
+      onInteractionResult: (data) => {
+        debug('App', 'Interaction result', data);
+        // Could show individual results if needed
+      },
+
+      onInteractionContinuing: (data) => {
+        debug('App', 'Interaction continuing, getting final response');
+        showStreamingStatus('Getting response...');
+      },
+
+      onInteractionComplete: (data) => {
+        console.log('[TRACE] onInteractionComplete called:', {
+          hasContent:            !!data.content,
+          contentLength:         data.content?.length,
+          hasStreamingMessage:   !!state.streamingMessage,
+          contentPreview:        data.content?.slice(0, 100),
+        });
+        debug('App', 'Interaction complete', { contentLength: data.content?.length });
+        // Update the streaming content with the final clean content
+        if (data.content && state.streamingMessage) {
+          state.streamingMessage.content = data.content;
+          updateStreamingContent(data.content);
+          console.log('[TRACE] Updated streaming content');
+        } else {
+          console.log('[TRACE] Did NOT update streaming content');
+        }
+        hideStreamingStatus();
+      },
+
+      onInteractionError: (data) => {
+        debug('App', 'Interaction error', data);
+        hideStreamingStatus();
+      },
+
+      onRateLimitWait: (data) => {
+        debug('App', 'Rate limit wait', data);
+        showStreamingStatus(`Rate limit reached. Waiting ${data.waitSeconds}s before retrying (attempt ${data.retryCount}/3)...`);
+      },
+
       onComplete: (data) => {
+        console.log('[TRACE] onComplete called:', {
+          hasContent:      !!data.content,
+          contentLength:   data.content?.length,
+          warning:         data.warning,
+          contentPreview:  data.content?.slice(0, 100),
+        });
+        debug('App', 'onComplete callback', data);
+        // Check for warning (empty response)
+        if (data.warning && !data.content) {
+          debug('App', 'Warning received:', data.warning);
+          showStreamingError('Agent returned no response. This may indicate an API issue.');
+          return;
+        }
         // Finalize the streaming message
         finalizeStreamingMessage(data);
+        console.log('[TRACE] Finalization complete');
       },
 
       onError: (data) => {
+        debug('App', 'onError callback', data);
         showStreamingError(data.error);
       },
     });
 
+    debug('App', 'sendMessageStream resolved, checking if finalization needed');
+
     // Ensure streaming message is finalized even if onComplete wasn't called
     if (state.streamingMessage) {
+      debug('App', 'Finalizing streaming message (fallback)', {
+        contentLength: state.streamingMessage.content.length,
+        messageId: state.streamingMessage.id,
+      });
       finalizeStreamingMessage({
         content: state.streamingMessage.content,
         messageId: state.streamingMessage.id,
       });
     }
   } catch (error) {
+    debug('App', 'processMessageStream caught error', error.message);
+    console.error('Stream error:', error);
     showStreamingError(error.message);
   }
 
+  debug('App', 'processMessageStream complete');
   state.isLoading           = false;
   elements.sendBtn.disabled = false;
   elements.messageInput.focus();
@@ -868,7 +972,7 @@ function createStreamingMessagePlaceholder() {
         <div class="streaming-content"></div>
         <div class="streaming-elements"></div>
         <div class="streaming-indicator">
-          <span></span><span></span><span></span>
+          <hero-interaction status="processing" message="Thinking..."></hero-interaction>
         </div>
       </div>
     </div>
@@ -891,6 +995,11 @@ function updateStreamingHeader(agentName) {
  */
 function updateStreamingContent(content) {
   let el = document.querySelector('#streaming-message .streaming-content');
+  console.log('[TRACE] updateStreamingContent:', {
+    elementFound:   !!el,
+    contentLength:  content?.length,
+    contentPreview: content?.slice(0, 100),
+  });
   if (el)
     el.innerHTML = renderMarkup(content);
 }
@@ -1024,32 +1133,78 @@ function updateStreamingToolResult(data) {
  * Idempotent - safe to call multiple times.
  */
 function finalizeStreamingMessage(data) {
+  console.log('[TRACE] finalizeStreamingMessage called:', {
+    hasData:               !!data,
+    hasDataContent:        !!data?.content,
+    dataContentLength:     data?.content?.length,
+    hasStreamingMessage:   !!state.streamingMessage,
+    streamingContentLen:   state.streamingMessage?.content?.length,
+  });
+  debug('App', 'finalizeStreamingMessage called', data);
+
   // Skip if already finalized
-  if (!state.streamingMessage) return;
+  if (!state.streamingMessage) {
+    console.log('[TRACE] Already finalized, skipping');
+    debug('App', 'Already finalized, skipping');
+    return;
+  }
 
   // Remove streaming indicator
   let indicator = document.querySelector('#streaming-message .streaming-indicator');
-  if (indicator)
+  if (indicator) {
+    debug('App', 'Removing streaming indicator');
     indicator.remove();
+  }
 
-  // Remove streaming class
+  // Remove any status messages
+  let statusEl = document.querySelector('#streaming-message .streaming-status');
+  if (statusEl)
+    statusEl.remove();
+
+  // Determine final content
+  let finalContent = data.content || state.streamingMessage.content;
+  debug('App', 'Final content', { length: finalContent.length, preview: finalContent.slice(0, 100) });
+
+  // Update the displayed content (may differ from streamed content due to interaction handling)
   let streamingEl = document.getElementById('streaming-message');
+  console.log('[TRACE] finalizeStreamingMessage update:', {
+    streamingElFound:  !!streamingEl,
+    finalContentLen:   finalContent?.length,
+    finalContentPrev:  finalContent?.slice(0, 100),
+  });
   if (streamingEl) {
+    let contentEl = streamingEl.querySelector('.streaming-content');
+    if (contentEl) {
+      console.log('[TRACE] Setting innerHTML on streaming-content element');
+      contentEl.innerHTML = renderMarkup(finalContent);
+    }
+
+    debug('App', 'Removing streaming class from element');
     streamingEl.classList.remove('message-streaming');
     streamingEl.removeAttribute('id');
   }
 
-  // Add finalized message to state
-  let now = new Date().toISOString();
-  state.messages.push({
-    id:        state.streamingMessage.id,
-    role:      'assistant',
-    content:   data.content || state.streamingMessage.content,
-    createdAt: now,
-  });
+  // Check if the message was already added via WebSocket broadcast
+  let alreadyExists = state.messages.some(
+    (m) => m.role === 'assistant' && m.content === finalContent
+  );
+
+  if (!alreadyExists) {
+    let now = new Date().toISOString();
+    state.messages.push({
+      id:        state.streamingMessage.id,
+      role:      'assistant',
+      content:   finalContent,
+      createdAt: now,
+    });
+    debug('App', 'Added message to state, total messages:', state.messages.length);
+  } else {
+    debug('App', 'Message already exists (from WebSocket), skipping add');
+  }
 
   // Clear streaming state
   state.streamingMessage = null;
+  debug('App', 'Streaming state cleared');
 }
 
 /**
@@ -1091,6 +1246,42 @@ function showStreamingError(errorMessage) {
   state.streamingMessage = null;
 }
 
+/**
+ * Show a status message in the streaming message (for interactions).
+ * Uses the <hero-interaction> WebComponent with jiggling brain emoji.
+ */
+function showStreamingStatus(message) {
+  let streamingEl = document.getElementById('streaming-message');
+  if (!streamingEl) return;
+
+  // Find or create status element
+  let statusEl = streamingEl.querySelector('.streaming-status');
+  if (!statusEl) {
+    let bubble = streamingEl.querySelector('.message-bubble');
+    if (bubble) {
+      bubble.insertAdjacentHTML('beforeend', `
+        <div class="streaming-status">
+          <hero-interaction status="processing" message="${escapeHtml(message)}"></hero-interaction>
+        </div>
+      `);
+    }
+  } else {
+    let interactionEl = statusEl.querySelector('hero-interaction');
+    if (interactionEl) {
+      interactionEl.setAttribute('message', message);
+    }
+  }
+}
+
+/**
+ * Hide the streaming status message.
+ */
+function hideStreamingStatus() {
+  let statusEl = document.querySelector('#streaming-message .streaming-status');
+  if (statusEl)
+    statusEl.remove();
+}
+
 async function handleCommand(content) {
   let parts   = content.slice(1).split(/\s+/);
   let command = parts[0].toLowerCase();
@@ -1102,7 +1293,7 @@ async function handleCommand(content) {
       break;
 
     case 'help':
-      await handleHelpCommand();
+      await handleHelpCommand(args);
       break;
 
     case 'session':
@@ -1149,44 +1340,100 @@ async function handleClearMessages() {
   }
 }
 
-async function handleHelpCommand() {
+async function handleHelpCommand(filterArg = '') {
   try {
-    let response = await fetch(`${BASE_PATH}/api/help`);
+    // Build URL with filter if provided
+    let url = `${BASE_PATH}/api/help`;
+    if (filterArg.trim()) {
+      url += `?filter=${encodeURIComponent(filterArg.trim())}`;
+    }
+
+    let response = await fetch(url);
     let help     = await response.json();
+
+    // Check for error response (e.g., invalid regex)
+    if (help.error) {
+      state.messages.push({
+        role:    'assistant',
+        content: [{ type: 'text', text: `Error: ${help.error}` }],
+      });
+      renderMessages();
+      scrollToBottom();
+      return;
+    }
 
     let text = '# Hero Help\n\n';
 
-    // Built-in commands
-    text += '## Commands\n';
-    for (let cmd of help.commands.builtin)
-      text += `  /${cmd.name} - ${cmd.description}\n`;
-
-    if (help.commands.user.length > 0) {
-      text += '\n### User Commands\n';
-      for (let cmd of help.commands.user)
-        text += `  /${cmd.name} - ${cmd.description || 'No description'}\n`;
+    // Show filter if applied
+    if (filterArg.trim()) {
+      text += `*Filtering by: \`${filterArg.trim()}\`*\n\n`;
     }
 
-    // Operation handlers
-    text += '\n## Operations\n';
-    for (let handler of help.handlers)
-      text += `  ${handler.name} - ${handler.description}\n`;
+    let hasResults = false;
+
+    // Built-in commands
+    if (help.commands && (help.commands.builtin.length > 0 || help.commands.user.length > 0)) {
+      hasResults = true;
+      text += '## Commands\n';
+      for (let cmd of help.commands.builtin) {
+        text += `  /${cmd.name} - ${cmd.description}\n`;
+      }
+
+      if (help.commands.user.length > 0) {
+        text += '\n### User Commands\n';
+        for (let cmd of help.commands.user) {
+          text += `  /${cmd.name} - ${cmd.description || 'No description'}\n`;
+        }
+      }
+    }
+
+    // System functions
+    if (help.systemMethods && help.systemMethods.length > 0) {
+      hasResults = true;
+      text += '\n## System Functions\n';
+      for (let fn of help.systemMethods) {
+        text += `  ${fn.name} - ${fn.description || 'No description'}\n`;
+      }
+    }
 
     // Assertion types
-    text += '\n## Assertion Types\n';
-    for (let assertion of help.assertions)
-      text += `  ${assertion.type} - ${assertion.description}\n`;
+    if (help.assertions && help.assertions.length > 0) {
+      hasResults = true;
+      text += '\n## Assertion Types\n';
+      for (let assertion of help.assertions) {
+        text += `  ${assertion.type} - ${assertion.description}\n`;
+      }
+    }
 
     // Abilities
-    text += '\n## Abilities\n';
-    text += '### System\n';
-    for (let ability of help.processes.system)
-      text += `  ${ability.name} - ${ability.description || 'No description'}\n`;
+    if (help.processes) {
+      let hasSystemAbilities = help.processes.system && help.processes.system.length > 0;
+      let hasUserAbilities   = help.processes.user && help.processes.user.length > 0;
 
-    if (help.processes.user.length > 0) {
-      text += '\n### User Abilities\n';
-      for (let ability of help.processes.user)
-        text += `  ${ability.name} - ${ability.description || 'No description'}\n`;
+      if (hasSystemAbilities || hasUserAbilities) {
+        hasResults = true;
+        text += '\n## Abilities\n';
+
+        if (hasSystemAbilities) {
+          text += '### System\n';
+          for (let ability of help.processes.system) {
+            text += `  ${ability.name} - ${ability.description || 'No description'}\n`;
+          }
+        }
+
+        if (hasUserAbilities) {
+          text += '\n### User Abilities\n';
+          for (let ability of help.processes.user) {
+            text += `  ${ability.name} - ${ability.description || 'No description'}\n`;
+          }
+        }
+      }
+    }
+
+    // Show message if no results found with filter
+    if (!hasResults && filterArg.trim()) {
+      text += `No results found matching \`${filterArg.trim()}\`.\n`;
+      text += '\nTry a different filter pattern or run `/help` without arguments to see all available help.';
     }
 
     state.messages.push({
@@ -1291,7 +1538,7 @@ async function handleAbilityCommand(args) {
         scrollToBottom();
         return;
       }
-      await editAbility(name);
+      await editAbilityByName(name);
       break;
 
     case 'delete':
@@ -1364,7 +1611,7 @@ async function listAbilities() {
   }
 }
 
-async function editAbility(name) {
+async function editAbilityByName(name) {
   try {
     let response = await fetch(`${BASE_PATH}/api/abilities`);
     let data     = await response.json();
@@ -1788,7 +2035,64 @@ function handleWebSocketMessage(message) {
     case 'ability_question_timeout':
       handleAbilityQuestionTimeout(message);
       break;
+
+    // New message from server (used for onstart flow and real-time sync)
+    case 'new_message':
+      handleNewMessage(message);
+      break;
   }
+}
+
+/**
+ * Handle a new message broadcast from the server.
+ * This is used for the onstart flow and real-time message sync.
+ */
+function handleNewMessage(wsMessage) {
+  let { sessionId, message } = wsMessage;
+
+  debug('App', 'handleNewMessage', { sessionId, messageId: message.id, role: message.role, hidden: message.hidden });
+
+  // Only handle if for current session
+  if (!state.currentSession || state.currentSession.id !== parseInt(sessionId, 10))
+    return;
+
+  // Check if message already exists by ID
+  let existingIndex = state.messages.findIndex((m) => m.id === message.id);
+  if (existingIndex !== -1) {
+    debug('App', 'Message already exists by ID, updating', { id: message.id });
+    state.messages[existingIndex] = message;
+    renderMessages();
+    scrollToBottom();
+    return;
+  }
+
+  // For user messages, check if we have an optimistic version (no ID, same content)
+  if (message.role === 'user') {
+    let optimisticIndex = state.messages.findIndex(
+      (m) => !m.id && m.role === 'user' && m.content === message.content
+    );
+    if (optimisticIndex !== -1) {
+      debug('App', 'Found optimistic user message, replacing', { content: message.content.slice(0, 50) });
+      state.messages[optimisticIndex] = message;
+      renderMessages();
+      scrollToBottom();
+      return;
+    }
+  }
+
+  // For assistant messages, check if we're currently streaming and this is the finalized version
+  if (message.role === 'assistant' && state.streamingMessage) {
+    debug('App', 'Assistant message received while streaming, will be handled by finalize');
+    // Don't add here - the streaming finalization will handle it
+    return;
+  }
+
+  debug('App', 'Adding new message to state', { id: message.id, role: message.role });
+  state.messages.push(message);
+
+  // Re-render messages
+  renderMessages();
+  scrollToBottom();
 }
 
 function handleAbilityApprovalRequest(message) {
@@ -2196,14 +2500,31 @@ function renderSystemAbilities() {
     return;
   }
 
-  let html = state.abilities.system.map((a) => `
-    <div class="ability-item">
-      <div class="ability-info">
-        <div class="ability-name">${escapeHtml(a.name)}</div>
-        <div class="ability-description">${escapeHtml(a.description || 'No description')}</div>
+  let html = state.abilities.system.map((a) => {
+    let badgeClass, badgeText;
+    if (a.type === 'function') {
+      badgeClass = 'function';
+      badgeText = 'function';
+    } else if (a.category === 'commands') {
+      badgeClass = 'command';
+      badgeText = 'command';
+    } else {
+      badgeClass = 'ability';
+      badgeText = 'ability';
+    }
+
+    return `
+      <div class="ability-item">
+        <div class="ability-info">
+          <div class="ability-name">
+            ${escapeHtml(a.name)}
+            <span class="ability-type-badge ${badgeClass}">${badgeText}</span>
+          </div>
+          <div class="ability-description">${escapeHtml(a.description || 'No description')}</div>
+        </div>
       </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 
   elements.systemAbilitiesList.innerHTML = html;
 }
@@ -2217,7 +2538,10 @@ function renderUserAbilities() {
   let html = state.abilities.user.map((a) => `
     <div class="ability-item">
       <div class="ability-info">
-        <div class="ability-name">${escapeHtml(a.name)}</div>
+        <div class="ability-name">
+          ${escapeHtml(a.name)}
+          <span class="ability-type-badge ability">ability</span>
+        </div>
         <div class="ability-description">${escapeHtml(a.description || 'No description')}</div>
       </div>
       <div class="ability-actions">
@@ -2230,15 +2554,58 @@ function renderUserAbilities() {
   elements.userAbilitiesList.innerHTML = html;
 }
 
+const ABILITY_MODAL_STORAGE_KEY = 'hero-ability-modal-draft';
+
+function saveAbilityModalToStorage() {
+  let data = {
+    name:        document.getElementById('ability-name').value,
+    description: document.getElementById('ability-description').value,
+    applies:     document.getElementById('edit-ability-applies').value,
+    content:     document.getElementById('ability-content').value,
+  };
+  // Only save if there's actual content
+  if (data.name || data.description || data.applies || data.content) {
+    sessionStorage.setItem(ABILITY_MODAL_STORAGE_KEY, JSON.stringify(data));
+  }
+}
+
+function restoreAbilityModalFromStorage() {
+  let stored = sessionStorage.getItem(ABILITY_MODAL_STORAGE_KEY);
+  if (stored) {
+    try {
+      let data = JSON.parse(stored);
+      document.getElementById('ability-name').value            = data.name || '';
+      document.getElementById('ability-description').value     = data.description || '';
+      document.getElementById('edit-ability-applies').value    = data.applies || '';
+      document.getElementById('ability-content').value         = data.content || '';
+    } catch (e) {
+      // Ignore parse errors
+    }
+  }
+}
+
+function clearAbilityModalStorage() {
+  sessionStorage.removeItem(ABILITY_MODAL_STORAGE_KEY);
+}
+
 function showNewAbilityModal() {
   state.editingAbilityId = null;
   elements.editAbilityTitle.textContent = 'New Ability';
   elements.editAbilityForm.reset();
+  // Restore any previously saved draft
+  restoreAbilityModalFromStorage();
   elements.editAbilityError.textContent = '';
   elements.editAbilityModal.style.display = 'flex';
 }
 
-function hideEditAbilityModal() {
+function hideEditAbilityModal(clearStorage = false) {
+  // Save draft if not clearing (i.e., modal closed without cancel/submit)
+  if (!clearStorage && !state.editingAbilityId) {
+    saveAbilityModalToStorage();
+  }
+  if (clearStorage) {
+    clearAbilityModalStorage();
+  }
   elements.editAbilityModal.style.display = 'none';
   state.editingAbilityId = null;
 }
@@ -2248,9 +2615,10 @@ async function editAbility(id) {
     let ability = await fetchAbility(id);
     state.editingAbilityId = id;
     elements.editAbilityTitle.textContent = 'Edit Ability';
-    document.getElementById('ability-name').value        = ability.name;
-    document.getElementById('ability-description').value = ability.description || '';
-    document.getElementById('ability-content').value     = ability.content;
+    document.getElementById('ability-name').value            = ability.name;
+    document.getElementById('ability-description').value     = ability.description || '';
+    document.getElementById('edit-ability-applies').value    = ability.applies || '';
+    document.getElementById('ability-content').value         = ability.content;
     elements.editAbilityError.textContent = '';
     elements.editAbilityModal.style.display = 'flex';
   } catch (error) {
@@ -2258,11 +2626,12 @@ async function editAbility(id) {
   }
 }
 
-async function handleSaveAbility(e) {
+async function handleSaveUserAbility(e) {
   e.preventDefault();
 
   let name        = document.getElementById('ability-name').value.trim();
   let description = document.getElementById('ability-description').value.trim() || null;
+  let applies     = document.getElementById('edit-ability-applies').value.trim() || null;
   let content     = document.getElementById('ability-content').value;
 
   // Validate name format
@@ -2273,12 +2642,12 @@ async function handleSaveAbility(e) {
 
   try {
     if (state.editingAbilityId) {
-      await updateAbility(state.editingAbilityId, name, description, content);
+      await updateAbility(state.editingAbilityId, name, description, applies, content);
     } else {
-      await createAbility(name, description, content);
+      await createAbility(name, description, applies, content);
     }
 
-    hideEditAbilityModal();
+    hideEditAbilityModal(true);  // Clear storage on successful save
     await loadAbilities();
     renderUserAbilities();
   } catch (error) {
@@ -2571,8 +2940,8 @@ document.querySelectorAll('.tab-btn').forEach((btn) => {
 });
 
 // Edit Ability Modal
-elements.editAbilityForm.addEventListener('submit', handleSaveAbility);
-elements.cancelEditAbility.addEventListener('click', hideEditAbilityModal);
+elements.editAbilityForm.addEventListener('submit', handleSaveUserAbility);
+elements.cancelEditAbility.addEventListener('click', () => hideEditAbilityModal(true));
 elements.editAbilityModal.addEventListener('click', (e) => {
   if (e.target === elements.editAbilityModal)
     hideEditAbilityModal();
