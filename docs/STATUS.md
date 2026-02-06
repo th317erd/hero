@@ -8,10 +8,12 @@ Last updated: 2026-02-05
 Various improvements to the chat interface and styling.
 
 **CSS changes:**
-- Tightened line spacing in chat messages (line-height: 1.15)
+- Fixed `white-space: pre-wrap` causing large gaps (changed to `normal`, kept `pre-wrap` on code blocks)
+- Fixed horizontal text overflow with `min-width: 0` and `overflow-wrap: break-word`
+- Balanced line-heights: body text 1.4, list items 1.35, headings 1.2
+- Zero vertical margins for tight, consistent spacing
 - Added dedicated link color variables (`--link`, `--link-hover`, `--info`)
 - Fixed bullet point overflow with `list-style-position: inside`
-- Reduced margins on paragraphs, lists, and headings for compact display
 
 **Link handling:**
 - All markdown links now open in new tabs (`target="_blank"`)

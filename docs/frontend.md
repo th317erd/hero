@@ -425,6 +425,40 @@ messageInput.addEventListener('keydown', (e) => {
 
 All `<a>` tags use the link color by default and open in new tabs.
 
+### Message Content Styling
+
+```css
+.message-content {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.4;
+  white-space: normal;      /* Collapses newlines from markdown */
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.message-content pre {
+  white-space: pre-wrap;    /* Preserve whitespace in code blocks */
+}
+
+/* Headings: tight line-height, no margins */
+.message-content h1, h2, h3, h4, h5, h6 {
+  margin: 0;
+  line-height: 1.2;
+}
+
+/* Lists: inside positioning prevents bullet overflow */
+.message-content ul, ol {
+  margin: 0;
+  list-style-position: inside;
+}
+
+.message-content li {
+  margin: 0;
+  line-height: 1.35;
+}
+```
+
 ### Session Row Styling
 
 ```css
