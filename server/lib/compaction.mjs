@@ -115,17 +115,34 @@ function buildCompactionPrompt(messages) {
     return `${role}: ${content}`;
   }).join('\n\n');
 
-  return `Please provide a concise summary of this conversation so far. Focus on:
-- Key topics discussed
-- Important decisions or conclusions reached
-- Any ongoing tasks or context that should be remembered
+  return `You are creating a memory snapshot to preserve the context of this conversation. This snapshot will be used as the starting context for future messages, so it MUST capture everything needed to continue working.
 
-Keep the summary brief but comprehensive enough to continue the conversation naturally.
+Create a comprehensive snapshot with TWO sections:
 
-CONVERSATION:
+## CONTEXT SUMMARY
+Capture ALL important details:
+- User's name, preferences, and communication style
+- Project/codebase details (file paths, structure, technologies)
+- Key decisions made and their reasoning
+- Problems identified and solutions discussed
+- Configuration details, API keys mentioned, environment info
+- Any specific instructions or constraints the user provided
+- Code snippets or patterns that were important
+- Errors encountered and how they were resolved
+
+## TODO LIST
+List ALL pending tasks and next steps:
+- Tasks explicitly requested by the user that aren't complete
+- Follow-up items that were discussed but not yet addressed
+- Things the user mentioned wanting to do later
+- Any unfinished work from this session
+
+If there are no pending tasks, write "No pending tasks."
+
+CONVERSATION TO SUMMARIZE:
 ${conversation}
 
-SUMMARY:`;
+MEMORY SNAPSHOT:`;
 }
 
 /**
@@ -306,7 +323,7 @@ export function loadMessagesWithSnapshot(sessionId, maxRecentMessages = 20) {
     let snapshotContent = JSON.parse(snapshot.content);
     messages.push({
       role:    'assistant',
-      content: `[Previous conversation summary]\n${snapshotContent}`,
+      content: `[RESTORED CONTEXT - Continue from here]\n\n${snapshotContent}\n\n[END RESTORED CONTEXT - Resume conversation below]`,
     });
 
     // Get messages after snapshot

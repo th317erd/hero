@@ -335,6 +335,21 @@ function getMigrations() {
         ALTER TABLE sessions ADD COLUMN output_tokens INTEGER DEFAULT 0;
       `,
     },
+    {
+      name: '011_usage_corrections',
+      sql:  `
+        -- Usage corrections table for adjusting token/cost tracking
+        CREATE TABLE usage_corrections (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          input_tokens INTEGER DEFAULT 0,
+          output_tokens INTEGER DEFAULT 0,
+          reason TEXT,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX idx_usage_corrections_user_id ON usage_corrections(user_id);
+      `,
+    },
   ];
 }
 

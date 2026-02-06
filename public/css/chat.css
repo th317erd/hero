@@ -671,34 +671,47 @@
 }
 
 /* ============================================================================
-   Floating Cost Display
+   Scroll to Bottom Button
    ============================================================================ */
 
-.cost-display {
-  position: fixed;
-  bottom: 90px;
-  right: 20px;
-  display: none;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-  padding: 8px 12px;
+.scroll-to-bottom-btn {
+  position: absolute;
+  bottom: 20px;
+  right: 30px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  font-family: var(--font-mono);
-  font-size: 12px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  z-index: 100;
+  transition: all 0.2s ease;
+  z-index: 50;
 }
 
-.cost-amount {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--success);
+.scroll-to-bottom-btn:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
-.cost-tokens {
-  color: var(--text-muted);
-  font-size: 11px;
+.scroll-to-bottom-btn:active {
+  transform: translateY(0);
 }
+
+.scroll-to-bottom-btn .chevron-down {
+  font-size: 24px;
+  color: var(--text-secondary);
+  line-height: 1;
+}
+
+.scroll-to-bottom-btn:hover .chevron-down {
+  color: var(--accent);
+}
+
+/* Note: Floating cost display removed - now in header bar */

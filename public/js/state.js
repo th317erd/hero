@@ -27,6 +27,7 @@ const state = {
   streamingMode:        true,  // Use streaming mode for agent responses
   streamingMessage:     null,  // Current streaming message state { id, content, elements }
   sessionCost:          { inputTokens: 0, outputTokens: 0 },  // Cumulative token usage for session
+  globalCost:           { inputTokens: 0, outputTokens: 0 },  // Global token usage across all sessions
 };
 
 // ============================================================================
@@ -60,6 +61,8 @@ const elements = {
   backBtn:            document.getElementById('back-btn'),
   chatLogoutBtn:      document.getElementById('chat-logout-btn'),
   showHiddenToggle:   document.getElementById('show-hidden-toggle'),
+  scrollToBottomBtn:  document.getElementById('scroll-to-bottom'),
+  chatMain:           document.querySelector('.chat-main'),
 
   // New Session Modal
   newSessionModal:  document.getElementById('new-session-modal'),

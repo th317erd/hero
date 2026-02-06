@@ -44,6 +44,44 @@
   gap: 8px;
 }
 
+/* Header Usage Display */
+.header-usage {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-left: auto;
+  margin-right: 16px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.usage-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+}
+
+.usage-label {
+  color: var(--text-muted);
+}
+
+.usage-cost {
+  font-weight: 600;
+  color: var(--success);
+}
+
+.usage-item.usage-session {
+  border-color: var(--accent-muted);
+}
+
+.usage-item.usage-session .usage-cost {
+  color: var(--accent);
+}
+
 .session-select {
   width: auto;
   min-width: 150px;

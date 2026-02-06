@@ -42,6 +42,12 @@
           <img src="assets/images/hero-cape.svg?v=1" alt="Hero" class="logo">
           <h1>Hero</h1>
         </div>
+        <div class="header-usage" id="header-usage-sessions">
+          <div class="usage-item usage-global" title="Total usage across all sessions">
+            <span class="usage-label">Global:</span>
+            <span class="usage-cost" id="global-cost-sessions">$0.00</span>
+          </div>
+        </div>
         <div class="header-actions">
           <button id="agents-btn" class="btn btn-secondary">Agents</button>
           <button id="abilities-btn" class="btn btn-secondary">Abilities</button>
@@ -76,6 +82,16 @@
           <button id="back-btn" class="btn btn-icon" title="Back to sessions">&larr;</button>
           <h1 id="session-title">Session</h1>
         </div>
+        <div class="header-usage" id="header-usage-chat">
+          <div class="usage-item usage-global" title="Total usage across all sessions">
+            <span class="usage-label">Global:</span>
+            <span class="usage-cost" id="global-cost-chat">$0.00</span>
+          </div>
+          <div class="usage-item usage-session" title="Usage in this session">
+            <span class="usage-label">Session:</span>
+            <span class="usage-cost" id="session-cost-chat">$0.00</span>
+          </div>
+        </div>
         <div class="header-actions">
           <label class="checkbox-label">
             <input type="checkbox" id="show-hidden-toggle">
@@ -90,6 +106,9 @@
       </header>
       <main class="chat-main">
         <div id="messages" class="messages-container"></div>
+        <button id="scroll-to-bottom" class="scroll-to-bottom-btn" title="Scroll to bottom" style="display: none;">
+          <span class="chevron-down">&#8964;</span>
+        </button>
       </main>
       <footer class="chat-footer">
         <div class="input-container">
@@ -348,12 +367,12 @@
 
   <script src="https://cdn.jsdelivr.net/npm/markdown-it@14.1.0/dist/markdown-it.min.js"></script>
   <script src="js/markup.js?v=2"></script>
-  <script src="js/state.js?v=2"></script>
+  <script src="js/state.js?v=4"></script>
   <script src="js/utils.js?v=2"></script>
   <script src="js/debug.js?v=2"></script>
-  <script src="js/api.js?v=4"></script>
-  <script src="js/routing.js?v=2"></script>
+  <script src="js/api.js?v=6"></script>
+  <script src="js/routing.js?v=3"></script>
   <script src="js/sessions.js?v=2"></script>
-  <script src="js/app.js?v=2"></script>
+  <script src="js/app.js?v=6"></script>
 </body>
 </html>

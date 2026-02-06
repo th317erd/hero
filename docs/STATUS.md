@@ -4,6 +4,61 @@ Last updated: 2026-02-06
 
 ## Recent Changes
 
+### TODO List Updates (Complete)
+Implemented several improvements from the project TODO list.
+
+**Scroll-to-Bottom Button:**
+- Added a chevron button that appears when user scrolls up in chat
+- Button floats in the bottom-right corner of the messages container
+- Click scrolls smoothly to the latest message
+- Auto-hides when user is near the bottom
+
+**Files changed:**
+- `public/index.html` - Added scroll-to-bottom button element
+- `public/js/state.js` - Added button and chatMain element references
+- `public/js/app.js` - Added `isNearBottom()`, `updateScrollToBottomButton()`, scroll event handler
+- `public/css/chat.css` - Added `.scroll-to-bottom-btn` styling
+
+**Header Usage Display:**
+- Moved cost/token display from floating position to header bar
+- Shows two line items: Global usage and Session usage
+- Session usage only visible in chat view
+- Global usage fetched on authentication and updated in real-time
+
+**Files changed:**
+- `public/index.html` - Added usage display elements to both headers
+- `public/js/state.js` - Added `globalCost` state object
+- `public/js/api.js` - Added `fetchUsage()` function
+- `public/js/app.js` - Rewrote `updateCostDisplay()`, added `loadGlobalUsage()`
+- `public/js/routing.js` - Call `loadGlobalUsage()` on authentication
+- `public/css/layout.css` - Added `.header-usage` styling
+- `public/css/chat.css` - Removed old floating cost display
+
+**Usage Correction Command:**
+- Added `/update_usage <cost>` command for correcting token tracking
+- User provides actual API cost, system calculates and stores correction
+- Corrections are persisted in new `usage_corrections` database table
+- Usage API now includes corrections in totals
+
+**Files changed:**
+- `server/database.mjs` - Added migration 011 for `usage_corrections` table
+- `server/routes/usage.mjs` - Added correction endpoints, updated GET to include corrections
+- `server/routes/index.mjs` - Registered usage routes
+- `public/js/api.js` - Added `createUsageCorrection()` function
+- `public/js/app.js` - Added `handleUpdateUsageCommand()`, registered command
+
+**Improved Memory Compaction:**
+- Enhanced compaction prompt to capture comprehensive context
+- Now generates TODO lists during compaction
+- Improved snapshot loading with clearer context markers
+
+**Files changed:**
+- `server/lib/compaction.mjs` - Updated `buildCompactionPrompt()` and snapshot loading
+
+**Debug Logging for Hidden Messages:**
+- Added console logging to help debug "Show hidden messages" checkbox
+- Logs message counts when loading sessions and toggling checkbox
+
 ### Web Search Banner Timing Fix (Complete)
 Fixed critical issue where the "Web Search: Pending" banner appeared simultaneously with search results instead of immediately when the search started.
 

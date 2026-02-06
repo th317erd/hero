@@ -21,13 +21,17 @@
 [x] Allow agent to suggest commands for user to copy/paste (explicit control)
 
 ## Pending
-[ ] Compacting memory doesn't seem to work too well.
+[ ] Debug "Show hidden messages" checkbox - debug logging added, needs user testing to verify behavior
+[ ] Add token scalar setting for adjusting cost calculation ratio (mentioned in update_usage requirements)
+
+## Recently Completed (2026-02-06)
+[x] Compacting memory - improved prompt to capture comprehensive context AND generate TODO lists
+[x] Add "Chevron Down" button to jump to bottom of chat - floats at bottom-right, auto-hides when near bottom
+[x] Move cost/token display to header bar - shows global and session usage, session only visible in chat view
+[x] Add `/update_usage <cost>` command - stores corrections in database, adjusts tracking to match actual spend
 
 ## Architecture Notes
 - **Abilities** = verbal "guides" for the agent, applied when the agent feels they should
 - **Sources**: builtin, system, user, plugin
 - **Hidden messages**: `hidden=1` in messages table, filtered in frontend but sent to AI
 - **Startup abilities**: `_onstart_*` pattern, `__onstart_` runs first (double underscore = higher priority)
-
-## Current Issue
-User reported slowness with navigation. Likely needs server restart for new code/migration.

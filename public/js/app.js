@@ -48,28 +48,44 @@ function formatCost(cost) {
 }
 
 /**
- * Update the floating cost display.
+ * Update the header cost displays (global and session).
  */
 function updateCostDisplay() {
-  let costEl = document.getElementById('cost-display');
-
-  // Create element if it doesn't exist
-  if (!costEl) {
-    costEl = document.createElement('div');
-    costEl.id = 'cost-display';
-    costEl.className = 'cost-display';
-    document.body.appendChild(costEl);
+  // Update session cost in chat header
+  let sessionCostEl = document.getElementById('session-cost-chat');
+  if (sessionCostEl) {
+    let sessionCost = calculateCost(state.sessionCost.inputTokens, state.sessionCost.outputTokens);
+    sessionCostEl.textContent = formatCost(sessionCost);
   }
 
-  let cost = calculateCost(state.sessionCost.inputTokens, state.sessionCost.outputTokens);
-  let inputStr  = formatTokenCount(state.sessionCost.inputTokens);
-  let outputStr = formatTokenCount(state.sessionCost.outputTokens);
+  // Update global cost in both headers (sessions view and chat view)
+  let globalCostSessions = document.getElementById('global-cost-sessions');
+  let globalCostChat = document.getElementById('global-cost-chat');
+  let globalCost = calculateCost(state.globalCost.inputTokens, state.globalCost.outputTokens);
+  let globalCostStr = formatCost(globalCost);
 
-  costEl.innerHTML = `
-    <span class="cost-amount">${formatCost(cost)}</span>
-    <span class="cost-tokens">${inputStr} in / ${outputStr} out</span>
-  `;
-  costEl.style.display = 'flex';
+  if (globalCostSessions) {
+    globalCostSessions.textContent = globalCostStr;
+  }
+  if (globalCostChat) {
+    globalCostChat.textContent = globalCostStr;
+  }
+}
+
+/**
+ * Fetch and update global usage.
+ */
+async function loadGlobalUsage() {
+  try {
+    let usage = await fetchUsage();
+    state.globalCost = {
+      inputTokens:  usage.inputTokens || 0,
+      outputTokens: usage.outputTokens || 0,
+    };
+    updateCostDisplay();
+  } catch (error) {
+    console.error('Failed to fetch global usage:', error);
+  }
 }
 
 /**
@@ -77,10 +93,7 @@ function updateCostDisplay() {
  */
 function resetSessionCost() {
   state.sessionCost = { inputTokens: 0, outputTokens: 0 };
-  let costEl = document.getElementById('cost-display');
-  if (costEl) {
-    costEl.style.display = 'none';
-  }
+  updateCostDisplay();
 }
 
 // ============================================================================
@@ -92,6 +105,15 @@ async function loadSession(sessionId) {
     let session    = await fetchSession(sessionId);
     state.currentSession = session;
     state.messages       = session.messages || [];
+
+    // Debug: Check if hidden flags are present
+    let hiddenMsgs = state.messages.filter((m) => m.hidden);
+    console.log('[DEBUG] loadSession:', {
+      sessionId,
+      totalMessages: state.messages.length,
+      hiddenCount:   hiddenMsgs.length,
+      sampleHidden:  hiddenMsgs.slice(0, 2).map((m) => ({ id: m.id, role: m.role, hidden: m.hidden })),
+    });
 
     // Load session cost if available
     if (session.cost) {
@@ -141,6 +163,13 @@ function renderMessages() {
   let visibleMessages = state.showHiddenMessages
     ? state.messages  // Show all messages including hidden ones
     : state.messages.filter((message) => !message.hidden);
+
+  console.log('[DEBUG] renderMessages:', {
+    showHiddenMessages: state.showHiddenMessages,
+    totalMessages:      state.messages.length,
+    visibleMessages:    visibleMessages.length,
+    hiddenCount:        state.messages.filter((m) => m.hidden).length,
+  });
 
   let html = visibleMessages.map((message) => renderMessage(message)).join('');
   elements.messagesContainer.innerHTML = html;
@@ -713,7 +742,33 @@ function scrollToBottom() {
   requestAnimationFrame(() => {
     let chatMain = elements.messagesContainer.parentElement;
     chatMain.scrollTop = chatMain.scrollHeight;
+    // Hide scroll button when we scroll to bottom
+    updateScrollToBottomButton();
   });
+}
+
+/**
+ * Check if the user is near the bottom of the chat.
+ * @returns {boolean} True if within 100px of bottom
+ */
+function isNearBottom() {
+  let chatMain = elements.chatMain;
+  if (!chatMain) return true;
+  let threshold = 100; // pixels from bottom
+  return chatMain.scrollHeight - chatMain.scrollTop - chatMain.clientHeight < threshold;
+}
+
+/**
+ * Update visibility of the scroll-to-bottom button.
+ */
+function updateScrollToBottomButton() {
+  if (!elements.scrollToBottomBtn) return;
+
+  if (isNearBottom()) {
+    elements.scrollToBottomBtn.style.display = 'none';
+  } else {
+    elements.scrollToBottomBtn.style.display = 'flex';
+  }
 }
 
 function showTypingIndicator() {
@@ -1089,9 +1144,13 @@ async function processMessageStream(content) {
 
       onUsage: (data) => {
         debug('App', 'Token usage', data);
-        // Accumulate tokens for this session
-        state.sessionCost.inputTokens  += data.input_tokens || 0;
-        state.sessionCost.outputTokens += data.output_tokens || 0;
+        // Accumulate tokens for this session and global
+        let inputTokens  = data.input_tokens || 0;
+        let outputTokens = data.output_tokens || 0;
+        state.sessionCost.inputTokens  += inputTokens;
+        state.sessionCost.outputTokens += outputTokens;
+        state.globalCost.inputTokens   += inputTokens;
+        state.globalCost.outputTokens  += outputTokens;
         // Update cost display
         updateCostDisplay();
       },
@@ -1639,6 +1698,11 @@ async function handleCommand(content) {
       handleStreamCommand(args);
       break;
 
+    case 'update_usage':
+    case 'update-usage':
+      await handleUpdateUsageCommand(args);
+      break;
+
     default:
       state.messages.push({
         role:    'assistant',
@@ -1833,6 +1897,74 @@ async function handleArchiveCommand() {
     state.messages.push({
       role:    'assistant',
       content: [{ type: 'text', text: 'Failed to archive session.' }],
+    });
+    renderMessages();
+    scrollToBottom();
+  }
+}
+
+/**
+ * Handle /update_usage command.
+ * Usage: /update_usage <cost>  - e.g., /update_usage 5.50
+ * This updates the usage tracker to match the user's actual API cost.
+ */
+async function handleUpdateUsageCommand(args) {
+  let input = args.trim();
+
+  if (!input) {
+    state.messages.push({
+      role:    'assistant',
+      content: [{ type: 'text', text: `Usage: /update_usage <cost>\n\nProvide your current actual API cost (in dollars).\n\nExample: /update_usage 5.50\n\nThis will adjust the usage tracker to match your actual spend.` }],
+    });
+    renderMessages();
+    scrollToBottom();
+    return;
+  }
+
+  // Parse cost - remove $ if present
+  let actualCost = parseFloat(input.replace(/^\$/, ''));
+
+  if (isNaN(actualCost) || actualCost < 0) {
+    state.messages.push({
+      role:    'assistant',
+      content: [{ type: 'text', text: `Invalid cost: "${input}"\n\nPlease provide a number, e.g., /update_usage 5.50` }],
+    });
+    renderMessages();
+    scrollToBottom();
+    return;
+  }
+
+  try {
+    let result = await createUsageCorrection({
+      actualCost: actualCost,
+      reason:     'User-reported actual cost',
+    });
+
+    let msg = `Usage correction applied.\n\n`;
+    msg += `**Previous:** ${formatCost(result.previousTotals.cost)} (${formatTokenCount(result.previousTotals.inputTokens)} in / ${formatTokenCount(result.previousTotals.outputTokens)} out)\n`;
+    msg += `**New:** ${formatCost(result.newTotals.cost)} (${formatTokenCount(result.newTotals.inputTokens)} in / ${formatTokenCount(result.newTotals.outputTokens)} out)\n`;
+
+    if (result.correctionApplied.inputTokens !== 0 || result.correctionApplied.outputTokens !== 0) {
+      let sign = (result.correctionApplied.inputTokens >= 0) ? '+' : '';
+      msg += `**Adjustment:** ${sign}${formatTokenCount(result.correctionApplied.inputTokens)} in / ${sign}${formatTokenCount(result.correctionApplied.outputTokens)} out`;
+    } else {
+      msg += `No adjustment needed - tracking is accurate.`;
+    }
+
+    state.messages.push({
+      role:    'assistant',
+      content: [{ type: 'text', text: msg }],
+    });
+    renderMessages();
+    scrollToBottom();
+
+    // Reload global usage to update the header display
+    await loadGlobalUsage();
+  } catch (error) {
+    console.error('Failed to update usage:', error);
+    state.messages.push({
+      role:    'assistant',
+      content: [{ type: 'text', text: `Failed to update usage: ${error.message}` }],
     });
     renderMessages();
     scrollToBottom();
@@ -3218,10 +3350,24 @@ elements.sessionSelect.addEventListener('change', () => {
     navigate(`/sessions/${sessionId}`);
 });
 
+// Scroll-to-bottom button
+if (elements.scrollToBottomBtn && elements.chatMain) {
+  elements.scrollToBottomBtn.addEventListener('click', () => {
+    scrollToBottom();
+  });
+
+  elements.chatMain.addEventListener('scroll', () => {
+    updateScrollToBottomButton();
+  });
+}
+
 // Show hidden messages toggle
 if (elements.showHiddenToggle) {
   elements.showHiddenToggle.addEventListener('change', () => {
     state.showHiddenMessages = elements.showHiddenToggle.checked;
+    console.log('[DEBUG] showHiddenMessages toggled:', state.showHiddenMessages);
+    console.log('[DEBUG] Total messages:', state.messages.length);
+    console.log('[DEBUG] Hidden messages:', state.messages.filter((m) => m.hidden).length);
     renderMessages();
   });
 }

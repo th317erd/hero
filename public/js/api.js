@@ -376,3 +376,11 @@ async function updateAgentConfig(id, config) {
 async function deleteAgent(id) {
   return await api('DELETE', `/agents/${id}`);
 }
+
+async function fetchUsage() {
+  return await api('GET', '/usage');
+}
+
+async function createUsageCorrection(data) {
+  return await api('POST', '/usage/correction', data);
+}

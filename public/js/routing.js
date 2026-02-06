@@ -40,6 +40,8 @@ async function handleRoute() {
       let me     = await fetchMe();
       state.user = me;
       connectWebSocket();
+      // Load global usage when authenticated
+      loadGlobalUsage();
     } catch (error) {
       // Not authenticated, show login
       disconnectWebSocket();

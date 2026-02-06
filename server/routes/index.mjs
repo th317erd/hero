@@ -12,6 +12,7 @@ import commandsRoutes from './commands.mjs';
 import toolsRoutes from './tools.mjs';
 import abilitiesRoutes from './abilities.mjs';
 import helpRoutes from './help.mjs';
+import usageRoutes from './usage.mjs';
 
 const router = Router();
 
@@ -27,6 +28,7 @@ router.use('/commands', commandsRoutes);
 router.use('/tools', toolsRoutes);
 router.use('/abilities', abilitiesRoutes);
 router.use('/help', helpRoutes);
+router.use('/usage', usageRoutes);
 
 // Health check
 router.get('/health', (req, res) => {
