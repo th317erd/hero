@@ -41,9 +41,10 @@ function requireEnv(key) {
 
 export const config = Object.freeze({
   // Server
+  // To run on a different port: PORT=9099 node server/index.mjs
   port:     parseInt(get('PORT', '8098'), 10),
   host:     get('HOST', '0.0.0.0'),
-  baseUrl:  get('BASE_URL', 'http://localhost:8098/'),
+  baseUrl:  get('BASE_URL', `http://localhost:${get('PORT', '8098')}/`),
   basePath: packageJson.hero?.basePath || '/',
 
   // Security

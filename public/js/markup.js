@@ -354,22 +354,15 @@ function processThinkingElements(container) {
 }
 
 /**
- * Process executable elements (<websearch>, <bash>, <ask>) into pending displays.
+ * Process executable elements (<bash>, <ask>) into pending displays.
  * These are processed on the server, but if they appear unprocessed, show as pending.
+ * Note: websearch is handled via interaction events for proper timing, so it's
+ * stripped here rather than rendered as a duplicate banner.
  */
 function processExecutableElements(container) {
-  // Websearch
+  // Websearch - strip the tags, interaction events handle the banner
   container.querySelectorAll('websearch').forEach((el) => {
-    let query = el.textContent.trim();
-    let html = `
-      <div class="hml-executable hml-websearch">
-        <span class="hml-executable-icon">🔍</span>
-        <span class="hml-executable-label">Web Search:</span>
-        <span class="hml-executable-content">${escapeHtml(query)}</span>
-        <span class="hml-executable-status">pending</span>
-      </div>
-    `;
-    el.outerHTML = html;
+    el.remove();
   });
 
   // Bash

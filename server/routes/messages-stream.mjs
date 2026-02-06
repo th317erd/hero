@@ -26,7 +26,7 @@ import { executePipeline } from '../lib/pipeline/index.mjs';
 import { getStartupAbilities } from '../lib/abilities/registry.mjs';
 import { loadUserAbilities } from '../lib/abilities/loaders/user.mjs';
 import { broadcastToUser } from '../lib/websocket.mjs';
-import { detectInteractions, executeInteractions, formatInteractionFeedback } from '../lib/interactions/index.mjs';
+import { detectInteractions, executeInteractions, formatInteractionFeedback, searchWeb } from '../lib/interactions/index.mjs';
 import { checkCompaction, loadMessagesWithSnapshot } from '../lib/compaction.mjs';
 
 /**
@@ -566,13 +566,28 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
     // Add user message to context (with process injection)
     messages.push({ role: 'user', content: processedContent });
 
-    // Send stream start event
+    // Calculate estimated tokens for display
+    let totalChars = 0;
+    for (let msg of messages) {
+      let content = (typeof msg.content === 'string') ? msg.content : JSON.stringify(msg.content);
+      totalChars += content.length;
+    }
+    // Add system prompt length if present
+    if (session.system_prompt) {
+      totalChars += session.system_prompt.length;
+    }
+    // Rough estimate: ~4 chars per token for English
+    let estimatedTokens = Math.ceil(totalChars / 4);
+
+    // Send stream start event with token estimate
     let messageId = randomUUID();
-    debug('Sending message_start event', { messageId });
+    debug('Sending message_start event', { messageId, estimatedTokens });
     sendEvent('message_start', {
       messageId,
-      sessionId: req.params.sessionId,
-      agentName: session.agent_name,
+      sessionId:       req.params.sessionId,
+      agentName:       session.agent_name,
+      estimatedTokens: estimatedTokens,
+      messageCount:    messages.length,
     });
 
     // Create streaming HML parser
@@ -587,25 +602,112 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
         sendEvent('text', { messageId, ...data });
     });
 
+    // Track pending websearch elements by ID for matching start/complete
+    let pendingWebsearches = new Map();
+
     parser.on('element_start', (data) => {
-      if (!aborted)
-        sendEvent('element_start', { messageId, ...data });
-    });
-
-    parser.on('element_update', (data) => {
-      if (!aborted)
-        sendEvent('element_update', { messageId, ...data });
-    });
-
-    parser.on('element_complete', async (data) => {
       if (aborted)
         return;
 
+      // For websearch, send interaction_started immediately when opening tag detected
+      if (data.type === 'websearch' && data.executable) {
+        let interactionId = `websearch-${data.id}`;
+        pendingWebsearches.set(data.id, { interactionId, startTime: Date.now() });
+
+        console.log(`[Stream] Websearch opening tag detected, sending interaction_started`);
+
+        sendEvent('interaction_started', {
+          messageId,
+          interactionId:  interactionId,
+          targetId:       '@system',
+          targetProperty: 'websearch',
+          payload:        { query: '...' }, // Query not known yet
+        });
+
+        // Force flush: write padding and drain the socket
+        // The AI sends <websearch>query</websearch> in one chunk, so we need
+        // to ensure this event reaches the client before element_complete fires
+        res.write(':flush\n\n');
+        if (res.socket && !res.socket.destroyed) {
+          res.socket.uncork?.();
+          // Explicitly drain by writing directly to socket
+          res.socket.write('', 'utf8');
+        }
+
+        console.log(`[Stream] Flushed interaction_started for websearch`);
+        return; // Don't send element_start for websearch - we use interaction events instead
+      }
+
+      sendEvent('element_start', { messageId, ...data });
+    });
+
+    parser.on('element_update', (data) => {
+      if (aborted)
+        return;
+      // Skip element_update for websearch - we use interaction events instead
+      if (data.type === 'websearch')
+        return;
+      sendEvent('element_update', { messageId, ...data });
+    });
+
+    parser.on('element_complete', async (data) => {
+      console.log('[Stream] element_complete fired:', data.type, data.executable, data.content?.slice(0, 50));
+      if (aborted)
+        return;
+
+      // Handle websearch specially - interaction_started was already sent in element_start
+      if (data.type === 'websearch' && data.executable) {
+        let query = data.content?.trim();
+        let pending = pendingWebsearches.get(data.id);
+
+        if (query && pending) {
+          let t0 = pending.startTime;
+          console.log(`[Stream] Websearch closing tag, query: "${query}", elapsed since start: ${Date.now() - t0}ms`);
+
+          // Update the banner with the actual query (we sent "..." at element_start)
+          sendEvent('interaction_update', {
+            messageId,
+            interactionId:  pending.interactionId,
+            targetProperty: 'websearch',
+            payload:        { query },
+          });
+          console.log(`[Stream] T+${Date.now() - t0}ms: interaction_update sent with query`);
+
+          // Yield to event loop to allow events to flush to client
+          // This is needed because AI sends <websearch>query</websearch> in one chunk
+          await new Promise(resolve => setImmediate(resolve));
+          console.log(`[Stream] T+${Date.now() - t0}ms: Yielded event loop`);
+
+          // Execute websearch (interaction_started was already sent in element_start)
+          let result = await searchWeb(query);
+          console.log(`[Stream] T+${Date.now() - t0}ms: searchWeb completed`);
+
+          // Send interaction_result
+          sendEvent('interaction_result', {
+            messageId,
+            interactionId:  pending.interactionId,
+            targetProperty: 'websearch',
+            status:         'completed',
+            result:         result,
+          });
+          console.log(`[Stream] T+${Date.now() - t0}ms: interaction_result event sent`);
+
+          executedElements.push({
+            element: data,
+            result:  result,
+          });
+
+          pendingWebsearches.delete(data.id);
+        }
+        return; // Don't send element_complete for websearch
+      }
+
       sendEvent('element_complete', { messageId, ...data });
 
-      // Execute if executable
+      // Execute if executable (websearch already handled above)
       if (data.executable) {
         try {
+          // For other executable elements, use pipeline
           let context = buildContext({
             req,
             sessionId: req.params.sessionId,
@@ -623,18 +725,23 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
               type: data.type,
             });
 
-            let result = await executePipeline([assertion], context);
+            let pipelineResult = await executePipeline({
+              mode:       'sequential',
+              assertions: [assertion],
+            }, context);
+
+            let result = pipelineResult.results?.[0] || null;
 
             sendEvent('element_result', {
               messageId,
               id:     data.id,
               type:   data.type,
-              result: result[0] || null,
+              result: result,
             });
 
             executedElements.push({
               element: data,
-              result:  result[0] || null,
+              result:  result,
             });
           }
         } catch (error) {
@@ -711,6 +818,21 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
         } else if (chunk.type === 'tool_result') {
           debug(`Chunk #${chunkCount}: tool_result`);
           sendEvent('tool_result', { messageId, ...chunk });
+        } else if (chunk.type === 'usage') {
+          debug(`Chunk #${chunkCount}: usage`, chunk);
+          sendEvent('usage', {
+            messageId,
+            input_tokens:  chunk.input_tokens,
+            output_tokens: chunk.output_tokens,
+          });
+
+          // Update session cost in database
+          db.prepare(`
+            UPDATE sessions
+            SET input_tokens = input_tokens + ?,
+                output_tokens = output_tokens + ?
+            WHERE id = ?
+          `).run(chunk.input_tokens || 0, chunk.output_tokens || 0, req.params.sessionId);
         } else if (chunk.type === 'done') {
           debug(`Chunk #${chunkCount}: done`, { stopReason: chunk.stopReason });
           // End the parser
@@ -757,8 +879,13 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
     // Implements an agentic loop that continues until Claude gives a final
     // response without interactions (or max iterations reached).
     // =========================================================================
+    console.log('[Stream] Checking for interactions, aborted:', aborted, 'contentLength:', fullContent?.length);
+    console.log('[Stream] Content preview:', fullContent?.slice(0, 500));
+    console.log('[Stream] Has <interaction> tag:', fullContent?.includes('<interaction>'));
+    console.log('[Stream] Has <websearch> tag:', fullContent?.includes('<websearch>'));
     if (!aborted && fullContent) {
       let interactionBlock = detectInteractions(fullContent);
+      console.log('[Stream] detectInteractions result:', interactionBlock ? `found ${interactionBlock.interactions?.length} interactions` : 'none');
 
       if (interactionBlock) {
         // Build context for interaction execution
@@ -787,6 +914,23 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
             count:     currentBlock.interactions.length,
             iteration: iteration,
           });
+
+          // Send interaction_started events RIGHT BEFORE execution
+          // This ensures the "Pending" banner appears immediately when the action starts
+          for (let interaction of currentBlock.interactions) {
+            console.log('[Stream] Sending interaction_started:', interaction.interaction_id, interaction.target_property);
+            sendEvent('interaction_started', {
+              messageId,
+              interactionId:  interaction.interaction_id,
+              targetId:       interaction.target_id,
+              targetProperty: interaction.target_property,
+              payload:        interaction.payload,
+            });
+          }
+
+          // Force flush to ensure events are sent immediately before blocking on execution
+          res.write(':executing\n\n');
+          if (res.flush) res.flush();
 
           // Store the interaction request as HIDDEN (intermediate message)
           storeAndBroadcastMessage(db, req.params.sessionId, req.user.id, 'assistant', currentContent, {
@@ -1026,17 +1170,14 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
 
 /**
  * Convert HML element to assertion format for pipeline execution.
+ * Note: websearch is handled by the interaction system, not HML pipeline.
  */
 function elementToAssertion(element) {
   switch (element.type) {
     case 'websearch':
-      return {
-        id:        element.id,
-        assertion: 'command',
-        name:      '_web_search',
-        message:   element.content,
-        ...element.attributes,
-      };
+      // Websearch is handled by the interaction system via <interaction> tags,
+      // not through HML element execution. Return null to skip pipeline execution.
+      return null;
 
     case 'bash':
       return {

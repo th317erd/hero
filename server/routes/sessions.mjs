@@ -165,12 +165,6 @@ router.post('/', (req, res) => {
       return res.status(404).json({ error: 'Parent session not found' });
   }
 
-  // Check for duplicate name
-  let existing = db.prepare('SELECT id FROM sessions WHERE user_id = ? AND name = ?').get(req.user.id, name);
-
-  if (existing)
-    return res.status(409).json({ error: `Session "${name}" already exists` });
-
   try {
     let result = db.prepare(`
       INSERT INTO sessions (user_id, agent_id, name, system_prompt, status, parent_session_id)
@@ -213,6 +207,8 @@ router.get('/:id', (req, res) => {
       s.system_prompt,
       s.status,
       s.parent_session_id,
+      s.input_tokens,
+      s.output_tokens,
       s.created_at,
       s.updated_at,
       a.id as agent_id,
@@ -227,7 +223,7 @@ router.get('/:id', (req, res) => {
     return res.status(404).json({ error: 'Session not found' });
 
   let messages = db.prepare(`
-    SELECT id, role, content, hidden, created_at
+    SELECT id, role, content, hidden, type, created_at, updated_at
     FROM messages
     WHERE session_id = ?
     ORDER BY created_at ASC
@@ -245,12 +241,18 @@ router.get('/:id', (req, res) => {
       name: session.agent_name,
       type: session.agent_type,
     },
+    cost: {
+      inputTokens:  session.input_tokens || 0,
+      outputTokens: session.output_tokens || 0,
+    },
     messages:  messages.map((m) => ({
       id:        m.id,
       role:      m.role,
       content:   JSON.parse(m.content),
       hidden:    !!m.hidden,
+      type:      m.type || 'message',
       createdAt: m.created_at,
+      updatedAt: m.updated_at,
     })),
     createdAt: session.created_at,
     updatedAt: session.updated_at,
@@ -274,12 +276,6 @@ router.put('/:id', (req, res) => {
   let values  = [];
 
   if (name !== undefined) {
-    // Check for duplicate name (excluding current session)
-    let existing = db.prepare('SELECT id FROM sessions WHERE user_id = ? AND name = ? AND id != ?').get(req.user.id, name, req.params.id);
-
-    if (existing)
-      return res.status(409).json({ error: `Session "${name}" already exists` });
-
     updates.push('name = ?');
     values.push(name);
   }

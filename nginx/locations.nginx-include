@@ -17,8 +17,13 @@ location /hero/api/ {
   proxy_read_timeout 86400;
   proxy_send_timeout 86400;
 
-  # Disable buffering for streaming responses
+  # SSE streaming support - disable all buffering
   proxy_buffering off;
+  proxy_cache off;
+  chunked_transfer_encoding on;
+
+  # Disable gzip for streaming (causes buffering)
+  gzip off;
 
   # Rewrite Location headers to include /hero/ prefix
   proxy_redirect / /hero/;

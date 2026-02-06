@@ -26,6 +26,7 @@ const state = {
   messageQueue:         [],    // Queued messages while agent is busy
   streamingMode:        true,  // Use streaming mode for agent responses
   streamingMessage:     null,  // Current streaming message state { id, content, elements }
+  sessionCost:          { inputTokens: 0, outputTokens: 0 },  // Cumulative token usage for session
 };
 
 // ============================================================================

@@ -33,4 +33,31 @@ router.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
+// SSE test endpoint
+router.get('/test-sse', requireAuth, async (req, res) => {
+  const DEBUG = process.env.DEBUG === 'true' || process.env.DEBUG === '1';
+  const debug = (...args) => { if (DEBUG) console.log('[SSE-Test]', ...args); };
+
+  debug('SSE test endpoint called');
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  res.flushHeaders();
+  res.write(':ok\n\n');
+
+  // Send 5 events with 1 second delay between each
+  for (let i = 1; i <= 5; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    debug(`SSE test: sending event ${i}`);
+    res.write(`event: test\ndata: {"count": ${i}, "message": "Test event ${i}"}\n\n`);
+  }
+
+  res.write(`event: done\ndata: {"message": "Test complete"}\n\n`);
+  debug('SSE test: complete');
+  res.end();
+});
+
 export default router;

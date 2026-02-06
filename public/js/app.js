@@ -1,6 +1,89 @@
 'use strict';
 
 // ============================================================================
+// Utility Functions
+// ============================================================================
+
+/**
+ * Format a token count for human display.
+ * @param {number} tokens - Token count
+ * @returns {string} Formatted string (e.g., "1.2k", "15k")
+ */
+function formatTokenCount(tokens) {
+  if (tokens < 1000) {
+    return tokens.toString();
+  } else if (tokens < 10000) {
+    return (tokens / 1000).toFixed(1) + 'k';
+  } else {
+    return Math.round(tokens / 1000) + 'k';
+  }
+}
+
+/**
+ * Calculate API cost from token counts.
+ * Claude Sonnet 4 pricing: $3/1M input, $15/1M output
+ * @param {number} inputTokens - Input token count
+ * @param {number} outputTokens - Output token count
+ * @returns {number} Cost in dollars
+ */
+function calculateCost(inputTokens, outputTokens) {
+  let inputCost  = (inputTokens / 1_000_000) * 3;    // $3 per 1M input
+  let outputCost = (outputTokens / 1_000_000) * 15;  // $15 per 1M output
+  return inputCost + outputCost;
+}
+
+/**
+ * Format cost for display.
+ * @param {number} cost - Cost in dollars
+ * @returns {string} Formatted string (e.g., "$0.02", "$1.45")
+ */
+function formatCost(cost) {
+  if (cost < 0.01) {
+    return '$' + cost.toFixed(4);
+  } else if (cost < 1) {
+    return '$' + cost.toFixed(2);
+  } else {
+    return '$' + cost.toFixed(2);
+  }
+}
+
+/**
+ * Update the floating cost display.
+ */
+function updateCostDisplay() {
+  let costEl = document.getElementById('cost-display');
+
+  // Create element if it doesn't exist
+  if (!costEl) {
+    costEl = document.createElement('div');
+    costEl.id = 'cost-display';
+    costEl.className = 'cost-display';
+    document.body.appendChild(costEl);
+  }
+
+  let cost = calculateCost(state.sessionCost.inputTokens, state.sessionCost.outputTokens);
+  let inputStr  = formatTokenCount(state.sessionCost.inputTokens);
+  let outputStr = formatTokenCount(state.sessionCost.outputTokens);
+
+  costEl.innerHTML = `
+    <span class="cost-amount">${formatCost(cost)}</span>
+    <span class="cost-tokens">${inputStr} in / ${outputStr} out</span>
+  `;
+  costEl.style.display = 'flex';
+}
+
+/**
+ * Reset session cost tracking.
+ */
+function resetSessionCost() {
+  state.sessionCost = { inputTokens: 0, outputTokens: 0 };
+  let costEl = document.getElementById('cost-display');
+  if (costEl) {
+    costEl.style.display = 'none';
+  }
+}
+
+// ============================================================================
 // Chat
 // ============================================================================
 
@@ -9,6 +92,19 @@ async function loadSession(sessionId) {
     let session    = await fetchSession(sessionId);
     state.currentSession = session;
     state.messages       = session.messages || [];
+
+    // Load session cost if available
+    if (session.cost) {
+      state.sessionCost = {
+        inputTokens:  session.cost.inputTokens || 0,
+        outputTokens: session.cost.outputTokens || 0,
+      };
+      if (state.sessionCost.inputTokens > 0 || state.sessionCost.outputTokens > 0) {
+        updateCostDisplay();
+      }
+    } else {
+      resetSessionCost();
+    }
 
     elements.sessionTitle.textContent = session.name;
 
@@ -101,11 +197,27 @@ function renderMessage(message) {
   // Add assertion blocks for this message
   let assertionsHtml = (messageId) ? renderAssertionsForMessage(messageId) : '';
 
-  // Format timestamp
+  // Calculate token estimate from content
+  let tokenEstimate = 0;
+  if (typeof message.content === 'string') {
+    tokenEstimate = Math.ceil(message.content.length / 4);
+  } else if (Array.isArray(message.content)) {
+    for (let block of message.content) {
+      if (block.type === 'text') {
+        tokenEstimate += Math.ceil(block.text.length / 4);
+      }
+    }
+  }
+
+  // Format timestamp with token count
   let timestampHtml = '';
   if (message.createdAt) {
-    let timeStr = formatRelativeDate(message.createdAt);
-    timestampHtml = `<div class="message-timestamp">${timeStr}</div>`;
+    let timeStr  = formatRelativeDate(message.createdAt);
+    let tokenStr = formatTokenCount(tokenEstimate);
+    timestampHtml = `<div class="message-timestamp">${timeStr} · ~${tokenStr} tokens</div>`;
+  } else if (tokenEstimate > 0) {
+    let tokenStr = formatTokenCount(tokenEstimate);
+    timestampHtml = `<div class="message-timestamp">~${tokenStr} tokens</div>`;
   }
 
   return `
@@ -783,6 +895,10 @@ async function processMessageStream(content) {
         debug('App', 'onStart callback', data);
         state.streamingMessage.id = data.messageId;
         updateStreamingHeader(data.agentName || 'Assistant');
+
+        // Note: data.estimatedTokens is the total context size (history + system prompt),
+        // not the response size, so we don't display it to avoid confusion with the
+        // final response token count shown after completion.
       },
 
       onText: (data) => {
@@ -867,9 +983,74 @@ async function processMessageStream(content) {
         showStreamingStatus('Processing interaction...');
       },
 
+      onInteractionStarted: (data) => {
+        console.log('[TRACE] onInteractionStarted called:', data);
+        console.log('[TRACE] state.streamingMessage:', !!state.streamingMessage);
+        debug('App', 'Interaction started', data);
+        // Show pending banner for the specific interaction type
+        let label = data.targetProperty || 'interaction';
+        let content = '';
+
+        // Format based on interaction type
+        if (data.targetProperty === 'websearch' && data.payload?.query) {
+          label = 'Web Search';
+          content = data.payload.query;
+        } else if (data.targetProperty === 'bash' && data.payload?.command) {
+          label = 'Command';
+          content = data.payload.command;
+        } else if (data.payload) {
+          content = (typeof data.payload === 'string') ? data.payload : JSON.stringify(data.payload);
+        }
+
+        // Track pending interaction
+        if (!state.streamingMessage.pendingInteractions) {
+          state.streamingMessage.pendingInteractions = {};
+        }
+        state.streamingMessage.pendingInteractions[data.interactionId] = {
+          label,
+          content,
+          status:    'pending',
+          startTime: Date.now(),
+        };
+
+        // Update the streaming content to show pending banner
+        appendInteractionBanner(data.interactionId, label, content, 'pending');
+      },
+
+      onInteractionUpdate: (data) => {
+        console.log('[TRACE] onInteractionUpdate:', data);
+        debug('App', 'Interaction update', data);
+        // Update the pending banner with new content (e.g., actual query after "...")
+        if (state.streamingMessage?.pendingInteractions?.[data.interactionId]) {
+          let pending = state.streamingMessage.pendingInteractions[data.interactionId];
+          if (data.payload?.query) {
+            pending.content = data.payload.query;
+            // Update the banner content in DOM
+            updateInteractionBannerContent(data.interactionId, data.payload.query);
+          }
+        }
+      },
+
       onInteractionResult: (data) => {
+        console.log('[TRACE] onInteractionResult:', {
+          interactionId:       data.interactionId,
+          status:              data.status,
+          hasStreamingMessage: !!state.streamingMessage,
+          hasPendingInteractions: !!state.streamingMessage?.pendingInteractions,
+          pendingKeys:         state.streamingMessage?.pendingInteractions ? Object.keys(state.streamingMessage.pendingInteractions) : [],
+        });
         debug('App', 'Interaction result', data);
-        // Could show individual results if needed
+        // Update the pending banner to show complete status
+        let elapsedMs = null;
+        if (state.streamingMessage?.pendingInteractions?.[data.interactionId]) {
+          let pending = state.streamingMessage.pendingInteractions[data.interactionId];
+          pending.status = data.status;
+          elapsedMs = Date.now() - pending.startTime;
+        } else {
+          console.log('[TRACE] onInteractionResult: pending interaction not in state (may be finalized), updating banner directly');
+        }
+        // Always try to update the banner - it may still be in the DOM even after finalization
+        updateInteractionBanner(data.interactionId, data.status, data.result, elapsedMs);
       },
 
       onInteractionContinuing: (data) => {
@@ -904,6 +1085,15 @@ async function processMessageStream(content) {
       onRateLimitWait: (data) => {
         debug('App', 'Rate limit wait', data);
         showStreamingStatus(`Rate limit reached. Waiting ${data.waitSeconds}s before retrying (attempt ${data.retryCount}/3)...`);
+      },
+
+      onUsage: (data) => {
+        debug('App', 'Token usage', data);
+        // Accumulate tokens for this session
+        state.sessionCost.inputTokens  += data.input_tokens || 0;
+        state.sessionCost.outputTokens += data.output_tokens || 0;
+        // Update cost display
+        updateCostDisplay();
       },
 
       onComplete: (data) => {
@@ -969,7 +1159,7 @@ function createStreamingMessagePlaceholder() {
     <div class="message message-assistant message-streaming" id="streaming-message">
       <div class="message-header">${escapeHtml(agentName)}</div>
       <div class="message-bubble">
-        <div class="streaming-content"></div>
+        <div class="streaming-content message-content"></div>
         <div class="streaming-elements"></div>
         <div class="streaming-indicator">
           <hero-interaction status="processing" message="Thinking..."></hero-interaction>
@@ -1161,6 +1351,11 @@ function finalizeStreamingMessage(data) {
   if (statusEl)
     statusEl.remove();
 
+  // Keep interaction banners visible (they show what actions were taken)
+  // Just update their status to reflect completion
+  let banners = document.querySelectorAll('#streaming-message .interaction-banner');
+  console.log('[TRACE] Found interaction banners to preserve:', banners.length);
+
   // Determine final content
   let finalContent = data.content || state.streamingMessage.content;
   debug('App', 'Final content', { length: finalContent.length, preview: finalContent.slice(0, 100) });
@@ -1178,6 +1373,16 @@ function finalizeStreamingMessage(data) {
       console.log('[TRACE] Setting innerHTML on streaming-content element');
       contentEl.innerHTML = renderMarkup(finalContent);
     }
+
+    // Add timestamp and token count
+    let now = new Date().toISOString();
+    let tokenEstimate = Math.ceil(finalContent.length / 4);
+    let timeStr  = formatRelativeDate(now);
+    let tokenStr = formatTokenCount(tokenEstimate);
+    let timestampEl = document.createElement('div');
+    timestampEl.className = 'message-timestamp';
+    timestampEl.textContent = `${timeStr} · ~${tokenStr} tokens`;
+    streamingEl.appendChild(timestampEl);
 
     debug('App', 'Removing streaming class from element');
     streamingEl.classList.remove('message-streaming');
@@ -1280,6 +1485,123 @@ function hideStreamingStatus() {
   let statusEl = document.querySelector('#streaming-message .streaming-status');
   if (statusEl)
     statusEl.remove();
+}
+
+/**
+ * Append an interaction banner to the streaming message.
+ * Shows "Web Search: [query] - Pending" style banners.
+ */
+function appendInteractionBanner(interactionId, label, content, status) {
+  console.log('[TRACE] appendInteractionBanner called:', { interactionId, label, content, status });
+  let streamingEl = document.getElementById('streaming-message');
+  console.log('[TRACE] streamingEl found:', !!streamingEl);
+  if (!streamingEl) {
+    console.log('[TRACE] No streaming element found, cannot append banner');
+    return;
+  }
+
+  let bubble = streamingEl.querySelector('.message-bubble');
+  console.log('[TRACE] bubble found:', !!bubble);
+  if (!bubble) return;
+
+  // Create the banner element
+  let statusText = (status === 'pending') ? 'Pending' : status;
+  let iconMap = {
+    'Web Search': '🔍',
+    'Command':    '$',
+    'default':    '⚡',
+  };
+  let icon = iconMap[label] || iconMap['default'];
+
+  let bannerHtml = `
+    <div class="interaction-banner interaction-banner-${status}" data-interaction-id="${escapeHtml(interactionId)}">
+      <span class="interaction-banner-icon">${icon}</span>
+      <span class="interaction-banner-label">${escapeHtml(label)}:</span>
+      <span class="interaction-banner-content">${escapeHtml(content.substring(0, 100))}${(content.length > 100) ? '...' : ''}</span>
+      <span class="interaction-banner-status">${statusText}</span>
+    </div>
+  `;
+
+  // Insert before streaming-content if it exists, otherwise append
+  let contentEl = bubble.querySelector('.streaming-content');
+  if (contentEl) {
+    contentEl.insertAdjacentHTML('beforebegin', bannerHtml);
+  } else {
+    bubble.insertAdjacentHTML('afterbegin', bannerHtml);
+  }
+}
+
+/**
+ * Format milliseconds as human-readable time.
+ */
+function formatElapsedTime(ms) {
+  if (ms < 1000) {
+    return `${ms}ms`;
+  } else if (ms < 60000) {
+    return `${(ms / 1000).toFixed(1)}s`;
+  } else {
+    let minutes = Math.floor(ms / 60000);
+    let seconds = ((ms % 60000) / 1000).toFixed(0);
+    return `${minutes}m ${seconds}s`;
+  }
+}
+
+/**
+ * Update an interaction banner status.
+ */
+function updateInteractionBanner(interactionId, status, result, elapsedMs) {
+  console.log('[TRACE] updateInteractionBanner:', { interactionId, status, elapsedMs });
+
+  // Debug: list all banners in DOM
+  let allBanners = document.querySelectorAll('.interaction-banner');
+  console.log('[TRACE] All banners in DOM:', allBanners.length);
+  allBanners.forEach((b, i) => {
+    console.log(`[TRACE]   Banner ${i}: data-interaction-id="${b.getAttribute('data-interaction-id')}"`);
+  });
+
+  let banner = document.querySelector(`.interaction-banner[data-interaction-id="${interactionId}"]`);
+  console.log('[TRACE] Banner found for interactionId:', !!banner, 'looking for:', interactionId);
+  if (!banner) {
+    console.log('[TRACE] BANNER NOT FOUND - cannot update');
+    return;
+  }
+
+  // Update status
+  let statusEl = banner.querySelector('.interaction-banner-status');
+  if (statusEl) {
+    let statusText;
+    if (status === 'completed' && elapsedMs) {
+      statusText = `Completed in ${formatElapsedTime(elapsedMs)}`;
+    } else if (status === 'completed') {
+      statusText = 'Complete';
+    } else if (status === 'failed') {
+      statusText = 'Failed';
+    } else {
+      statusText = status;
+    }
+    statusEl.textContent = statusText;
+    console.log('[TRACE] Updated status text to:', statusText);
+  } else {
+    console.log('[TRACE] No statusEl found in banner!');
+  }
+
+  // Update class for styling
+  banner.className = `interaction-banner interaction-banner-${status}`;
+  console.log('[TRACE] Updated banner class to:', banner.className);
+}
+
+/**
+ * Update an interaction banner content (e.g., when query becomes available).
+ */
+function updateInteractionBannerContent(interactionId, content) {
+  console.log('[TRACE] updateInteractionBannerContent:', { interactionId, content });
+  let banner = document.querySelector(`.interaction-banner[data-interaction-id="${interactionId}"]`);
+  if (!banner) return;
+
+  let contentEl = banner.querySelector('.interaction-banner-content');
+  if (contentEl) {
+    contentEl.textContent = content.substring(0, 100) + ((content.length > 100) ? '...' : '');
+  }
 }
 
 async function handleCommand(content) {

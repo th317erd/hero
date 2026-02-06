@@ -8,7 +8,10 @@
     "basePath": "/hero/"
   },
   "scripts": {
-    "start": "node server/index.mjs",
+    "start": "node server/index.mjs 2>&1 | tee /tmp/hero-server.log",
+    "start:bg": "node server/index.mjs > /tmp/hero-server.log 2>&1 &",
+    "stop": "pkill -f 'node.*server/index' || true",
+    "restart": "npm run stop && sleep 1 && npm run start:bg",
     "add-user": "node server/cli/add-user.mjs",
     "change-password": "node server/cli/change-password.mjs",
     "update-user-encryption": "node server/cli/update-user-encryption.mjs",
@@ -32,6 +35,7 @@
     "express": "^4.18.2",
     "jsonwebtoken": "^9.0.2",
     "puppeteer": "^22.0.0",
+    "turndown": "^7.2.2",
     "uuid": "^13.0.0",
     "ws": "^8.19.0"
   },

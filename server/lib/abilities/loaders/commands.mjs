@@ -9,6 +9,7 @@
 import { registerAbility } from '../registry.mjs';
 import { getDatabase } from '../../../database.mjs';
 import { encryptWithKey, decryptWithKey } from '../../../encryption.mjs';
+import { forceCompaction } from '../../compaction.mjs';
 
 /**
  * Load all command abilities.
@@ -104,6 +105,27 @@ export function loadCommandAbilities() {
       required: ['action'],
     },
     execute: executeSessionCommand,
+  });
+  count++;
+
+  // /compact command - Force conversation compaction
+  registerAbility({
+    name:        'command_compact',
+    type:        'function',
+    source:      'builtin',
+    description: 'Compact conversation history into a summary snapshot',
+    category:    'commands',
+    tags:        ['command', 'compact', 'context', 'memory'],
+    permissions: {
+      autoApprove:       true,  // Safe operation - just summarizes
+      autoApprovePolicy: 'always',
+      dangerLevel:       'safe',
+    },
+    inputSchema: {
+      type:       'object',
+      properties: {},
+    },
+    execute: executeCompactCommand,
   });
   count++;
 
@@ -268,11 +290,6 @@ async function executeSessionCommand(params, context) {
       if (!agent)
         return { success: false, error: 'Agent not found' };
 
-      // Check for duplicate name
-      let existing = db.prepare('SELECT id FROM sessions WHERE user_id = ? AND name = ?').get(context.userId, name);
-      if (existing)
-        return { success: false, error: `Session "${name}" already exists` };
-
       // For spawn action, set status to 'agent' and link parent
       let finalStatus     = (action === 'spawn') ? 'agent' : (status || null);
       let parentSessionId = (action === 'spawn') ? context.sessionId : null;
@@ -421,6 +438,46 @@ async function executeAgentCommand(params, context) {
 
     default:
       return { success: false, error: `Unknown action: ${action}` };
+  }
+}
+
+/**
+ * Execute the /compact command.
+ * Forces conversation compaction into a snapshot.
+ */
+async function executeCompactCommand(params, context) {
+  if (!context.sessionId) {
+    return { success: false, error: 'No session context available' };
+  }
+
+  if (!context.agent) {
+    return { success: false, error: 'No agent available for compaction' };
+  }
+
+  try {
+    let result = await forceCompaction(context.sessionId, context.userId, context.agent);
+
+    if (result.success) {
+      return {
+        success: true,
+        message: `Conversation compacted: ${result.compactedCount} messages summarized into snapshot.`,
+        details: {
+          snapshotId:     result.snapshotId,
+          messagesCount:  result.compactedCount,
+          summaryLength:  result.summaryLength,
+        },
+      };
+    } else {
+      return {
+        success: false,
+        error:   result.reason || 'Compaction failed',
+      };
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error:   `Compaction error: ${error.message}`,
+    };
   }
 }
 

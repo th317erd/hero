@@ -14,7 +14,7 @@ export const EXECUTABLE_ELEMENTS = ['websearch', 'bash', 'ask'];
 
 // All recognized HML elements (executable + display)
 export const ALL_ELEMENTS = [
-  'websearch', 'bash', 'ask',           // Executable
+  'websearch', 'bash', 'ask',            // Executable
   'thinking', 'todo', 'progress',        // Display
   'link', 'copy', 'result',              // Display
   'item',                                 // Nested (inside todo)
@@ -63,11 +63,10 @@ export class StreamingHMLParser extends EventEmitter {
    * Signal end of stream.
    */
   end() {
-    // Flush any remaining text
-    if (this.textBuffer) {
-      this.emit('text', { text: this.textBuffer });
-      this.textBuffer = '';
-    }
+    // Note: text is already emitted in chunks during streaming,
+    // so we don't re-emit the accumulated textBuffer here.
+    // Just clear it.
+    this.textBuffer = '';
 
     // Check for unclosed elements
     for (let element of this.elementStack) {
@@ -88,8 +87,14 @@ export class StreamingHMLParser extends EventEmitter {
     let lastIndex = 0;
     this.tagPattern.lastIndex = 0;
 
+    // Debug: log if buffer contains websearch
+    if (this.buffer.includes('<websearch>')) {
+      console.log('[Parser] Buffer contains <websearch>, pattern:', this.tagPattern.source);
+    }
+
     let match;
     while ((match = this.tagPattern.exec(this.buffer)) !== null) {
+      console.log('[Parser] Tag match:', match[0], 'closing:', match[1] === '/');
       let [fullMatch, isClosing, tagName, attrString] = match;
       tagName = tagName.toLowerCase();
       isClosing = isClosing === '/';

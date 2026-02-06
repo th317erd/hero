@@ -51,6 +51,7 @@
   margin-top: 4px;
   padding: 0 12px;
   opacity: 0.7;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
 }
 
 .message-user .message-timestamp {
@@ -300,6 +301,85 @@
   border-radius: 6px;
   font-size: 0.9em;
   color: var(--text-secondary);
+}
+
+/* Interaction Banner (shows pending/complete status for websearch, commands, etc.) */
+.interaction-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+}
+
+.interaction-banner-pending {
+  border-left: 3px solid var(--accent);
+  animation: pulse-border 1.5s ease-in-out infinite;
+}
+
+.interaction-banner-completed {
+  border-left: 3px solid var(--success, #22c55e);
+}
+
+.interaction-banner-failed {
+  border-left: 3px solid var(--error);
+}
+
+@keyframes pulse-border {
+  0%, 100% { border-left-color: var(--accent); }
+  50% { border-left-color: var(--accent-light, #60a5fa); }
+}
+
+.interaction-banner-icon {
+  flex-shrink: 0;
+  width: 24px;
+  text-align: center;
+  font-size: 16px;
+}
+
+.interaction-banner-label {
+  font-weight: 500;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.interaction-banner-content {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-style: italic;
+}
+
+.interaction-banner-status {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.interaction-banner-pending .interaction-banner-status {
+  background: var(--accent);
+  color: white;
+}
+
+.interaction-banner-completed .interaction-banner-status {
+  background: var(--success, #22c55e);
+  color: white;
+}
+
+.interaction-banner-failed .interaction-banner-status {
+  background: var(--error);
+  color: white;
 }
 
 /* Streaming Elements */
@@ -588,4 +668,37 @@
   .input-container {
     gap: 8px;
   }
+}
+
+/* ============================================================================
+   Floating Cost Display
+   ============================================================================ */
+
+.cost-display {
+  position: fixed;
+  bottom: 90px;
+  right: 20px;
+  display: none;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  z-index: 100;
+}
+
+.cost-amount {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--success);
+}
+
+.cost-tokens {
+  color: var(--text-muted);
+  font-size: 11px;
 }

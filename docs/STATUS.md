@@ -1,8 +1,31 @@
 # Current Status
 
-Last updated: 2026-02-05
+Last updated: 2026-02-06
 
 ## Recent Changes
+
+### Web Search Banner Timing Fix (Complete)
+Fixed critical issue where the "Web Search: Pending" banner appeared simultaneously with search results instead of immediately when the search started.
+
+**Root causes identified and fixed:**
+1. **SSE event parsing bug** - `eventType` and `eventData` were reset on every chunk, breaking events that span multiple chunks. Moved variables outside the parsing loop.
+2. **Interaction events timing** - Now send `interaction_started` at `<websearch>` opening tag (not closing tag) for immediate banner display.
+3. **Nginx buffering** - Added `gzip off`, `proxy_cache off`, `chunked_transfer_encoding on` to prevent SSE buffering.
+4. **Event loop yielding** - Added `setImmediate()` yield between sending events and blocking operations.
+
+**New features:**
+- `interaction_update` event - Updates banner content when full query is known
+- Elapsed time display - Banner shows "Completed in X.Xs" instead of just "Complete"
+- Text shadows on message content and timestamps for improved readability
+
+**Files changed:**
+- `server/routes/messages-stream.mjs` - Restructured websearch handling with proper event timing
+- `public/js/api.js` - Fixed multi-chunk SSE parsing, added `interaction_update` handler
+- `public/js/app.js` - Added `onInteractionUpdate`, `formatElapsedTime`, `updateInteractionBannerContent`
+- `public/js/markup.js` - Removed duplicate websearch banner rendering (now handled by interaction events)
+- `nginx/locations.nginx-include` - SSE buffering prevention settings
+- `public/css/chat.css` - Text shadow on timestamps
+- `public/css/markdown.css` - Text shadow on message content
 
 ### UI/UX Improvements (Complete)
 Various improvements to the chat interface and styling.

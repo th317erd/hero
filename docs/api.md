@@ -738,6 +738,77 @@ Delete a user process.
 
 ---
 
+## Help
+
+### GET `/api/help`
+
+Get comprehensive help data including commands, system functions, abilities, and assertions. Supports regex filtering for targeted lookups.
+
+**Query Parameters:**
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `filter` | string | - | Regex pattern to filter results by name or description |
+| `category` | string | `all` | Category to return: `all`, `commands`, `functions`, `abilities`, `assertions` |
+| `detailed` | boolean | `false` | Include detailed info (schemas, examples) |
+
+**Response (200):**
+```json
+{
+  "systemMethods": [
+    {
+      "name": "websearch",
+      "description": "Fetch web pages or search the web",
+      "permission": "always"
+    },
+    {
+      "name": "help",
+      "description": "Get help information about available commands, abilities, and functions",
+      "permission": "always"
+    }
+  ],
+  "assertions": [
+    { "type": "websearch", "description": "Search the web for information" }
+  ],
+  "processes": {
+    "system": [
+      { "name": "system_act", "description": "Action system for AI agents" }
+    ],
+    "user": []
+  },
+  "commands": {
+    "builtin": [
+      { "name": "help", "description": "Show this help information. Usage: /help [filter]" },
+      { "name": "clear", "description": "Clear the current chat" }
+    ],
+    "user": []
+  }
+}
+```
+
+**Example - Filter by pattern:**
+```
+GET /api/help?filter=search
+```
+
+Returns only items matching "search" in name or description.
+
+**Example - Get specific category with details:**
+```
+GET /api/help?category=functions&detailed=true
+```
+
+Returns only functions with full schema and examples.
+
+**Response (400) - Invalid regex:**
+```json
+{
+  "error": "Invalid regex pattern: Unterminated character class"
+}
+```
+
+---
+
 ## WebSocket
 
 Connect to `/hero/ws` for real-time updates.

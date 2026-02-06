@@ -2,7 +2,7 @@
 
 import express from 'express';
 import cookieParser from 'cookie-parser';
-import { readFileSync } from 'fs';
+import { readFileSync, writeFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -18,6 +18,14 @@ import './lib/assertions/index.mjs';  // Register assertion handlers
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = dirname(__filename);
+
+// Write debug.js based on DEBUG environment variable
+const DEBUG = process.env.DEBUG === 'true' || process.env.DEBUG === '1';
+const debugJsPath = join(__dirname, '..', 'public', 'js', 'debug.js');
+const debugJsContent = DEBUG
+  ? `// Auto-generated debug configuration\n'use strict';\nsetDebug(true);\nconsole.log('[Debug] Debug mode enabled via environment variable');\n`
+  : `// Auto-generated debug configuration\n'use strict';\n// Debug mode disabled\n`;
+writeFileSync(debugJsPath, debugJsContent);
 
 // Load and prepare index.html with config injection
 const indexHtmlPath = join(__dirname, '..', 'public', 'index.html');
@@ -94,6 +102,12 @@ const server = app.listen(config.port, config.host, () => {
   console.log(`Hero server running at http://${config.host}:${config.port}`);
   console.log(`Base URL: ${config.baseUrl}`);
 });
+
+// Increase timeouts for SSE streaming connections
+server.keepAliveTimeout = 120000; // 2 minutes
+server.headersTimeout = 125000;   // Slightly longer than keepAliveTimeout
+server.requestTimeout = 0;        // Disable request timeout
+server.timeout = 0;               // Disable idle timeout
 
 // Initialize WebSocket for real-time command updates
 initWebSocket(server);

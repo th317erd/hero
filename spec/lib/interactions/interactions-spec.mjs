@@ -154,11 +154,11 @@ class DisabledFunction extends InteractionFunction {
 // ============================================================================
 
 /**
- * Simulate an agent sending an interaction request as a JSON code block.
+ * Simulate an agent sending an interaction request as an <interaction> tag.
  * Keeps single objects as single (not wrapped in array).
  */
 function agentResponse(interactions) {
-  return '```json\n' + JSON.stringify(interactions, null, 2) + '\n```';
+  return '<interaction>' + JSON.stringify(interactions, null, 2) + '</interaction>';
 }
 
 /**
@@ -499,19 +499,31 @@ describe('Interaction Detector', () => {
       assert.equal(result.interactions.length, 2);
     });
 
-    it('should return null for non-JSON content', () => {
+    it('should return null for non-interaction content', () => {
       let result = detectInteractions('Just some regular text');
       assert.equal(result, null);
     });
 
-    it('should return null for JSON without required fields', () => {
-      let content = '```json\n{"foo": "bar"}\n```';
+    it('should return null for json blocks (must use interaction tag)', () => {
+      let content = '```json\n{"interaction_id": "x", "target_id": "@system", "target_property": "echo"}\n```';
       let result = detectInteractions(content);
       assert.equal(result, null);
     });
 
-    it('should return null for JSON without interaction_id', () => {
-      let content = '```json\n{"target_id": "@system", "target_property": "echo"}\n```';
+    it('should return null for interaction code blocks (must use tag)', () => {
+      let content = '```interaction\n{"interaction_id": "x", "target_id": "@system", "target_property": "echo"}\n```';
+      let result = detectInteractions(content);
+      assert.equal(result, null);
+    });
+
+    it('should return null for interaction tag without required fields', () => {
+      let content = '<interaction>{"foo": "bar"}</interaction>';
+      let result = detectInteractions(content);
+      assert.equal(result, null);
+    });
+
+    it('should return null for interaction tag without interaction_id', () => {
+      let content = '<interaction>{"target_id": "@system", "target_property": "echo"}</interaction>';
       let result = detectInteractions(content);
       assert.equal(result, null);
     });
@@ -524,6 +536,55 @@ describe('Interaction Detector', () => {
       let result = detectInteractions(content);
       assert.ok(result);
       assert.equal(result.interactions[0].interaction_id, 'id-1');
+    });
+
+    it('should detect interaction tags interlaced with text', () => {
+      let content = `Hello! I'll help you with that.
+
+Let me search for some information:
+
+<interaction>
+{
+  "interaction_id": "search-1",
+  "target_id": "@system",
+  "target_property": "websearch",
+  "payload": { "query": "test" }
+}
+</interaction>
+
+I'll wait for the results.`;
+
+      let result = detectInteractions(content);
+      assert.ok(result);
+      assert.equal(result.mode, 'single');
+      assert.equal(result.interactions[0].interaction_id, 'search-1');
+    });
+
+    it('should detect multiple interaction tags in same response', () => {
+      let content = `First search:
+
+<interaction>{ "interaction_id": "s1", "target_id": "@system", "target_property": "echo", "payload": {} }</interaction>
+
+Second search:
+
+<interaction>{ "interaction_id": "s2", "target_id": "@system", "target_property": "echo", "payload": {} }</interaction>`;
+
+      let result = detectInteractions(content);
+      assert.ok(result);
+      assert.equal(result.mode, 'sequential');
+      assert.equal(result.interactions.length, 2);
+      assert.equal(result.interactions[0].interaction_id, 's1');
+      assert.equal(result.interactions[1].interaction_id, 's2');
+    });
+
+    it('should handle JSON payloads containing closing tag in string', () => {
+      // The JSON contains </interaction> inside a string value - parser should find correct closing tag
+      let content = '<interaction>{\n  "interaction_id": "edge-case",\n  "target_id": "@system",\n  "target_property": "echo",\n  "payload": {\n    "message": "This contains </interaction> inside the string"\n  }\n}</interaction>';
+
+      let result = detectInteractions(content);
+      assert.ok(result);
+      assert.equal(result.interactions[0].interaction_id, 'edge-case');
+      assert.ok(result.interactions[0].payload.message.includes('</interaction>'));
     });
   });
 
@@ -980,6 +1041,205 @@ describe('End-to-End Interaction Flow', () => {
     let feedback = formatInteractionFeedback(results);
     assert.ok(feedback.includes('Unknown function'));
     assert.ok(feedback.includes('Available'));
+  });
+});
+
+// ============================================================================
+// HelpFunction Tests
+// ============================================================================
+
+import { HelpFunction } from '../../../server/lib/interactions/functions/help.mjs';
+
+describe('HelpFunction', () => {
+  beforeEach(() => {
+    clearRegisteredFunctions();
+    registerFunctionClass(EchoFunction);
+    registerFunctionClass(RestrictedFunction);
+    registerFunctionClass(HelpFunction);
+    initializeSystemFunction();
+  });
+
+  afterEach(() => {
+    clearRegisteredFunctions();
+  });
+
+  describe('registration', () => {
+    it('should have correct registration info', () => {
+      let reg = HelpFunction.register();
+      assert.equal(reg.name, 'help');
+      assert.equal(reg.permission, PERMISSION.ALWAYS);
+      assert.ok(reg.description);
+      assert.ok(reg.schema);
+      assert.ok(reg.examples);
+    });
+
+    it('should be registered as a system function', () => {
+      assert.ok(getRegisteredFunctionClass('help'));
+      assert.ok(getRegisteredFunctionNames().includes('help'));
+    });
+  });
+
+  describe('permission checking', () => {
+    it('should always allow help requests', async () => {
+      let func = new HelpFunction();
+
+      // Empty payload
+      let result1 = await func.allowed({}, {});
+      assert.equal(result1.allowed, true);
+
+      // With filter
+      let result2 = await func.allowed({ filter: 'echo' }, {});
+      assert.equal(result2.allowed, true);
+
+      // Null payload
+      let result3 = await func.allowed(null, {});
+      assert.equal(result3.allowed, true);
+    });
+  });
+
+  describe('execute()', () => {
+    it('should return all help categories by default', async () => {
+      let func = new HelpFunction({});
+      let result = await func.start({});
+
+      assert.ok(result.success);
+      assert.ok(result.commands);
+      assert.ok(result.functions);
+      assert.ok(result.abilities);
+      assert.ok(result.assertions);
+    });
+
+    it('should return only specified category', async () => {
+      let func = new HelpFunction({});
+      let result = await func.start({ category: 'functions' });
+
+      assert.ok(result.success);
+      assert.ok(result.functions);
+      assert.equal(result.commands, undefined);
+      assert.equal(result.abilities, undefined);
+      assert.equal(result.assertions, undefined);
+    });
+
+    it('should filter results by regex pattern', async () => {
+      let func = new HelpFunction({});
+      let result = await func.start({ filter: 'echo' });
+
+      assert.ok(result.success);
+      // Should find the echo function
+      let echoFunc = result.functions.find((f) => f.name === 'echo');
+      assert.ok(echoFunc);
+
+      // Should not include restricted (doesn't match 'echo')
+      let restrictedFunc = result.functions.find((f) => f.name === 'restricted');
+      assert.equal(restrictedFunc, undefined);
+    });
+
+    it('should filter with case-insensitive regex', async () => {
+      let func = new HelpFunction({});
+      let result = await func.start({ filter: 'ECHO' });
+
+      assert.ok(result.success);
+      let echoFunc = result.functions.find((f) => f.name === 'echo');
+      assert.ok(echoFunc);
+    });
+
+    it('should handle complex regex patterns', async () => {
+      let func = new HelpFunction({});
+      let result = await func.start({ filter: 'echo|restricted' });
+
+      assert.ok(result.success);
+      assert.ok(result.functions.find((f) => f.name === 'echo'));
+      assert.ok(result.functions.find((f) => f.name === 'restricted'));
+    });
+
+    it('should return error for invalid regex', async () => {
+      let func = new HelpFunction({});
+      let result = await func.start({ filter: '[invalid' });
+
+      assert.equal(result.success, false);
+      assert.ok(result.error.includes('Invalid regex'));
+    });
+
+    it('should include builtin commands', async () => {
+      let func = new HelpFunction({});
+      let result = await func.start({ category: 'commands' });
+
+      assert.ok(result.commands.builtin.length > 0);
+      let helpCmd = result.commands.builtin.find((c) => c.name === 'help');
+      assert.ok(helpCmd);
+      assert.ok(helpCmd.description.includes('Usage'));
+    });
+
+    it('should filter commands by pattern', async () => {
+      let func = new HelpFunction({});
+      let result = await func.start({ category: 'commands', filter: 'session' });
+
+      assert.ok(result.commands.builtin.find((c) => c.name === 'session'));
+      assert.equal(result.commands.builtin.find((c) => c.name === 'clear'), undefined);
+    });
+  });
+
+  describe('system function dispatch', () => {
+    it('should be callable via SystemFunction.handle()', async () => {
+      let system = getSystemFunction();
+      let result = await system.handle({
+        interaction_id:  'help-test-1',
+        target_id:       '@system',
+        target_property: 'help',
+        payload:         {},
+        session_id:      1,
+        user_id:         1,
+      });
+
+      assert.equal(result.status, 'completed');
+      assert.ok(result.result.success);
+      assert.ok(result.result.functions);
+    });
+
+    it('should support filter via system dispatch', async () => {
+      let system = getSystemFunction();
+      let result = await system.handle({
+        interaction_id:  'help-test-2',
+        target_id:       '@system',
+        target_property: 'help',
+        payload:         { filter: 'echo' },
+        session_id:      1,
+        user_id:         1,
+      });
+
+      assert.equal(result.status, 'completed');
+      let echoFunc = result.result.functions.find((f) => f.name === 'echo');
+      assert.ok(echoFunc);
+    });
+  });
+
+  describe('agent usage flow', () => {
+    it('should work in full agent interaction flow', async () => {
+      // Simulate agent sending help request
+      let agentMessage = agentResponse({
+        interaction_id:  'agent-help-1',
+        target_id:       '@system',
+        target_property: 'help',
+        payload:         { filter: 'echo', category: 'functions' },
+      });
+
+      let detected = detectInteractions(agentMessage);
+      assert.ok(detected);
+      assert.equal(detected.interactions[0].target_property, 'help');
+
+      let context = createContext({ sessionId: 'help-test-session' });
+      clearAgentMessages('help-test-session');
+
+      let results = await executeInteractions(detected, context);
+
+      assert.equal(results.results.length, 1);
+      assert.equal(results.results[0].status, 'completed');
+      assert.ok(results.results[0].result.result.functions);
+
+      // Feedback should be formatted correctly
+      let feedback = formatInteractionFeedback(results);
+      assert.ok(feedback.includes('completed'));
+    });
   });
 });
 

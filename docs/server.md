@@ -104,11 +104,38 @@ interactions/
 ├── index.mjs           # Exports and initialization
 ├── bus.mjs             # InteractionBus (pub/sub)
 ├── function.mjs        # Base InteractionFunction class
-├── detector.mjs        # Detects @target patterns in text
+├── detector.mjs        # Detects ```interaction blocks in text
 └── functions/
     ├── system.mjs      # Routes @system calls
-    └── websearch.mjs   # Web search implementation
+    ├── websearch.mjs   # Web search implementation
+    └── help.mjs        # Help function (no permission required)
 ```
+
+**Interaction Block Format:**
+
+Agents request actions using ` ```interaction ` code blocks (NOT ` ```json `):
+
+````markdown
+Some text before...
+
+```interaction
+[
+  {
+    "interaction_id": "unique-id",
+    "target_id": "@system",
+    "target_property": "websearch",
+    "payload": { "query": "example" }
+  }
+]
+```
+
+Some text after...
+````
+
+The detector:
+- Finds ` ```interaction ` blocks anywhere in the response (interlaced with text)
+- Handles JSON payloads containing ` ``` ` sequences (smart closing detection)
+- Supports multiple interaction blocks in a single response
 
 **InteractionFunction** base class:
 
@@ -271,7 +298,7 @@ CREATE TABLE ability_approvals (
 | `/api/agents/*` | `agents.mjs` | Agent CRUD |
 | `/api/abilities/*` | `abilities.mjs` | Abilities CRUD |
 | `/api/processes/*` | `processes.mjs` | Processes (legacy) |
-| `/api/help` | `help.mjs` | Help data |
+| `/api/help` | `help.mjs` | Help data (supports ?filter, ?category, ?detailed) |
 | `/ws` | WebSocket | Real-time updates |
 
 ## nginx Configuration

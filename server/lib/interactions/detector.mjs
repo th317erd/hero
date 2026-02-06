@@ -275,7 +275,22 @@ export async function executeInteractions(interactionBlock, context) {
 }
 
 /**
+ * Truncate a string to a maximum length, adding ellipsis if needed.
+ *
+ * @param {string} str - String to truncate
+ * @param {number} maxLength - Maximum length
+ * @returns {string} Truncated string
+ */
+function truncateResult(str, maxLength = 2000) {
+  if (!str || str.length <= maxLength)
+    return str;
+
+  return str.slice(0, maxLength) + '\n... [truncated]';
+}
+
+/**
  * Format interaction results as feedback for the AI.
+ * Truncates large results to prevent token bloat.
  *
  * @param {Object} executionResult - Result from executeInteractions
  * @returns {string} Formatted feedback string
@@ -293,7 +308,7 @@ export function formatInteractionFeedback(executionResult) {
       // Handle result object with status/result structure
       if (r.result && typeof r.result === 'object') {
         if (r.result.status === 'completed' && r.result.result) {
-          resultStr = typeof r.result.result === 'string'
+          resultStr = (typeof r.result.result === 'string')
             ? r.result.result
             : JSON.stringify(r.result.result, null, 2);
         } else if (r.result.status === 'denied') {
@@ -304,10 +319,13 @@ export function formatInteractionFeedback(executionResult) {
           resultStr = JSON.stringify(r.result, null, 2);
         }
       } else {
-        resultStr = typeof r.result === 'string'
+        resultStr = (typeof r.result === 'string')
           ? r.result
           : JSON.stringify(r.result, null, 2);
       }
+
+      // Truncate large results to prevent token bloat
+      resultStr = truncateResult(resultStr, 2000);
 
       return `${prefix} completed:\n${resultStr}`;
     }

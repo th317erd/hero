@@ -15,6 +15,7 @@
 import { getInteractionBus as _getInteractionBus } from './bus.mjs';
 import { initializeSystemFunction as _initializeSystemFunction, registerFunctionClass as _registerFunctionClass, buildAgentInstructions as _buildAgentInstructions } from './functions/system.mjs';
 import { WebSearchFunction } from './functions/websearch.mjs';
+import { HelpFunction } from './functions/help.mjs';
 
 // Re-export base class and permission constants
 export { InteractionFunction, PERMISSION } from './function.mjs';
@@ -92,6 +93,9 @@ export {
   searchWeb,
 } from './functions/websearch.mjs';
 
+// Re-export help function
+export { HelpFunction } from './functions/help.mjs';
+
 /**
  * Initialize the interactions system.
  * Call this during server startup.
@@ -108,6 +112,7 @@ export function initializeInteractions(options = {}) {
 
   // Register built-in function classes
   _registerFunctionClass(WebSearchFunction);
+  _registerFunctionClass(HelpFunction);
 
   // Set up handlers if provided
   if (options.onUserInteraction) {

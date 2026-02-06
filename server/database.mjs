@@ -110,8 +110,7 @@ function getMigrations() {
           name TEXT NOT NULL,
           system_prompt TEXT,
           created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-          UNIQUE(user_id, name)
+          updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
 
         CREATE INDEX idx_sessions_user_id ON sessions(user_id);
@@ -315,6 +314,25 @@ function getMigrations() {
 
         -- Index for efficient filtering by type
         CREATE INDEX idx_messages_type ON messages(session_id, type);
+      `,
+    },
+    {
+      name: '009_messages_updated_at',
+      sql:  `
+        -- Add updated_at column to messages for tracking modifications
+        -- SQLite doesn't allow non-constant defaults, so use NULL then update
+        ALTER TABLE messages ADD COLUMN updated_at TEXT DEFAULT NULL;
+
+        -- Populate existing rows with created_at value
+        UPDATE messages SET updated_at = created_at;
+      `,
+    },
+    {
+      name: '010_sessions_cost',
+      sql:  `
+        -- Add cost tracking columns to sessions
+        ALTER TABLE sessions ADD COLUMN input_tokens INTEGER DEFAULT 0;
+        ALTER TABLE sessions ADD COLUMN output_tokens INTEGER DEFAULT 0;
       `,
     },
   ];

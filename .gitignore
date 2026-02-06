@@ -75,6 +75,7 @@ web_modules/
 *.db-journal
 *.db-wal
 *.db-shm
+public/js/debug.js
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
