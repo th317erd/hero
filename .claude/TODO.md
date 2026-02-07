@@ -36,10 +36,17 @@
 - [x] Target ID parsing utilities - implemented (prefix:id format)
 - [x] Tests for compilation - 36 tests covering all scenarios
 
-**Phase 3: Server-Side Frame Loop**
+**Phase 3: Server-Side Frame Loop** (PARTIAL)
 - [ ] Refactor `messages-stream.mjs` to create frames
-- [ ] Frame-based context builder for agent calls
-- [ ] API endpoint: `GET /api/sessions/:id/frames`
+- [x] Frame-based context builder for agent calls - `server/lib/frames/context.mjs`
+  - `loadFramesForContext()` - Load frames for AI context
+  - `getFramesForDisplay()` - Get frames with compiled state
+  - `buildConversationForCompaction()` - Format for summarization
+  - `countMessagesSinceCompact()` - Count messages for compaction trigger
+- [x] API endpoint: `GET /api/sessions/:id/frames` - implemented
+  - GET /sessions/:id/frames - List frames with filters
+  - GET /sessions/:id/frames/stats - Frame statistics
+  - GET /sessions/:id/frames/:frameId - Single frame
 - [ ] Tests for agent turn frame creation
 
 **Phase 4: WebSocket Protocol**
