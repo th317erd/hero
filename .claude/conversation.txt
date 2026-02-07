@@ -1,2 +1,0 @@
-- [TRACE-API] interaction_result callback completed (success) ***NONE***
-- [TRACE-API] interaction_result callback THREW ERROR: (error with details) ***NONE***

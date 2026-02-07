@@ -472,6 +472,12 @@ server/
 │   ├── plugins/            # Plugin system
 │   │   └── loader.mjs
 │   └── websocket.mjs       # WS connection handling
+│
+├── Additional Key Files:
+│   ├── lib/abilities/conditional.mjs  # Conditional ability matching
+│   ├── lib/interactions/functions/help.mjs
+│   ├── lib/interactions/functions/prompt-update.mjs
+│   └── lib/abilities/loaders/commands.mjs  # Command abilities
 public/
 ├── index.html              # Main SPA
 ├── css/
@@ -481,5 +487,541 @@ public/
 │   └── ...
 └── js/
     ├── app.js              # Frontend logic
-    └── markup.js           # HML renderer
+    ├── markup.js           # HML renderer
+    └── components/
+        └── hml-prompt.js   # Inline prompt Web Component
 ```
+
+---
+
+## Deep Dive: AI Agent Interaction System
+
+This section details how the AI agent asks questions, steers conversations, and uses the abilities system.
+
+### System Layers
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    ABILITIES SYSTEM                          │
+│  (What the AI can do - processes, functions, commands)       │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+┌──────────────────────────▼──────────────────────────────────┐
+│                  INTERACTIONS SYSTEM                         │
+│  (How the AI requests actions via <interaction> tags)        │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+┌──────────────────────────▼──────────────────────────────────┐
+│              CONDITIONAL ABILITIES + HML PROMPTS             │
+│  (Conversation steering via context-aware triggers)          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### How the AI Requests Actions
+
+The AI outputs `<interaction>` tags anywhere in its response:
+
+```xml
+<interaction>
+{
+  "interaction_id": "ws-12345",
+  "target_id": "@system",
+  "target_property": "websearch",
+  "payload": { "query": "best running shoes" }
+}
+</interaction>
+```
+
+#### Interaction Message Format
+
+```javascript
+{
+  interaction_id: string,    // Unique ID (agent generates)
+  target_id: string,         // Target (@system, @user, function ID)
+  target_property: string,   // Method to invoke
+  payload: any,              // Data for the method
+  ts: number,                // Timestamp (ms since epoch)
+  source_id?: string,        // Source function ID
+  session_id?: number,       // Session context
+  user_id?: number,          // User context
+  sender_id?: number,        // SYSTEM ONLY - indicates authorized user
+}
+```
+
+#### Detection & Execution Flow
+
+```
+AI Response
+    │
+    ▼
+detectInteractions(content)
+    │ Parse <interaction> tags
+    │ Handle nested </interaction> in JSON
+    ▼
+stripSensitiveProperties()
+    │ Remove sender_id (agents can't spoof authorization)
+    ▼
+validateInteraction()
+    │ Check required fields
+    ▼
+executeInteractions()
+    │
+    ├─► Permission Check (for @system targets)
+    │       │
+    │       ├─► Denied → queueAgentMessage('denied')
+    │       │
+    │       └─► Allowed → Continue
+    │
+    ▼
+bus.send(interaction)
+    │ Route to appropriate handler
+    ▼
+queueAgentMessage('completed' | 'failed')
+    │
+    ▼
+formatInteractionFeedback()
+    │ Format results for next AI turn
+    ▼
+Injected into conversation
+```
+
+#### Security: sender_id
+
+The `sender_id` field indicates the interaction originated from an authenticated user (not the AI agent). This is **stripped during detection** so agents cannot spoof authorization:
+
+```javascript
+// detector.mjs
+function stripSensitiveProperties(interaction) {
+  let clean = { ...interaction };
+  delete clean.sender_id;  // Agents cannot set this
+  return clean;
+}
+```
+
+Only the system can set `sender_id` when creating interactions from authenticated user actions.
+
+### Registered System Functions
+
+| Function | Description | Permission |
+|----------|-------------|------------|
+| `websearch` | Fetch web pages or search | ask |
+| `help` | Get help information | always |
+| `update_prompt` | Update hml-prompt answers | always |
+
+### Conditional Abilities (Context-Aware Instruction Injection)
+
+**Location:** `server/lib/abilities/conditional.mjs`
+
+**Purpose:** Save tokens by only loading instructions when they're relevant.
+
+The conditional abilities system is a **general-purpose pre-processing layer** that runs on **EVERY interaction** - every message the AI receives, including feedback from its own actions. Before the AI responds, the system:
+
+1. Checks all registered conditional abilities against the current context
+2. Only injects instructions for abilities that match
+3. This prevents loading irrelevant instructions, saving tokens
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                   EVERY INTERACTION FLOW                         │
+│                                                                  │
+│  Incoming Content (user message, feedback, tool result, etc.)   │
+│       │                                                          │
+│       ▼                                                          │
+│  checkConditionalAbilities(context)                              │
+│       │                                                          │
+│       ├─► No conditional abilities registered?                   │
+│       │       │                                                  │
+│       │       └─► SKIP (no processing needed) ─────────────┐     │
+│       │                                                    │     │
+│       ├─► For each conditional ability:                    │     │
+│       │       │                                            │     │
+│       │       ├─► matchCondition(context) → false? Skip    │     │
+│       │       │                                            │     │
+│       │       └─► matchCondition(context) → true? Add      │     │
+│       │                                                    │     │
+│       ▼                                                    │     │
+│  Any matches?                                              │     │
+│       │                                                    │     │
+│       ├─► NO: SKIP (nothing to inject) ────────────────────┤     │
+│       │                                                    │     │
+│       └─► YES: formatConditionalInstructions()             │     │
+│               │                                            │     │
+│               ▼                                            │     │
+│       Append "[System: Conditional Ability...]"            │     │
+│                                                            │     │
+│       ┌────────────────────────────────────────────────────┘     │
+│       │                                                          │
+│       ▼                                                          │
+│  Send to AI (original content, or with injected instructions)    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Key Point:** This is NOT just for prompts. Any context-aware logic can be a conditional ability:
+- Detecting when the user is asking about a specific topic
+- Recognizing patterns that need special handling
+- Injecting project-specific instructions when relevant files are mentioned
+- Triggering workflows based on conversation state
+
+#### Structure
+
+Each conditional ability has:
+
+```javascript
+{
+  name: 'ability_name',
+  applies: 'Freeform description of when this applies',
+  matchCondition: (context) => {
+    // Programmatic matcher
+    // Returns: { matches: boolean, details?: object }
+  },
+  message: 'Instructions to inject when matched'
+}
+```
+
+#### Example Use Cases
+
+Conditional abilities can handle any context-aware logic:
+
+| Use Case | Trigger Condition | Injected Instructions |
+|----------|-------------------|----------------------|
+| Prompt response | Unanswered `<hml-prompt>` exists | "User may be answering a prompt, use `update_prompt`" |
+| Code review mode | User mentions PR/commit/diff | "Apply code review best practices..." |
+| Sensitive topic | Detects keywords/patterns | "Handle with care, check policies..." |
+| Project context | Specific file paths mentioned | "This project uses X framework..." |
+| Tool guidance | User asks "how do I..." | "Available tools: websearch, bash..." |
+
+#### Built-in Example: prompt_response_handler
+
+This is the currently registered conditional ability. Others can be added.
+
+```javascript
+// builtin.mjs
+{
+  name: 'prompt_response_handler',
+  type: 'process',
+  description: 'Detects when user answers an hml-prompt via chat',
+  applies: 'The user responds to an hml-prompt question without using the IPC layer',
+
+  matchCondition: (context) => {
+    let { userMessage, sessionID } = context;
+
+    // If user's message contains <interaction>, they're using IPC
+    if (userMessage.includes('<interaction>')) {
+      return { matches: false };
+    }
+
+    // Check for unanswered prompts
+    let unansweredPrompts = getUnansweredPrompts(sessionID);
+
+    if (unansweredPrompts.length === 0) {
+      return { matches: false };
+    }
+
+    // User sent message + there are unanswered prompts = likely answering
+    return {
+      matches: true,
+      details: {
+        unansweredPrompts,
+        hint: 'The user may be responding to one of these prompts.'
+      }
+    };
+  },
+
+  message: `The user may be answering an hml-prompt question in regular chat.
+            Use the update_prompt interaction to update the original prompt...`
+}
+```
+
+#### Conditional Ability Flow
+
+```javascript
+// In messages-stream.mjs, before sending user message to AI:
+let conditionalResult = await checkConditionalAbilities({
+  userMessage: content,
+  sessionID,
+  recentMessages
+});
+
+if (conditionalResult.matched) {
+  // Format and inject instructions
+  let instructions = formatConditionalInstructions(conditionalResult.instructions);
+  // Prepend to context as [System: Conditional Ability Triggered]
+}
+```
+
+#### Output Format
+
+When a conditional ability triggers, the AI receives:
+
+```
+[System: Conditional Ability Triggered]
+
+**prompt_response_handler**: The user may be answering an hml-prompt question...
+Details:
+```json
+{
+  "unansweredPrompts": [
+    { "messageID": 123, "promptID": "fav-color", "question": "What is your favorite color?" }
+  ]
+}
+```
+```
+
+### HML Prompts (Inline Questions)
+
+**Location:** `public/js/components/hml-prompt.js`
+
+Web Component for inline user questions within AI responses.
+
+#### How the AI Uses Them
+
+The AI outputs in its response:
+
+```html
+I'd like to know more. <hml-prompt id="fav-color">What's your favorite color?</hml-prompt>
+```
+
+#### Web Component Structure
+
+```javascript
+class HmlPrompt extends HTMLElement {
+  // Uses Shadow DOM for style encapsulation
+  constructor() {
+    super();
+    this.attachShadow({ mode: 'open' });
+  }
+
+  // Observed attributes for reactivity
+  static get observedAttributes() {
+    return ['answered'];
+  }
+
+  // Key properties
+  get promptId()   { return this.getAttribute('id'); }
+  get isAnswered() { return this.hasAttribute('answered'); }
+  get question()   { /* text content excluding <response> */ }
+  get response()   { /* content of <response> element */ }
+}
+```
+
+#### Rendering States
+
+**Unanswered:**
+```html
+<hml-prompt id="fav-color">What's your favorite color?</hml-prompt>
+```
+Renders as: inline textarea with question as placeholder, blue styling
+
+**Answered:**
+```html
+<hml-prompt id="fav-color" answered>
+  What's your favorite color?
+  <response>Blue, because it reminds me of the ocean.</response>
+</hml-prompt>
+```
+Renders as: green styled inline text showing the answer
+
+#### Answer Flow
+
+```
+User types answer in prompt
+         │
+         ▼
+Press Enter
+         │
+         ▼
+submitAnswer(answer)
+         │
+         ├─► Find parent [data-message-id] element
+         │
+         ▼
+Dispatch 'prompt-submit' CustomEvent
+    {
+      bubbles: true,
+      composed: true,  // Crosses shadow DOM
+      detail: { messageId, promptId, question, answer }
+    }
+         │
+         ▼
+attachUserPromptHandlers() catches event (app.js)
+         │
+         ▼
+Sends answer as new chat message
+         │
+         ▼
+Updates prompt: setAttribute('answered', '')
+         │
+         ▼
+Database updated via API
+```
+
+#### If User Answers in Chat Instead of Prompt
+
+1. User types answer in main chat input (not the prompt)
+2. `prompt_response_handler.matchCondition()` detects unanswered prompts exist
+3. System injects instructions telling AI about the unanswered prompts
+4. AI recognizes user's message is answering a prompt
+5. AI sends `update_prompt` interaction:
+
+```xml
+<interaction>
+{
+  "interaction_id": "prompt-update-001",
+  "target_id": "@system",
+  "target_property": "update_prompt",
+  "payload": {
+    "message_id": 123,
+    "prompt_id": "fav-color",
+    "answer": "Blue"
+  }
+}
+</interaction>
+```
+
+6. `PromptUpdateFunction` updates the stored message content in database
+7. Frontend re-renders, showing the prompt as answered
+
+### Command Abilities
+
+**Location:** `server/lib/abilities/loaders/commands.mjs`
+
+Commands are function abilities that can be invoked by the AI or user:
+
+| Command | Description | Permission |
+|---------|-------------|------------|
+| `command_ability` | Create/edit/delete abilities | never (Ask Always) |
+| `command_session` | Create/archive sessions | never (Ask Always) |
+| `command_compact` | Force conversation compaction | always |
+| `command_start` | Re-send startup abilities | always |
+| `command_agent` | Create/configure agents | never (Ask Always) |
+
+### Complete Flow Diagram
+
+```
+                         ┌───────────────────┐
+                         │   __onstart_.md   │
+                         │  (Core System     │
+                         │   Instructions)   │
+                         └─────────┬─────────┘
+                                   │ Loaded on first message
+                                   ▼
+┌─────────────┐    ┌───────────────────────────────────┐    ┌─────────────┐
+│   User      │◄──►│           AI Agent                │◄──►│  Abilities  │
+│   Input     │    │                                   │    │  Registry   │
+└─────────────┘    │  Outputs:                         │    └─────────────┘
+                   │  - Text responses                 │           │
+                   │  - <hml-prompt> for questions     │           │
+                   │  - <interaction> for actions      │           ▼
+                   └──────────────┬────────────────────┘    ┌─────────────┐
+                                  │                         │ Conditional │
+                                  ▼                         │  Abilities  │
+                   ┌──────────────────────────────┐         └──────┬──────┘
+                   │      Interaction Bus         │                │
+                   │  Routes to: @system, @user   │◄───────────────┘
+                   └──────────────┬───────────────┘    (Inject context)
+                                  │
+            ┌─────────────────────┼─────────────────────┐
+            ▼                     ▼                     ▼
+    ┌───────────────┐     ┌───────────────┐     ┌───────────────┐
+    │  WebSearch    │     │    Help       │     │ PromptUpdate  │
+    │  Function     │     │   Function    │     │   Function    │
+    └───────────────┘     └───────────────┘     └───────────────┘
+```
+
+### Adding New Capabilities
+
+#### Adding a New Interaction Function
+
+1. Create function class in `server/lib/interactions/functions/`:
+
+```javascript
+// my-function.mjs
+import { InteractionFunction, PERMISSION } from '../function.mjs';
+
+export class MyFunction extends InteractionFunction {
+  static get name() { return 'my_function'; }
+  static get description() { return 'Does something useful'; }
+  static get permission() { return PERMISSION.ASK; }
+
+  static get inputSchema() {
+    return {
+      type: 'object',
+      properties: {
+        param: { type: 'string', description: 'A parameter' }
+      },
+      required: ['param']
+    };
+  }
+
+  async execute(payload, context) {
+    // Do something
+    return { success: true, result: '...' };
+  }
+}
+```
+
+2. Register in `server/lib/interactions/index.mjs`:
+
+```javascript
+import { MyFunction } from './functions/my-function.mjs';
+// ...
+_registerFunctionClass(MyFunction);
+```
+
+#### Adding a New Command
+
+Add to `server/lib/abilities/loaders/commands.mjs`:
+
+```javascript
+registerAbility({
+  name: 'command_mycommand',
+  type: 'function',
+  source: 'builtin',
+  description: 'Does something (Ask Always)',
+  category: 'commands',
+  permissions: {
+    autoApprove: false,
+    autoApprovePolicy: 'never',
+    dangerLevel: 'moderate',
+  },
+  inputSchema: { /* ... */ },
+  execute: executeMyCommand,
+});
+```
+
+#### Adding a Conditional Ability
+
+Add to `server/lib/abilities/loaders/builtin.mjs`:
+
+```javascript
+const BUILTIN_CONDITIONAL_ABILITIES = [
+  // ...existing abilities...
+  {
+    name: 'my_conditional',
+    type: 'process',
+    description: 'Triggers when X happens',
+    applies: 'Description of when this applies',
+    matchCondition: (context) => {
+      // Check context and return { matches: boolean, details?: object }
+    },
+    message: 'Instructions for the AI when this triggers...',
+    permissions: { autoApprove: true, dangerLevel: 'safe' },
+  },
+];
+```
+
+### Key Design Principles
+
+1. **Declarative & Extensible** - Add new abilities, functions, and triggers without modifying core code
+
+2. **Security by Default** - `sender_id` cannot be spoofed by agents; permissions checked before execution
+
+3. **Async Message Passing** - All interactions are asynchronous with status updates
+
+4. **Graceful Degradation** - If user answers prompts in chat instead of inline, conditional abilities handle it
+
+5. **Separation of Concerns**:
+   - Abilities define *what* can be done
+   - Interactions define *how* to request actions
+   - Conditional abilities define *when* to inject context
+   - HML prompts provide *inline UI* for questions

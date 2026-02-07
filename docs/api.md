@@ -765,6 +765,11 @@ Get comprehensive help data including commands, system functions, abilities, and
       "name": "help",
       "description": "Get help information about available commands, abilities, and functions",
       "permission": "always"
+    },
+    {
+      "name": "update_prompt",
+      "description": "Update an <hml-prompt> element with user's answer",
+      "permission": "always"
     }
   ],
   "assertions": [

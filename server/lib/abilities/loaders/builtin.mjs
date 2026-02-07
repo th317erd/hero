@@ -3,9 +3,90 @@
 // ============================================================================
 // Builtin Ability Loader
 // ============================================================================
-// Loads built-in function abilities (websearch, bash, etc.)
+// Loads built-in function abilities (websearch, bash, etc.) and
+// conditional abilities that activate based on conversation context.
 
 import { registerAbility, clearAbilitiesBySource } from '../registry.mjs';
+import { getUnansweredPrompts } from '../conditional.mjs';
+
+/**
+ * Built-in conditional abilities.
+ * These are rules that trigger based on conversation context.
+ * The AI evaluates the "applies" condition and follows the "message" instruction.
+ */
+const BUILTIN_CONDITIONAL_ABILITIES = [
+  {
+    name:        'prompt_response_handler',
+    type:        'process',
+    description: 'Detects when user answers an hml-prompt via chat and updates the prompt',
+    category:    'interaction',
+    tags:        ['prompt', 'hml', 'ipc', 'auto'],
+    applies:     'The user responds to an hml-prompt question without using the IPC layer',
+    message:     `The user may be answering an hml-prompt question in regular chat. When you respond:
+
+1. First, output a <thinking> block where you consider:
+   - Which unanswered prompt (if any) the user's message is answering
+   - What the user's answer means in context
+
+2. If the user IS answering a prompt, send an \`update_prompt\` interaction to update the original prompt:
+
+<interaction>
+{
+  "interaction_id": "prompt-update-<random>",
+  "target_id": "@system",
+  "target_property": "update_prompt",
+  "payload": {
+    "message_id": <the message ID containing the prompt>,
+    "prompt_id": "<the prompt's id attribute>",
+    "answer": "<the user's answer>"
+  }
+}
+</interaction>
+
+3. Then continue your response naturally.
+
+The <thinking> block will be shown to the user in a collapsible "thinking" display.`,
+    permissions: {
+      autoApprove:       true,
+      autoApprovePolicy: 'always',
+      dangerLevel:       'safe',
+    },
+    /**
+     * Programmatic condition matcher.
+     * Checks if there are unanswered prompts and the user is responding via chat.
+     *
+     * @param {Object} context - The message context
+     * @returns {Object} Match result with details
+     */
+    matchCondition: (context) => {
+      let { userMessage, sessionID } = context;
+
+      // If the user's message already contains an interaction tag, they're using IPC
+      if (userMessage.includes('<interaction>')) {
+        return { matches: false };
+      }
+
+      // Get unanswered prompts from recent messages
+      let unansweredPrompts = getUnansweredPrompts(sessionID);
+
+      if (unansweredPrompts.length === 0) {
+        return { matches: false };
+      }
+
+      // The user is sending a message and there are unanswered prompts
+      // This is likely an answer to one of them (Claude will determine which one)
+      console.log('[Conditional] User may be answering a prompt, found', unansweredPrompts.length, 'unanswered');
+
+      return {
+        matches: true,
+        details: {
+          unansweredPrompts: unansweredPrompts,
+          hint:              'The user may be responding to one of these prompts. Determine which one based on context.',
+        },
+      };
+    },
+  },
+];
 
 /**
  * Built-in function abilities.
@@ -150,7 +231,7 @@ const BUILTIN_ABILITIES = [
 ];
 
 /**
- * Load all built-in abilities.
+ * Load all built-in abilities (both function and conditional).
  *
  * @returns {number} Number of abilities loaded
  */
@@ -160,6 +241,7 @@ export function loadBuiltinAbilities() {
 
   let count = 0;
 
+  // Load function abilities
   for (let ability of BUILTIN_ABILITIES) {
     registerAbility({
       ...ability,
@@ -171,6 +253,20 @@ export function loadBuiltinAbilities() {
 
     count++;
     console.log(`Loaded builtin ability: ${ability.name}`);
+  }
+
+  // Load conditional abilities
+  for (let ability of BUILTIN_CONDITIONAL_ABILITIES) {
+    registerAbility({
+      ...ability,
+      id:        `builtin-${ability.name}`,
+      source:    'builtin',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    count++;
+    console.log(`Loaded builtin conditional ability: ${ability.name}`);
   }
 
   return count;

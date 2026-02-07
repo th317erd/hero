@@ -18,6 +18,7 @@ export const ALL_ELEMENTS = [
   'thinking', 'todo', 'progress',        // Display
   'link', 'copy', 'result',              // Display
   'item',                                 // Nested (inside todo)
+  'hml-prompt', 'response',              // User prompt Web Component with nested response
 ];
 
 /**

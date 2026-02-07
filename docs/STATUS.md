@@ -1,8 +1,81 @@
 # Current Status
 
-Last updated: 2026-02-06
+Last updated: 2026-02-07
 
 ## Recent Changes
+
+### HML Prompt Web Component (Complete)
+Full-featured inline prompt component with multiple input types.
+
+**Supported Types:**
+- `text` - Free-form text input (default)
+- `number` - Numeric input with min/max/step
+- `color` - Color picker with OK button
+- `checkbox` - Single yes/no checkbox
+- `checkboxes` - Multi-select checkbox group
+- `radio` - Radio button group
+- `select` - Dropdown menu with OK button
+- `range` - Slider with value display
+
+**Features:**
+- Shadow DOM encapsulation for styling isolation
+- Inline display (newlines around tags collapsed to spaces)
+- OK button for non-keyboard inputs (color, select, checkbox, range)
+- JSON options via `<data>` element (hidden via CSS)
+- `<p>` tag unwrapping to maintain inline flow
+- Answered state with green styling
+- Persists answers to database via interaction system
+
+**Usage with options:**
+```html
+<hml-prompt id="color" type="select">
+  Pick a color
+  <data>[{"value":"red","label":"Red"},{"value":"blue","label":"Blue"}]</data>
+</hml-prompt>
+```
+
+**Files:**
+- `public/js/components/hml-prompt.js` - Web Component implementation
+- `public/js/markup.js` - Tag conversion, newline collapsing, `<p>` unwrapping
+- `public/css/markdown.css` - Inline display, `<data>` hiding
+- `server/lib/interactions/functions/prompt-update.mjs` - Server-side update handler
+- `server/lib/processes/__onstart_.md` - Agent instructions for all types
+
+**Interaction flow:**
+1. AI outputs `<hml-prompt>` in response (with optional `<data>` for options)
+2. User interacts with input and clicks OK (or presses Enter for text/number)
+3. Frontend sends user message with `<interaction>` tag containing `update_prompt` payload
+4. Server executes interaction, updates original message in database
+5. On reload, prompt renders in answered state
+
+### Scroll Behavior Improvements (Complete)
+Changed scroll behavior to prevent jarring jumps while reading older messages.
+
+**Changes:**
+- `scrollToBottom()` now only scrolls if user is already near bottom (auto-follow)
+- `forceScrollToBottom()` added for explicit actions (button click, user sends message)
+- Scroll-to-bottom button repositioned to center horizontally
+- Chevron icon centered within button
+
+**Files changed:**
+- `public/js/app.js` - Split scroll functions, updated event handlers
+- `public/css/chat.css` - Button positioning with `left: 50%; transform: translateX(-50%)`
+
+### User Message Interaction Processing (Complete)
+Server now processes `<interaction>` tags in user messages, not just AI responses.
+
+**Use case:** When user answers an `<hml-prompt>`, the frontend sends an interaction to update the original message.
+
+**Files changed:**
+- `server/routes/messages-stream.mjs` - Added interaction detection/execution after storing user message
+
+### Token Charges SQL Fix (Complete)
+Fixed SQL error "no such column: a.api_key" in usage routes.
+
+**Problem:** The `agents` table has `encrypted_api_key`, not `api_key`.
+
+**Files changed:**
+- `server/routes/usage.mjs` - Changed `a.api_key` to `a.encrypted_api_key`
 
 ### Test Suite Unification (Complete)
 Unified all test files to use Node.js built-in test runner (`node:test`). Previously some files used Jest-style syntax without proper imports.

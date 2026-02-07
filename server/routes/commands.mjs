@@ -3,6 +3,8 @@
 import { Router } from 'express';
 import { getDatabase } from '../database.mjs';
 import { requireAuth } from '../middleware/auth.mjs';
+import { getStartupAbilities } from '../lib/abilities/registry.mjs';
+import { forceCompaction } from '../lib/compaction.mjs';
 
 const router = Router();
 
@@ -75,6 +77,96 @@ router.post('/', (req, res) => {
   } catch (error) {
     console.error('Create command error:', error);
     return res.status(500).json({ error: 'Failed to create command' });
+  }
+});
+
+/**
+ * GET /api/commands/start
+ * Get the startup instructions content for re-injection.
+ */
+router.get('/start', (req, res) => {
+  let startupAbilities = getStartupAbilities();
+  let processAbilities = startupAbilities.filter((a) => a.type === 'process' && a.content);
+
+  if (processAbilities.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error:   'No startup abilities found',
+    });
+  }
+
+  let startupContent = processAbilities
+    .map((a) => a.content)
+    .join('\n\n---\n\n');
+
+  return res.json({
+    success:       true,
+    content:       startupContent,
+    abilityCount:  processAbilities.length,
+    abilityNames:  processAbilities.map((a) => a.name),
+  });
+});
+
+/**
+ * POST /api/commands/compact
+ * Force conversation compaction for the current session.
+ */
+router.post('/compact', async (req, res) => {
+  let { sessionId } = req.body;
+
+  if (!sessionId) {
+    return res.status(400).json({
+      success: false,
+      error:   'sessionId is required',
+    });
+  }
+
+  // Get agent for the session
+  let db      = getDatabase();
+  let session = db.prepare(`
+    SELECT s.id, a.id as agent_id, a.type, a.encrypted_api_key, a.encrypted_config
+    FROM sessions s
+    JOIN agents a ON s.agent_id = a.id
+    WHERE s.id = ? AND s.user_id = ?
+  `).get(sessionId, req.user.id);
+
+  if (!session) {
+    return res.status(404).json({
+      success: false,
+      error:   'Session not found',
+    });
+  }
+
+  try {
+    // Create minimal agent object for compaction
+    let agent = {
+      id:   session.agent_id,
+      type: session.type,
+    };
+
+    let result = await forceCompaction(sessionId, req.user.id, agent);
+
+    if (result.success) {
+      return res.json({
+        success: true,
+        message: `Compacted ${result.compactedCount} messages into summary.`,
+        details: {
+          snapshotId:    result.snapshotId,
+          messagesCount: result.compactedCount,
+          summaryLength: result.summaryLength,
+        },
+      });
+    } else {
+      return res.json({
+        success: false,
+        error:   result.reason || 'Compaction failed',
+      });
+    }
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      error:   `Compaction error: ${error.message}`,
+    });
   }
 });
 

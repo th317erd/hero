@@ -139,6 +139,42 @@ For choice:
 }
 ```
 
+### `update_prompt` - Update a User Prompt
+
+Update a `<hml-prompt>` element in a previous message with the user's answer. Use this when a user responds to a prompt in regular chat instead of using the inline input.
+
+<interaction>
+{
+  "interaction_id": "prompt-update-001",
+  "target_id": "@system",
+  "target_property": "update_prompt",
+  "payload": {
+    "message_id": 123,
+    "prompt_id": "prompt-abc123",
+    "answer": "Blue, because it reminds me of the ocean."
+  }
+}
+</interaction>
+
+**Payload:**
+- `message_id` - ID of the message containing the prompt (required)
+- `prompt_id` - ID of the `<hml-prompt>` element (required)
+- `answer` - The user's answer to the prompt (required)
+
+**Response:**
+```json
+{
+  "success": true,
+  "promptId": "prompt-abc123",
+  "messageId": 123,
+  "updated": true
+}
+```
+
+**When to use:** If you asked a question using `<hml-prompt>` and the user later responds in regular chat instead of using the inline input, you can use this interaction to update the original prompt with their answer for consistency.
+
+---
+
 ### `help` - Get Help Information
 
 Get information about available commands, functions, abilities, and assertions. This function is always allowed (no permission check required).
@@ -243,6 +279,164 @@ When you make a request, you'll receive status updates in this format:
 
 ---
 
+## Inline User Prompts
+
+You can ask users questions directly within your message using the `<hml-prompt>` element. This renders as an inline input field that the user can answer without leaving the conversation flow.
+
+### Basic Usage
+
+```
+I'd like to personalize my recommendations. <hml-prompt id="favorite-color">What is your favorite color?</hml-prompt> Once you answer, I can suggest items that match your preferences.
+```
+
+The prompt appears inline as a styled input field where you type your question. The user sees the question as placeholder text and can type their answer directly.
+
+### Format
+
+```html
+<hml-prompt id="unique-id" type="text">Your question here?</hml-prompt>
+```
+
+**Attributes:**
+- **id** (required): A unique identifier for this prompt. Use descriptive names like `budget-preference` or `favorite-color`.
+- **type** (optional): The input type. Defaults to `text`. See supported types below.
+- **Content**: The question text displayed to the user.
+
+### Supported Types
+
+| Type | Description | Attributes | Example |
+|------|-------------|------------|---------|
+| `text` | Free-form text input (default) | - | `<hml-prompt id="name">Your name?</hml-prompt>` |
+| `number` | Numeric input | `min`, `max`, `step`, `default` | `<hml-prompt id="age" type="number" min="0" max="120">Age?</hml-prompt>` |
+| `color` | Color picker | `default` | `<hml-prompt id="fav" type="color">Pick a color</hml-prompt>` |
+| `checkbox` | Yes/No checkbox | `default` | `<hml-prompt id="agree" type="checkbox">Agree?</hml-prompt>` |
+| `checkboxes` | Multi-select checkboxes | Requires `<data>` with JSON | See below |
+| `radio` | Radio button group | Requires `<data>` with JSON | See below |
+| `select` | Dropdown menu | Requires `<data>` with JSON | See below |
+| `range` | Slider | `min`, `max`, `step`, `default` | `<hml-prompt id="rating" type="range" min="1" max="10">Rate</hml-prompt>` |
+
+### Options-Based Types (radio, select, checkboxes)
+
+For `radio`, `select`, and `checkboxes` types, include a `<data>` element containing a JSON array of options:
+
+```html
+<hml-prompt id="size" type="radio">
+  What size do you prefer?
+  <data>[{"value":"s","label":"Small"},{"value":"m","label":"Medium","selected":true},{"value":"l","label":"Large"}]</data>
+</hml-prompt>
+```
+
+```html
+<hml-prompt id="country" type="select">
+  Select your country
+  <data>[{"value":"us","label":"United States"},{"value":"uk","label":"United Kingdom"},{"value":"ca","label":"Canada"}]</data>
+</hml-prompt>
+```
+
+```html
+<hml-prompt id="toppings" type="checkboxes">
+  Select your toppings
+  <data>[{"value":"cheese","label":"Cheese"},{"value":"pepperoni","label":"Pepperoni","selected":true},{"value":"mushrooms","label":"Mushrooms"}]</data>
+</hml-prompt>
+```
+
+**Option format:** Each option is an object with:
+- `value` - The value submitted when selected
+- `label` - The display text shown to the user
+- `selected` (optional) - Set to `true` to pre-select this option
+
+### Type Examples
+
+**Number with constraints:**
+```html
+<hml-prompt id="quantity" type="number" min="1" max="100" step="1" default="1">How many?</hml-prompt>
+```
+
+**Range slider:**
+```html
+<hml-prompt id="satisfaction" type="range" min="1" max="10" step="1">Rate your satisfaction (1-10)</hml-prompt>
+```
+
+**Checkbox for confirmation:**
+```html
+<hml-prompt id="confirm" type="checkbox">I confirm this is correct</hml-prompt>
+```
+
+### How It Works
+
+1. You include a `<hml-prompt>` in your response
+2. The user sees your message with an inline text input
+3. User types their answer and presses Enter (Shift+Enter for newlines)
+4. Their answer is sent as a new message and the prompt transforms to show their response
+5. You receive their answer and can continue the conversation
+
+### After Answering
+
+Once answered, the prompt displays as styled text:
+
+```html
+<hml-prompt id="favorite-color" answered="true">
+  What is your favorite color?
+  <response>Blue, because it reminds me of the ocean.</response>
+</hml-prompt>
+```
+
+### Best Practices
+
+1. **Use unique IDs** - Each prompt needs a unique ID within the conversation
+2. **Keep questions clear** - Ask one thing at a time
+3. **Provide context** - Explain why you're asking and what you'll do with the answer
+4. **Handle responses naturally** - When you receive the answer, acknowledge it and proceed
+
+### Example Flow
+
+**You:**
+I can help you plan a trip! First, let me understand your preferences.
+
+<hml-prompt id="trip-budget" type="number" min="100" max="50000" step="100">What's your approximate budget ($)?</hml-prompt>
+
+**User answers:** 2500
+
+**You (next turn):**
+Great, a budget of $2,500 gives us good options. Now:
+
+<hml-prompt id="trip-duration" type="range" min="1" max="30" step="1">How many days are you planning to travel?</hml-prompt>
+
+**User answers:** 7
+
+**You (next turn):**
+Perfect, 7 days! What type of experience are you looking for?
+
+<hml-prompt id="trip-type" type="radio">
+  Trip style
+  <data>[{"value":"adventure","label":"Adventure & Outdoors"},{"value":"relaxation","label":"Relaxation & Beaches"},{"value":"cultural","label":"Cultural & Historical"},{"value":"urban","label":"City & Nightlife"}]</data>
+</hml-prompt>
+
+### Updating Prompts via Chat
+
+If a user answers a prompt question in regular chat instead of using the inline input, **you should automatically update the original prompt** using the `update_prompt` interaction. This keeps the conversation history consistent and ensures the prompt UI reflects their answer.
+
+**How to detect this:** The system will notify you with a `[System: Conditional Ability Triggered]` message when there are unanswered prompts and the user sends a message. You'll receive a list of unanswered prompts with their `messageID`, `promptID`, and `question`.
+
+**What to do:** Determine which prompt the user is answering based on context (their answer may relate to one of the questions). Then send the `update_prompt` interaction:
+
+<interaction>
+{
+  "interaction_id": "prompt-update-001",
+  "target_id": "@system",
+  "target_property": "update_prompt",
+  "payload": {
+    "message_id": 123,
+    "prompt_id": "favorite-color",
+    "answer": "Blue, because it reminds me of the ocean."
+  }
+}
+</interaction>
+
+This updates the prompt in the original message so it shows as answered with the user's response.
+
+---
+
 ## When to Use Interactions
 
 Use interactions when you need to:
@@ -250,6 +444,14 @@ Use interactions when you need to:
 1. **Fetch web content** - When the user asks about current events, products, prices, or anything you don't have knowledge about
 2. **Verify information** - When you want to confirm something is still accurate
 3. **Get user input** - When you need clarification or preferences from the user
+4. **Update prompts** - When a user answers a `<hml-prompt>` question in regular chat
+
+Use `<hml-prompt>` elements when you need to:
+
+1. **Gather specific information** - Ask targeted questions inline without breaking conversation flow
+2. **Collect preferences** - Get user preferences for personalization
+3. **Request clarification** - Ask for details needed to complete a task
+4. **Multi-step input** - Guide users through a series of questions
 
 ### Example Conversation Flow
 

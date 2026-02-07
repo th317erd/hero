@@ -15,7 +15,8 @@ const md = window.markdownit({
 // Custom element allowlist - elements we process, all others stripped
 const ALLOWED_ELEMENTS = [
   'todo', 'item', 'progress', 'link', 'copy', 'result',
-  'websearch', 'bash', 'ask', 'thinking'
+  'websearch', 'bash', 'ask', 'thinking',
+  'hml-prompt', 'response',               // hml-prompt is our Web Component
 ];
 
 // Dangerous tags to completely remove (content and all)
@@ -75,6 +76,10 @@ const DANGEROUS_ATTRS = [
 function renderMarkup(content) {
   if (!content) return '';
 
+  // 0. Convert <user-prompt> and <user_prompt> tags to <hml-prompt> Web Component
+  // This must happen before markdown to prevent escaping
+  content = convertUserPromptTags(content);
+
   // 1. Parse markdown (preserves our custom HTML elements)
   let html = md.render(content);
 
@@ -88,6 +93,40 @@ function renderMarkup(content) {
 
   // 4. Return processed HTML
   return template.innerHTML;
+}
+
+/**
+ * Convert legacy <user-prompt> and <user_prompt> tags to <hml-prompt> Web Component.
+ * The Web Component handles its own rendering via Shadow DOM.
+ * New content should use <hml-prompt> directly.
+ */
+function convertUserPromptTags(content) {
+  // Convert legacy user-prompt and user_prompt to hml-prompt
+  content = content
+    .replace(/<user_prompt\b/gi, '<hml-prompt')
+    .replace(/<\/user_prompt>/gi, '</hml-prompt>')
+    .replace(/<user-prompt\b/gi, '<hml-prompt')
+    .replace(/<\/user-prompt>/gi, '</hml-prompt>');
+
+  // Convert <option> to <opt> inside hml-prompt tags
+  // (Browser strips <option> tags when not inside <select>)
+  content = content.replace(
+    /(<hml-prompt[^>]*>)([\s\S]*?)(<\/hml-prompt>)/gi,
+    (match, openTag, inner, closeTag) => {
+      let converted = inner
+        .replace(/<option\b/gi, '<opt')
+        .replace(/<\/option>/gi, '</opt>');
+      return openTag + converted + closeTag;
+    }
+  );
+
+  // Collapse newlines around hml-prompt tags to keep them inline
+  // This prevents markdown-it from creating separate <p> blocks
+  content = content
+    .replace(/\n+(<hml-prompt)/gi, ' $1')   // newlines before -> space
+    .replace(/(<\/hml-prompt>)\n+/gi, '$1 '); // newlines after -> space
+
+  return content;
 }
 
 // ============================================================================
@@ -163,6 +202,9 @@ function sanitizeContent(container) {
  * Process all custom HML elements in the container.
  */
 function processCustomElements(container) {
+  // First, unwrap inline elements from unnecessary <p> wrappers
+  unwrapInlineElements(container);
+
   processTodoElements(container);
   processProgressElements(container);
   processLinkElements(container);
@@ -170,6 +212,36 @@ function processCustomElements(container) {
   processResultElements(container);
   processThinkingElements(container);
   processExecutableElements(container);
+  // Note: user-prompt elements are pre-processed before markdown rendering
+}
+
+/**
+ * Unwrap inline custom elements (like hml-prompt) from <p> tags.
+ * Markdown-it wraps standalone elements in <p>, which breaks inline display.
+ */
+function unwrapInlineElements(container) {
+  // Elements that should be inline and unwrapped from <p> tags
+  let inlineElements = ['hml-prompt'];
+
+  for (let tagName of inlineElements) {
+    container.querySelectorAll(`p > ${tagName}`).forEach((el) => {
+      let p = el.parentElement;
+      if (p && p.tagName === 'P') {
+        // Check if <p> only contains this element (plus whitespace/br)
+        let dominated = Array.from(p.childNodes).every((node) => {
+          if (node === el) return true;
+          if (node.nodeType === Node.TEXT_NODE && !node.textContent.trim()) return true;
+          if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'BR') return true;
+          return false;
+        });
+
+        if (dominated) {
+          // Replace <p> with just the element
+          p.replaceWith(el);
+        }
+      }
+    });
+  }
 }
 
 /**
@@ -334,19 +406,29 @@ function processResultElements(container) {
 }
 
 /**
- * Process <thinking> elements into status indicators.
+ * Process <thinking> elements into collapsible thought blocks.
+ * These show the agent's reasoning about abilities and context.
  */
 function processThinkingElements(container) {
-  container.querySelectorAll('thinking').forEach((el) => {
-    let message = el.textContent.trim() || 'Processing...';
+  container.querySelectorAll('thinking').forEach((el, index) => {
+    let content = el.innerHTML.trim();
+    let title = el.getAttribute('title') || 'Thinking';
+    let uniqueID = `thinking-${Date.now()}-${index}`;
+
+    // Render markdown inside the thinking block
+    let renderedContent = md.render(content);
 
     let html = `
-      <div class="hml-thinking">
-        <div class="hml-thinking-indicator">
-          <span></span><span></span><span></span>
+      <details class="hml-thinking-block" open>
+        <summary class="hml-thinking-header">
+          <span class="hml-thinking-brain">🧠</span>
+          <span class="hml-thinking-title">${escapeHtml(title)}</span>
+          <span class="hml-thinking-toggle">▼</span>
+        </summary>
+        <div class="hml-thinking-content">
+          ${renderedContent}
         </div>
-        <span class="hml-thinking-text">${escapeHtml(message)}</span>
-      </div>
+      </details>
     `;
 
     el.outerHTML = html;
@@ -395,6 +477,23 @@ function processExecutableElements(container) {
     el.outerHTML = html;
   });
 }
+
+// ============================================================================
+// User Prompt Elements
+// ============================================================================
+
+/**
+ * Attach event handlers to user prompt elements.
+ * Note: <hml-prompt> Web Components handle their own events via Shadow DOM.
+ * This function is kept for backwards compatibility but is now a no-op.
+ */
+function attachUserPromptHandlers(container, messageId) {
+  // No-op: <hml-prompt> Web Component handles its own events
+  // The component emits 'prompt-submit' events that bubble up
+}
+
+// Make attachUserPromptHandlers available globally
+window.attachUserPromptHandlers = attachUserPromptHandlers;
 
 // ============================================================================
 // Helpers

@@ -87,6 +87,28 @@ function extractTextContent(content) {
 }
 
 /**
+ * Strip security-sensitive properties from an interaction.
+ * These properties CAN NOT be set by the agent - they are reserved for
+ * system use (e.g., sender_id for user authorization).
+ *
+ * @param {Object} interaction - Interaction object
+ * @returns {Object} Interaction with sensitive properties stripped
+ */
+function stripSensitiveProperties(interaction) {
+  // Create shallow copy to avoid mutating original
+  let clean = { ...interaction };
+
+  // Strip sender_id - only the system can set this to indicate
+  // the interaction originated from an authenticated user
+  delete clean.sender_id;
+
+  // Strip any other future security-sensitive root properties
+  // (payload contents are NOT stripped - only root-level properties)
+
+  return clean;
+}
+
+/**
  * Validate an interaction object.
  *
  * @param {Object} interaction - Interaction object
@@ -148,14 +170,18 @@ export function detectInteractions(content) {
 
     // Single interaction object
     if (!Array.isArray(parsed)) {
-      if (validateInteraction(parsed)) {
-        allInteractions.push(parsed);
+      // Strip security-sensitive properties that agents cannot set
+      let clean = stripSensitiveProperties(parsed);
+      if (validateInteraction(clean)) {
+        allInteractions.push(clean);
       }
     } else {
       // Array of interactions
       for (let interaction of parsed) {
-        if (validateInteraction(interaction)) {
-          allInteractions.push(interaction);
+        // Strip security-sensitive properties that agents cannot set
+        let clean = stripSensitiveProperties(interaction);
+        if (validateInteraction(clean)) {
+          allInteractions.push(clean);
         }
       }
     }
@@ -180,6 +206,9 @@ export function detectInteractions(content) {
  *
  * @param {Object} interactionBlock - Parsed interaction block from detectInteractions
  * @param {Object} context - Execution context
+ * @param {number} [context.sessionId] - Session ID
+ * @param {number} [context.userId] - User ID
+ * @param {number} [context.senderId] - Sender ID (user ID if from authenticated user, null if from agent)
  * @returns {Promise<Object>} Execution results
  */
 export async function executeInteractions(interactionBlock, context) {
@@ -223,15 +252,25 @@ export async function executeInteractions(interactionBlock, context) {
     });
 
     // Step 3: Create and send the interaction
+    // Include senderId if provided - this indicates the interaction originated
+    // from an authenticated user (secure/authorized)
+    let interactionOptions = {
+      sourceId:  agentInteractionId,
+      sessionId: context.sessionId,
+      userId:    context.userId,
+    };
+
+    // Only add senderId if explicitly provided in context
+    // This cannot be spoofed by agents because we strip sender_id during parsing
+    if (context.senderId !== undefined) {
+      interactionOptions.senderId = context.senderId;
+    }
+
     let interaction = bus.create(
       interactionData.target_id,
       interactionData.target_property,
       interactionData.payload,
-      {
-        sourceId:  agentInteractionId,
-        sessionId: context.sessionId,
-        userId:    context.userId,
-      }
+      interactionOptions
     );
 
     try {

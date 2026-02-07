@@ -100,6 +100,9 @@ Rich markup elements for agent responses:
 <bash>ls -la</bash>
 <ask timeout="30" default="skip">Should I continue?</ask>
 
+<!-- Interactive elements -->
+<hml-prompt id="favorite-color">What is your favorite color?</hml-prompt>
+
 <!-- Display elements -->
 <thinking>Analyzing the request...</thinking>
 <todo title="Setup Tasks">
@@ -107,6 +110,20 @@ Rich markup elements for agent responses:
   <item status="in_progress">Configure database</item>
 </todo>
 <progress value="75" max="100">Processing files</progress>
+```
+
+### Inline Prompts
+
+The `<hml-prompt>` Web Component allows agents to ask questions inline:
+
+```html
+I'd like to personalize this. <hml-prompt id="pref">What do you prefer?</hml-prompt>
+```
+
+When answered, the prompt transforms to show the response:
+
+```html
+<hml-prompt id="pref" answered>What do you prefer?<response>Option A</response></hml-prompt>
 ```
 
 ### Streaming vs Batch Mode

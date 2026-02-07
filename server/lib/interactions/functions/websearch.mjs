@@ -172,6 +172,12 @@ export class WebSearchFunction extends InteractionFunction {
           payload:     { query: 'best running shoes 2024', limit: 5 },
         },
       ],
+      // Banner display config - only functions with this config show banners
+      banner: {
+        icon:       '🔍',
+        label:      'Web Search',
+        contentKey: 'query',  // payload key to display as content
+      },
     };
   }
 

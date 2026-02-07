@@ -91,7 +91,7 @@ router.get('/session/:sessionId', (req, res) => {
 
   // Get session and its agent
   let session = db.prepare(`
-    SELECT s.id, s.agent_id, a.api_key, a.user_id
+    SELECT s.id, s.agent_id, a.encrypted_api_key, a.user_id
     FROM sessions s
     JOIN agents a ON s.agent_id = a.id
     WHERE s.id = ? AND s.user_id = ?
@@ -120,8 +120,8 @@ router.get('/session/:sessionId', (req, res) => {
       COALESCE(SUM(tc.cost_cents), 0) as cost_cents
     FROM token_charges tc
     JOIN agents a ON tc.agent_id = a.id
-    WHERE a.api_key = ? AND a.user_id = ?
-  `).get(session.api_key, req.user.id);
+    WHERE a.encrypted_api_key = ? AND a.user_id = ?
+  `).get(session.encrypted_api_key, req.user.id);
 
   // Session spend: charges for just this session
   let sessionSpend = db.prepare(`

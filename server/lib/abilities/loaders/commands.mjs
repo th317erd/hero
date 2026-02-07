@@ -6,7 +6,7 @@
 // Registers system commands as abilities with "Ask Always" permission policy.
 // These commands can be invoked by the AI agent but always require user approval.
 
-import { registerAbility } from '../registry.mjs';
+import { registerAbility, getStartupAbilities } from '../registry.mjs';
 import { getDatabase } from '../../../database.mjs';
 import { encryptWithKey, decryptWithKey } from '../../../encryption.mjs';
 import { forceCompaction } from '../../compaction.mjs';
@@ -22,7 +22,7 @@ export function loadCommandAbilities() {
 
   // /ability command - Create/manage abilities
   registerAbility({
-    name:        'command_ability',
+    name:        'ability',
     type:        'function',
     source:      'builtin',
     description: 'Create, edit, or delete abilities (Ask Always)',
@@ -62,7 +62,7 @@ export function loadCommandAbilities() {
 
   // /session command - Create/manage sessions
   registerAbility({
-    name:        'command_session',
+    name:        'session',
     type:        'function',
     source:      'builtin',
     description: 'Create, archive, or switch sessions (Ask Always)',
@@ -110,7 +110,7 @@ export function loadCommandAbilities() {
 
   // /compact command - Force conversation compaction
   registerAbility({
-    name:        'command_compact',
+    name:        'compact',
     type:        'function',
     source:      'builtin',
     description: 'Compact conversation history into a summary snapshot',
@@ -129,9 +129,30 @@ export function loadCommandAbilities() {
   });
   count++;
 
+  // /start command - Re-send startup abilities
+  registerAbility({
+    name:        'start',
+    type:        'function',
+    source:      'builtin',
+    description: 'Re-send all startup (__onstart_) abilities to refresh agent context',
+    category:    'commands',
+    tags:        ['command', 'start', 'onstart', 'refresh', 'context'],
+    permissions: {
+      autoApprove:       true,  // Safe - just returns text content
+      autoApprovePolicy: 'always',
+      dangerLevel:       'safe',
+    },
+    inputSchema: {
+      type:       'object',
+      properties: {},
+    },
+    execute: executeStartCommand,
+  });
+  count++;
+
   // /agent command - Create/manage agents
   registerAbility({
-    name:        'command_agent',
+    name:        'agent',
     type:        'function',
     source:      'builtin',
     description: 'Create or configure AI agents (Ask Always)',
@@ -479,6 +500,37 @@ async function executeCompactCommand(params, context) {
       error:   `Compaction error: ${error.message}`,
     };
   }
+}
+
+/**
+ * Execute the /start command.
+ * Re-sends all startup (__onstart_) abilities as a concatenated message.
+ */
+async function executeStartCommand(params, context) {
+  let startupAbilities = getStartupAbilities();
+
+  // Filter for process abilities with content (same logic as messages-stream.mjs)
+  let processAbilities = startupAbilities.filter((a) => a.type === 'process' && a.content);
+
+  if (processAbilities.length === 0) {
+    return {
+      success: false,
+      error:   'No startup abilities found',
+    };
+  }
+
+  // Concatenate all startup content with separators
+  let startupContent = processAbilities
+    .map((a) => a.content)
+    .join('\n\n---\n\n');
+
+  return {
+    success:        true,
+    message:        `[System Initialization - Refresh]\n\n${startupContent}`,
+    abilityCount:   processAbilities.length,
+    abilityNames:   processAbilities.map((a) => a.name),
+    contentLength:  startupContent.length,
+  };
 }
 
 export default {

@@ -21,6 +21,10 @@ import { getFunctionInstance, getSessionFunctions, getUserFunctions } from './re
  *   source_id?: string,        // Source function ID (optional)
  *   session_id?: number,       // Session context (optional)
  *   user_id?: number,          // User context (optional)
+ *   sender_id?: number,        // Sender ID - if set, interaction is "secure/authorized"
+ *                              // This can ONLY be set by the system (stripped from agent responses)
+ *                              // A non-null sender_id indicates the interaction originated from
+ *                              // an authenticated user, not from an AI agent
  * }
  */
 
@@ -69,10 +73,11 @@ class InteractionBus extends EventEmitter {
    * @param {string} [options.sourceId] - Source function ID
    * @param {number} [options.sessionId] - Session ID
    * @param {number} [options.userId] - User ID
+   * @param {number} [options.senderId] - Sender ID (indicates authorized user interaction)
    * @returns {Object} The interaction object
    */
   create(targetId, targetProperty, payload, options = {}) {
-    return {
+    let interaction = {
       interaction_id:  randomUUID(),
       target_id:       targetId,
       target_property: targetProperty,
@@ -82,6 +87,14 @@ class InteractionBus extends EventEmitter {
       session_id:      options.sessionId || null,
       user_id:         options.userId || null,
     };
+
+    // Only include sender_id if explicitly provided
+    // This marks the interaction as "secure/authorized" from an authenticated user
+    if (options.senderId !== undefined) {
+      interaction.sender_id = options.senderId;
+    }
+
+    return interaction;
   }
 
   /**

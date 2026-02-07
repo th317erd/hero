@@ -35,16 +35,10 @@ function calculateCost(inputTokens, outputTokens) {
 /**
  * Format cost for display.
  * @param {number} cost - Cost in dollars
- * @returns {string} Formatted string (e.g., "$0.02", "$1.45")
+ * @returns {string} Formatted string (e.g., "$0.00", "$0.02", "$1.45")
  */
 function formatCost(cost) {
-  if (cost < 0.01) {
-    return '$' + cost.toFixed(4);
-  } else if (cost < 1) {
-    return '$' + cost.toFixed(2);
-  } else {
-    return '$' + cost.toFixed(2);
-  }
+  return '$' + cost.toFixed(2);
 }
 
 /**
@@ -120,15 +114,6 @@ async function loadSession(sessionId) {
     state.currentSession = session;
     state.messages       = session.messages || [];
 
-    // Debug: Check if hidden flags are present
-    let hiddenMsgs = state.messages.filter((m) => m.hidden);
-    console.log('[DEBUG] loadSession:', {
-      sessionId,
-      totalMessages: state.messages.length,
-      hiddenCount:   hiddenMsgs.length,
-      sampleHidden:  hiddenMsgs.slice(0, 2).map((m) => ({ id: m.id, role: m.role, hidden: m.hidden })),
-    });
-
     // Load session usage (global, service, and session spend)
     await loadSessionUsage(sessionId);
 
@@ -169,22 +154,91 @@ async function updateSessionSelect() {
   elements.sessionSelect.innerHTML = options;
 }
 
-function renderMessages() {
+// ============================================================================
+// Debounced Render System
+// ============================================================================
+// Prevents infinite render loops by debouncing rapid render calls.
+// Uses both a debounce delay AND a max wait time to ensure responsiveness.
+
+let renderDebounceTimer = null;
+let renderMaxWaitTimer = null;
+let renderPending = false;
+const RENDER_DEBOUNCE_MS = 16;   // ~1 frame at 60fps
+const RENDER_MAX_WAIT_MS = 100;  // Max time before forced render
+
+/**
+ * The actual render implementation.
+ * @private
+ */
+function renderMessagesImpl() {
+  renderPending = false;
+
+  // Clear timers
+  if (renderDebounceTimer) {
+    clearTimeout(renderDebounceTimer);
+    renderDebounceTimer = null;
+  }
+  if (renderMaxWaitTimer) {
+    clearTimeout(renderMaxWaitTimer);
+    renderMaxWaitTimer = null;
+  }
+
+  // Preserve streaming message element if it exists (not in state.messages yet)
+  let streamingEl = document.getElementById('streaming-message');
+  if (streamingEl) {
+    streamingEl.remove();  // Detach from DOM temporarily
+  }
+
   // Filter messages based on showHiddenMessages toggle
   let visibleMessages = state.showHiddenMessages
     ? state.messages  // Show all messages including hidden ones
     : state.messages.filter((message) => !message.hidden);
 
-  console.log('[DEBUG] renderMessages:', {
-    showHiddenMessages: state.showHiddenMessages,
-    totalMessages:      state.messages.length,
-    visibleMessages:    visibleMessages.length,
-    hiddenCount:        state.messages.filter((m) => m.hidden).length,
-  });
-
   let html = visibleMessages.map((message) => renderMessage(message)).join('');
   elements.messagesContainer.innerHTML = html;
+
+  // Re-attach streaming message element if it was preserved
+  if (streamingEl) {
+    elements.messagesContainer.appendChild(streamingEl);
+  }
+
+  // Attach event handlers for user prompt elements
+  visibleMessages.forEach((message) => {
+    if (message.id) {
+      let messageElement = document.getElementById(`msg-${message.id}`);
+      if (messageElement) {
+        attachUserPromptHandlers(messageElement, message.id);
+      }
+    }
+  });
+
   scrollToBottom();
+}
+
+/**
+ * Debounced render function.
+ * Batches rapid render calls to prevent infinite loops.
+ * Guarantees render within RENDER_MAX_WAIT_MS even if calls keep coming.
+ */
+function renderMessages() {
+  // Clear existing debounce timer
+  if (renderDebounceTimer) {
+    clearTimeout(renderDebounceTimer);
+  }
+
+  // Set up max wait timer if this is the first pending render
+  if (!renderPending) {
+    renderPending = true;
+    renderMaxWaitTimer = setTimeout(() => {
+      console.log('[Render] Max wait reached, forcing render');
+      renderMessagesImpl();
+    }, RENDER_MAX_WAIT_MS);
+  }
+
+  // Set up debounce timer
+  renderDebounceTimer = setTimeout(() => {
+    renderMessagesImpl();
+  }, RENDER_DEBOUNCE_MS);
 }
 
 function renderMessage(message) {
@@ -749,11 +803,24 @@ function renderAssertionsForMessage(messageId) {
   return assertions.map((a) => renderAssertionBlock(a)).join('');
 }
 
+/**
+ * Scroll to bottom only if user is already near the bottom (auto-follow behavior).
+ * This prevents jarring scrolls while reading older messages.
+ */
 function scrollToBottom() {
+  if (isNearBottom()) {
+    forceScrollToBottom();
+  }
+}
+
+/**
+ * Force scroll to bottom regardless of current position.
+ * Use this for explicit user actions like clicking the scroll button.
+ */
+function forceScrollToBottom() {
   requestAnimationFrame(() => {
     let chatMain = elements.messagesContainer.parentElement;
     chatMain.scrollTop = chatMain.scrollHeight;
-    // Hide scroll button when we scroll to bottom
     updateScrollToBottomButton();
   });
 }
@@ -845,7 +912,7 @@ function queueMessage(content) {
   // Add queued message to UI immediately
   state.messages.push({ role: 'user', content, queued: true, queueId });
   renderMessages();
-  scrollToBottom();
+  forceScrollToBottom(); // User just sent a message, always scroll to show it
 }
 
 async function processMessage(content) {
@@ -863,7 +930,7 @@ async function processMessage(content) {
     state.messages.push({ role: 'user', content: content });
     renderMessages();
   }
-  scrollToBottom();
+  forceScrollToBottom(); // User just sent a message, always scroll to show it
 
   // Show typing indicator
   showTypingIndicator();
@@ -940,7 +1007,7 @@ async function processMessageStream(content) {
     state.messages.push({ role: 'user', content: content, createdAt: now });
     renderMessages();
   }
-  scrollToBottom();
+  forceScrollToBottom(); // User just sent a message, always scroll to show it
 
   // Initialize streaming message state
   state.streamingMessage = {
@@ -962,6 +1029,12 @@ async function processMessageStream(content) {
         state.streamingMessage.id = data.messageId;
         updateStreamingHeader(data.agentName || 'Assistant');
 
+        // Set data-message-id on streaming element so hml-prompt can find it
+        let streamingEl = document.getElementById('streaming-message');
+        if (streamingEl && data.messageId) {
+          streamingEl.setAttribute('data-message-id', data.messageId);
+        }
+
         // Note: data.estimatedTokens is the total context size (history + system prompt),
         // not the response size, so we don't display it to avoid confusion with the
         // final response token count shown after completion.
@@ -976,6 +1049,10 @@ async function processMessageStream(content) {
 
       onElementStart: (data) => {
         debug('App', 'onElementStart callback', data);
+        // Skip hml-prompt and response - they're Web Components that render themselves
+        if (data.type === 'hml-prompt' || data.type === 'response') {
+          return;
+        }
         state.streamingMessage.elements[data.id] = {
           id:         data.id,
           type:       data.type,
@@ -1052,18 +1129,24 @@ async function processMessageStream(content) {
       onInteractionStarted: (data) => {
         console.log('[TRACE] onInteractionStarted called:', data);
         console.log('[TRACE] state.streamingMessage:', !!state.streamingMessage);
+        console.log('[TRACE] hasBanner:', !!data.banner);
         debug('App', 'Interaction started', data);
-        // Show pending banner for the specific interaction type
-        let label = data.targetProperty || 'interaction';
+
+        // Only show banners for functions that opt-in via banner config
+        // Functions without a banner config in their register() method are silent
+        if (!data.banner) {
+          console.log('[TRACE] No banner config, skipping banner for:', data.targetProperty);
+          return;
+        }
+
+        // Use banner config for label and icon
+        let label = data.banner.label || data.targetProperty || 'interaction';
+        let icon = data.banner.icon || '⚡';
         let content = '';
 
-        // Format based on interaction type
-        if (data.targetProperty === 'websearch' && data.payload?.query) {
-          label = 'Web Search';
-          content = data.payload.query;
-        } else if (data.targetProperty === 'bash' && data.payload?.command) {
-          label = 'Command';
-          content = data.payload.command;
+        // Get content from payload using banner.contentKey
+        if (data.banner.contentKey && data.payload?.[data.banner.contentKey]) {
+          content = data.payload[data.banner.contentKey];
         } else if (data.payload) {
           content = (typeof data.payload === 'string') ? data.payload : JSON.stringify(data.payload);
         }
@@ -1074,13 +1157,14 @@ async function processMessageStream(content) {
         }
         state.streamingMessage.pendingInteractions[data.interactionId] = {
           label,
+          icon,
           content,
           status:    'pending',
           startTime: Date.now(),
         };
 
         // Update the streaming content to show pending banner
-        appendInteractionBanner(data.interactionId, label, content, 'pending');
+        appendInteractionBanner(data.interactionId, label, content, 'pending', icon);
       },
 
       onInteractionUpdate: (data) => {
@@ -1459,6 +1543,13 @@ function finalizeStreamingMessage(data) {
 
     debug('App', 'Removing streaming class from element');
     streamingEl.classList.remove('message-streaming');
+
+    // Update data-message-id with the persisted database ID if available
+    if (data.persistedMessageID) {
+      streamingEl.setAttribute('data-message-id', data.persistedMessageID);
+      debug('App', 'Updated data-message-id to persisted ID:', data.persistedMessageID);
+    }
+
     streamingEl.removeAttribute('id');
   }
 
@@ -1470,7 +1561,7 @@ function finalizeStreamingMessage(data) {
   if (!alreadyExists) {
     let now = new Date().toISOString();
     state.messages.push({
-      id:        state.streamingMessage.id,
+      id:        data.persistedMessageID || state.streamingMessage.id,
       role:      'assistant',
       content:   finalContent,
       createdAt: now,
@@ -1563,9 +1654,16 @@ function hideStreamingStatus() {
 /**
  * Append an interaction banner to the streaming message.
  * Shows "Web Search: [query] - Pending" style banners.
+ * Only called for functions that opt-in via banner config.
+ *
+ * @param {string} interactionId - Unique ID for this interaction
+ * @param {string} label - Display label from banner config
+ * @param {string} content - Content to display (from payload via contentKey)
+ * @param {string} status - Status: 'pending', 'completed', 'failed'
+ * @param {string} icon - Icon emoji from banner config (default: '⚡')
  */
-function appendInteractionBanner(interactionId, label, content, status) {
-  console.log('[TRACE] appendInteractionBanner called:', { interactionId, label, content, status });
+function appendInteractionBanner(interactionId, label, content, status, icon = '⚡') {
+  console.log('[TRACE] appendInteractionBanner called:', { interactionId, label, content, status, icon });
   let streamingEl = document.getElementById('streaming-message');
   console.log('[TRACE] streamingEl found:', !!streamingEl);
   if (!streamingEl) {
@@ -1579,12 +1677,6 @@ function appendInteractionBanner(interactionId, label, content, status) {
 
   // Create the banner element
   let statusText = (status === 'pending') ? 'Pending' : status;
-  let iconMap = {
-    'Web Search': '🔍',
-    'Command':    '$',
-    'default':    '⚡',
-  };
-  let icon = iconMap[label] || iconMap['default'];
 
   let bannerHtml = `
     <div class="interaction-banner interaction-banner-${status}" data-interaction-id="${escapeHtml(interactionId)}">
@@ -1697,7 +1789,7 @@ async function handleCommand(content) {
         content: [{ type: 'text', text: `Current session: ${state.currentSession?.name || 'None'}\nSession ID: ${state.currentSession?.id || 'N/A'}` }],
       });
       renderMessages();
-      scrollToBottom();
+      forceScrollToBottom();
       break;
 
     case 'archive':
@@ -1717,13 +1809,21 @@ async function handleCommand(content) {
       await handleUpdateUsageCommand(args);
       break;
 
+    case 'start':
+      await handleStartCommand();
+      break;
+
+    case 'compact':
+      await handleCompactCommand();
+      break;
+
     default:
       state.messages.push({
         role:    'assistant',
         content: [{ type: 'text', text: `Unknown command: /${command}\nType /help for available commands.` }],
       });
       renderMessages();
-      scrollToBottom();
+      forceScrollToBottom();
   }
 }
 
@@ -1841,7 +1941,7 @@ async function handleHelpCommand(filterArg = '') {
       content: [{ type: 'text', text }],
     });
     renderMessages();
-    scrollToBottom();
+    forceScrollToBottom();
   } catch (error) {
     console.error('Failed to fetch help:', error);
     state.messages.push({
@@ -1849,7 +1949,7 @@ async function handleHelpCommand(filterArg = '') {
       content: [{ type: 'text', text: 'Failed to load help information.' }],
     });
     renderMessages();
-    scrollToBottom();
+    forceScrollToBottom();
   }
 }
 
@@ -1877,7 +1977,7 @@ function handleStreamCommand(args) {
   }
 
   renderMessages();
-  scrollToBottom();
+  forceScrollToBottom();
 }
 
 async function handleArchiveCommand() {
@@ -1887,7 +1987,7 @@ async function handleArchiveCommand() {
       content: [{ type: 'text', text: 'No active session to archive.' }],
     });
     renderMessages();
-    scrollToBottom();
+    forceScrollToBottom();
     return;
   }
 
@@ -1901,7 +2001,7 @@ async function handleArchiveCommand() {
       content: [{ type: 'text', text: `Session "${state.currentSession.name}" has been archived.` }],
     });
     renderMessages();
-    scrollToBottom();
+    forceScrollToBottom();
 
     // Reload sessions
     state.sessions = await fetchSessions();
@@ -1913,7 +2013,107 @@ async function handleArchiveCommand() {
       content: [{ type: 'text', text: 'Failed to archive session.' }],
     });
     renderMessages();
-    scrollToBottom();
+    forceScrollToBottom();
+  }
+}
+
+/**
+ * Handle /start command.
+ * Re-sends startup instructions to the AI agent.
+ */
+async function handleStartCommand() {
+  if (!state.currentSession) {
+    state.messages.push({
+      role:    'assistant',
+      content: [{ type: 'text', text: 'No active session. Please select or create a session first.' }],
+    });
+    renderMessages();
+    forceScrollToBottom();
+    return;
+  }
+
+  try {
+    // Fetch startup content from API
+    let response = await fetch(`${BASE_PATH}/api/commands/start`);
+    let result   = await response.json();
+
+    if (!result.success) {
+      state.messages.push({
+        role:    'assistant',
+        content: [{ type: 'text', text: `Failed to load startup instructions: ${result.error}` }],
+      });
+      renderMessages();
+      forceScrollToBottom();
+      return;
+    }
+
+    // Send the startup content to the AI as a system refresh message
+    let systemContent = `[System Initialization - Refresh]\n\n${result.content}`;
+    await processMessageStream(systemContent);
+  } catch (error) {
+    console.error('Failed to execute start command:', error);
+    state.messages.push({
+      role:    'assistant',
+      content: [{ type: 'text', text: `Error: ${error.message}` }],
+    });
+    renderMessages();
+    forceScrollToBottom();
+  }
+}
+
+/**
+ * Handle /compact command.
+ * Forces conversation compaction into a summary snapshot.
+ */
+async function handleCompactCommand() {
+  if (!state.currentSession) {
+    state.messages.push({
+      role:    'assistant',
+      content: [{ type: 'text', text: 'No active session to compact.' }],
+    });
+    renderMessages();
+    forceScrollToBottom();
+    return;
+  }
+
+  state.messages.push({
+    role:    'assistant',
+    content: [{ type: 'text', text: 'Compacting conversation history...' }],
+  });
+  renderMessages();
+  forceScrollToBottom();
+
+  try {
+    let response = await fetch(`${BASE_PATH}/api/commands/compact`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ sessionId: state.currentSession.id }),
+    });
+
+    let result = await response.json();
+
+    if (result.success) {
+      state.messages.push({
+        role:    'assistant',
+        content: [{ type: 'text', text: `**Compaction complete**\n\n${result.message}\n\n- Snapshot ID: ${result.details?.snapshotId || 'N/A'}\n- Messages compacted: ${result.details?.messagesCount || 0}\n- Summary length: ${result.details?.summaryLength || 0} chars` }],
+      });
+    } else {
+      state.messages.push({
+        role:    'assistant',
+        content: [{ type: 'text', text: `Compaction failed: ${result.error}` }],
+      });
+    }
+
+    renderMessages();
+    forceScrollToBottom();
+  } catch (error) {
+    console.error('Failed to compact conversation:', error);
+    state.messages.push({
+      role:    'assistant',
+      content: [{ type: 'text', text: `Error during compaction: ${error.message}` }],
+    });
+    renderMessages();
+    forceScrollToBottom();
   }
 }
 
@@ -1931,7 +2131,7 @@ async function handleUpdateUsageCommand(args) {
       content: [{ type: 'text', text: `Usage: /update_usage <cost>\n\nProvide your current actual API cost (in dollars).\n\nExample: /update_usage 5.50\n\nThis will adjust the usage tracker to match your actual spend.` }],
     });
     renderMessages();
-    scrollToBottom();
+    forceScrollToBottom();
     return;
   }
 
@@ -1944,7 +2144,7 @@ async function handleUpdateUsageCommand(args) {
       content: [{ type: 'text', text: `Invalid cost: "${input}"\n\nPlease provide a number, e.g., /update_usage 5.50` }],
     });
     renderMessages();
-    scrollToBottom();
+    forceScrollToBottom();
     return;
   }
 
@@ -1970,7 +2170,7 @@ async function handleUpdateUsageCommand(args) {
       content: [{ type: 'text', text: msg }],
     });
     renderMessages();
-    scrollToBottom();
+    forceScrollToBottom();
 
     // Reload usage to update the header display
     if (state.currentSession) {
@@ -1985,7 +2185,7 @@ async function handleUpdateUsageCommand(args) {
       content: [{ type: 'text', text: `Failed to update usage: ${error.message}` }],
     });
     renderMessages();
-    scrollToBottom();
+    forceScrollToBottom();
   }
 }
 
@@ -2007,7 +2207,7 @@ async function handleAbilityCommand(args) {
           content: [{ type: 'text', text: 'Usage: /ability edit <name>' }],
         });
         renderMessages();
-        scrollToBottom();
+        forceScrollToBottom();
         return;
       }
       await editAbilityByName(name);
@@ -2020,7 +2220,7 @@ async function handleAbilityCommand(args) {
           content: [{ type: 'text', text: 'Usage: /ability delete <name>' }],
         });
         renderMessages();
-        scrollToBottom();
+        forceScrollToBottom();
         return;
       }
       await deleteAbilityByName(name);
@@ -2071,7 +2271,7 @@ async function listAbilities() {
       content: [{ type: 'text', text }],
     });
     renderMessages();
-    scrollToBottom();
+    forceScrollToBottom();
   } catch (error) {
     console.error('Failed to list abilities:', error);
     state.messages.push({
@@ -2079,7 +2279,7 @@ async function listAbilities() {
       content: [{ type: 'text', text: 'Failed to load abilities.' }],
     });
     renderMessages();
-    scrollToBottom();
+    forceScrollToBottom();
   }
 }
 
@@ -2096,7 +2296,7 @@ async function editAbilityByName(name) {
         content: [{ type: 'text', text: `Ability "${name}" not found or cannot be edited (only user abilities can be edited).` }],
       });
       renderMessages();
-      scrollToBottom();
+      forceScrollToBottom();
       return;
     }
 
@@ -2119,7 +2319,7 @@ async function deleteAbilityByName(name) {
         content: [{ type: 'text', text: `Ability "${name}" not found or cannot be deleted (only user abilities can be deleted).` }],
       });
       renderMessages();
-      scrollToBottom();
+      forceScrollToBottom();
       return;
     }
 
@@ -2133,7 +2333,7 @@ async function deleteAbilityByName(name) {
       content: [{ type: 'text', text: `Ability "${name}" deleted.` }],
     });
     renderMessages();
-    scrollToBottom();
+    forceScrollToBottom();
   } catch (error) {
     console.error('Failed to delete ability:', error);
     state.messages.push({
@@ -2141,7 +2341,7 @@ async function deleteAbilityByName(name) {
       content: [{ type: 'text', text: 'Failed to delete ability.' }],
     });
     renderMessages();
-    scrollToBottom();
+    forceScrollToBottom();
   }
 }
 
@@ -2888,6 +3088,127 @@ function submitQuestionAnswer(assertionId, answer) {
   }
 }
 
+/**
+ * Submit an answer to a user_prompt element.
+ * Creates a new user message with the answer and an interaction to update the prompt.
+ */
+function submitUserPromptAnswer(messageId, promptId, question, answer) {
+  console.log('[App] submitUserPromptAnswer called:', { messageId, promptId, question, answer });
+
+  // Update the message content in state.messages so re-renders preserve the answered state
+  updatePromptInState(messageId, promptId, answer);
+
+  // Create message content with interaction
+  let interactionPayload = {
+    interaction_id:  `prompt-response-${promptId}`,
+    target_id:       '@system',
+    target_property: 'update_prompt',
+    payload: {
+      message_id: messageId,
+      prompt_id:  promptId,
+      answer:     answer,
+    },
+  };
+
+  let content = `Answering "${question}":\n\n${answer}\n\n<interaction>\n${JSON.stringify(interactionPayload, null, 2)}\n</interaction>`;
+
+  console.log('[App] Sending message with interaction:', content);
+
+  // Send as new user message
+  if (state.streamingMode) {
+    processMessageStream(content);
+  } else {
+    processMessage(content);
+  }
+}
+
+/**
+ * Update a prompt's answered state in state.messages so re-renders preserve it.
+ */
+function updatePromptInState(messageId, promptId, answer) {
+  console.log('[App] updatePromptInState:', { messageId, promptId, answer });
+
+  // Find the message in state
+  let message = state.messages.find((m) => m.id === messageId || m.id === String(messageId));
+
+  if (!message) {
+    console.log('[App] Message not found in state for ID:', messageId);
+    return;
+  }
+
+  // Escape the answer for XML
+  let escapedAnswer = answer
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+
+  // Update the content - find the hml-prompt by ID and add answered attribute + response
+  let pattern = new RegExp(
+    `(<hml-prompt\\s+id=["']${promptId}["'][^>]*)>([\\s\\S]*?)</hml-prompt>`,
+    'gi'
+  );
+
+  let updatedContent = message.content.replace(
+    pattern,
+    (match, openTag, content) => {
+      // Remove any existing answered attribute before adding the new one
+      let cleanedTag = openTag.replace(/\s+answered=["'][^"']*["']/gi, '');
+      // Remove any existing <response> element from content
+      let cleanedContent = content.replace(/<response>[\s\S]*?<\/response>/gi, '').trim();
+      return `${cleanedTag} answered="true">${cleanedContent}<response>${escapedAnswer}</response></hml-prompt>`;
+    }
+  );
+
+  if (updatedContent !== message.content) {
+    message.content = updatedContent;
+    console.log('[App] Updated message content in state');
+  } else {
+    console.log('[App] Pattern did not match, content unchanged');
+  }
+}
+
+/**
+ * Update the UI for a user_prompt element to show the answered state.
+ * @deprecated Use updatePromptInState instead - this targets old-style prompts
+ */
+function updateUserPromptUI(promptId, answer) {
+  let promptElement = document.querySelector(`.hml-user-prompt[data-prompt-id="${promptId}"]`);
+
+  if (!promptElement) return;
+
+  let question = promptElement.querySelector('.hml-user-prompt-question')?.textContent || '';
+
+  promptElement.classList.add('answered');
+  promptElement.innerHTML = `
+    <div class="hml-user-prompt-question">${escapeHtmlForPrompt(question)}</div>
+    <div class="hml-user-prompt-response">${escapeHtmlForPrompt(answer)}</div>
+  `;
+}
+
+/**
+ * Escape HTML for user prompt display.
+ */
+function escapeHtmlForPrompt(text) {
+  if (!text) return '';
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+// Make submitUserPromptAnswer available globally (called from markup.js)
+window.submitUserPromptAnswer = submitUserPromptAnswer;
+
+// Listen for prompt-submit events from <hml-prompt> Web Components
+document.addEventListener('prompt-submit', (event) => {
+  console.log('[App] prompt-submit event received:', event.detail);
+  let { messageId, promptId, question, answer } = event.detail;
+  submitUserPromptAnswer(messageId, promptId, question, answer);
+});
+
 function updateOperationState(command) {
   let index = state.runningOperations.findIndex((op) => op.id === command.id);
 
@@ -3371,7 +3692,7 @@ elements.sessionSelect.addEventListener('change', () => {
 // Scroll-to-bottom button
 if (elements.scrollToBottomBtn && elements.chatMain) {
   elements.scrollToBottomBtn.addEventListener('click', () => {
-    scrollToBottom();
+    forceScrollToBottom();
   });
 
   elements.chatMain.addEventListener('scroll', () => {

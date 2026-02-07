@@ -550,6 +550,110 @@ function handleStreamCommand(args) {
 }
 ```
 
+## Web Components
+
+### HML Prompt (`<hml-prompt>`)
+
+Inline user prompt component for collecting input within chat messages.
+
+**Location:** `public/js/components/hml-prompt.js`
+
+**Features:**
+- Shadow DOM encapsulation for isolated styling
+- Auto-sizing input based on placeholder text
+- Keyboard handling (Enter to submit for text/number)
+- OK button for non-keyboard inputs (color, checkbox, select, radio, range)
+- Answered state with green styling
+- Inline display (newlines around tags are collapsed to spaces)
+
+**Supported Types:**
+
+| Type | Description | Attributes |
+|------|-------------|------------|
+| `text` | Free-form text input (default) | - |
+| `number` | Numeric input | `min`, `max`, `step`, `default` |
+| `color` | Color picker | `default` |
+| `checkbox` | Single yes/no checkbox | `default` |
+| `checkboxes` | Multi-select checkbox group | Requires `<data>` |
+| `radio` | Radio button group | Requires `<data>` |
+| `select` | Dropdown menu | Requires `<data>` |
+| `range` | Slider | `min`, `max`, `step`, `default` |
+
+**Options Format (for select/radio/checkboxes):**
+
+Use a `<data>` child element with JSON array:
+```html
+<hml-prompt id="color" type="select">
+  What's your favorite color?
+  <data>[{"value":"red","label":"Red"},{"value":"blue","label":"Blue","selected":true}]</data>
+</hml-prompt>
+```
+
+Option objects: `{ value, label, selected? }`
+
+**Usage Examples:**
+```html
+<!-- Text (inline with surrounding text) -->
+What's your name? <hml-prompt id="name">Enter your name</hml-prompt> Thanks!
+
+<!-- Number -->
+<hml-prompt id="age" type="number" min="1" max="120">How old are you?</hml-prompt>
+
+<!-- Select dropdown -->
+<hml-prompt id="size" type="select">
+  Choose a size
+  <data>[{"value":"s","label":"Small"},{"value":"m","label":"Medium"},{"value":"l","label":"Large"}]</data>
+</hml-prompt>
+
+<!-- Radio group -->
+<hml-prompt id="rating" type="radio">
+  Rate your experience
+  <data>[{"value":"1","label":"Poor"},{"value":"3","label":"Average"},{"value":"5","label":"Excellent"}]</data>
+</hml-prompt>
+```
+
+**After user answers:**
+```html
+<hml-prompt id="name" answered>Enter your name<response>Alice</response></hml-prompt>
+```
+
+**Events:**
+- `prompt-submit` - Bubbles with `{ messageId, promptId, question, answer, type }`
+
+**Styling:**
+- Unanswered: Blue background tint, dashed bottom border, pulsing glow
+- Answered: Green background tint, solid bottom border
+
+**Inline Display:**
+The markup processor collapses newlines around `<hml-prompt>` tags to spaces, ensuring prompts display inline with surrounding text. The `<data>` element is hidden via CSS.
+
+## Scroll Behavior
+
+The chat uses smart scrolling to avoid disrupting users reading older messages:
+
+```javascript
+// Only scrolls if user is near bottom (auto-follow)
+function scrollToBottom() {
+  if (isNearBottom()) {
+    forceScrollToBottom();
+  }
+}
+
+// Always scrolls (for explicit actions)
+function forceScrollToBottom() {
+  chatMain.scrollTop = chatMain.scrollHeight;
+}
+```
+
+**When `forceScrollToBottom()` is used:**
+- User sends a message
+- User clicks scroll-to-bottom button
+
+**When `scrollToBottom()` is used:**
+- During streaming (text/elements arriving)
+- After assistant response
+- Other automatic updates
+
 ## File Structure
 
 ```
@@ -564,7 +668,9 @@ public/
 │   └── ...
 └── js/
     ├── app.js          # Main application logic
-    └── markup.js       # HML renderer
+    ├── markup.js       # HML renderer
+    └── components/
+        └── hml-prompt.js  # Inline prompt Web Component
 ```
 
 ## API Functions

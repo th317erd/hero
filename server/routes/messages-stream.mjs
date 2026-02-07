@@ -25,9 +25,29 @@ import { createStreamParser } from '../lib/markup/stream-parser.mjs';
 import { executePipeline } from '../lib/pipeline/index.mjs';
 import { getStartupAbilities } from '../lib/abilities/registry.mjs';
 import { loadUserAbilities } from '../lib/abilities/loaders/user.mjs';
+import { checkConditionalAbilities, formatConditionalInstructions } from '../lib/abilities/index.mjs';
 import { broadcastToUser } from '../lib/websocket.mjs';
-import { detectInteractions, executeInteractions, formatInteractionFeedback, searchWeb } from '../lib/interactions/index.mjs';
+import { detectInteractions, executeInteractions, formatInteractionFeedback, searchWeb, getRegisteredFunctionClass } from '../lib/interactions/index.mjs';
 import { checkCompaction, loadMessagesWithSnapshot } from '../lib/compaction.mjs';
+
+/**
+ * Get the banner config for a function by name.
+ * Returns null if the function doesn't have a banner config.
+ *
+ * @param {string} functionName - The function name (targetProperty)
+ * @returns {Object|null} Banner config or null
+ */
+function getFunctionBannerConfig(functionName) {
+  let FunctionClass = getRegisteredFunctionClass(functionName);
+  if (!FunctionClass) return null;
+
+  try {
+    let reg = FunctionClass.register();
+    return reg.banner || null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Convert raw API error messages to user-friendly messages.
@@ -563,7 +583,51 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
 
     db.prepare('UPDATE sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(req.params.sessionId);
 
-    // Add user message to context (with process injection)
+    // Process any interactions in the user message (e.g., prompt updates)
+    // User interactions are "secure" because they come directly from an authenticated user
+    console.log('[Stream] User message content preview:', content.substring(0, 200));
+    console.log('[Stream] User message has <interaction>:', content.includes('<interaction>'));
+    if (content.includes('<interaction>')) {
+      let userInteractionBlock = detectInteractions(content);
+      console.log('[Stream] User interaction block:', userInteractionBlock ? `found ${userInteractionBlock.interactions.length}` : 'none');
+      if (userInteractionBlock && userInteractionBlock.interactions.length > 0) {
+        // Include senderId to mark these as authorized user interactions
+        // This is secure because:
+        // 1. This code path is only reached for user messages (not agent responses)
+        // 2. req.user.id comes from authenticated session middleware
+        // 3. detectInteractions() strips any sender_id that might have been in the message
+        let interactionContext = {
+          sessionId: req.params.sessionId,
+          userId:    req.user.id,
+          senderId:  req.user.id,  // Mark as authorized user interaction
+          agentId:   session.agent_id,
+          db,
+        };
+        console.log('[Stream] Executing user message interactions (authorized):', userInteractionBlock.interactions.length);
+        let results = await executeInteractions(userInteractionBlock, interactionContext);
+        console.log('[Stream] User interaction results:', JSON.stringify(results, null, 2));
+      }
+    }
+
+    // =========================================================================
+    // CONDITIONAL ABILITIES: Check if any abilities should activate
+    // =========================================================================
+    let conditionalResult = await checkConditionalAbilities({
+      userMessage: content,
+      sessionID:   parseInt(req.params.sessionId, 10),
+    });
+
+    if (conditionalResult.matched) {
+      debug('Conditional abilities matched:', conditionalResult.instructions.length);
+
+      // Format and inject instructions into the user message
+      let conditionalInstructions = formatConditionalInstructions(conditionalResult.instructions);
+      processedContent = `${processedContent}\n\n${conditionalInstructions}`;
+
+      debug('Injected conditional instructions:', conditionalInstructions.slice(0, 200));
+    }
+
+    // Add user message to context (with process injection and conditional instructions)
     messages.push({ role: 'user', content: processedContent });
 
     // Calculate estimated tokens for display
@@ -580,7 +644,8 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
     let estimatedTokens = Math.ceil(totalChars / 4);
 
     // Send stream start event with token estimate
-    let messageId = randomUUID();
+    let messageId = randomUUID();  // UUID for correlating SSE events during streaming
+    let persistedMessageID = null;  // Database row ID, set when message is stored
     debug('Sending message_start event', { messageId, estimatedTokens });
     sendEvent('message_start', {
       messageId,
@@ -616,12 +681,16 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
 
         console.log(`[Stream] Websearch opening tag detected, sending interaction_started`);
 
+        // Get banner config from the websearch function's registration
+        let bannerConfig = getFunctionBannerConfig('websearch');
+
         sendEvent('interaction_started', {
           messageId,
           interactionId:  interactionId,
           targetId:       '@system',
           targetProperty: 'websearch',
           payload:        { query: '...' }, // Query not known yet
+          banner:         bannerConfig,     // Include banner config for frontend
         });
 
         // Force flush: write padding and drain the socket
@@ -834,10 +903,12 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
           let costCents = Math.round((inputCost + outputCost) * 100);
 
           // Record charge in token_charges table
+          // Note: message_id is NULL during streaming since the message isn't stored yet
+          // The messageId variable is a UUID for SSE correlation, not a database ID
           db.prepare(`
             INSERT INTO token_charges (agent_id, session_id, message_id, input_tokens, output_tokens, cost_cents, charge_type)
-            VALUES (?, ?, ?, ?, ?, ?, 'usage')
-          `).run(session.agent_id, req.params.sessionId, messageId, inputTokens, outputTokens, costCents);
+            VALUES (?, ?, NULL, ?, ?, ?, 'usage')
+          `).run(session.agent_id, req.params.sessionId, inputTokens, outputTokens, costCents);
 
           // Also update session totals for backwards compatibility
           db.prepare(`
@@ -913,8 +984,9 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
         let iteration        = 0;
         let currentContent   = fullContent;
         let currentBlock     = interactionBlock;
-        // Accumulate content segments to preserve all messages (initial + follow-ups)
-        let contentSegments  = [stripInteractionTags(fullContent)];
+        // Track only the final response (not accumulated segments)
+        // The initial response with interactions is stored as hidden, only the final is shown
+        let finalContent     = null;
 
         while (currentBlock && iteration < maxIterations) {
           iteration++;
@@ -930,14 +1002,18 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
 
           // Send interaction_started events RIGHT BEFORE execution
           // This ensures the "Pending" banner appears immediately when the action starts
+          // Only functions with a banner config in their register() method will show banners
           for (let interaction of currentBlock.interactions) {
-            console.log('[Stream] Sending interaction_started:', interaction.interaction_id, interaction.target_property);
+            // Get banner config from function's register() method (if it has one)
+            let bannerConfig = getFunctionBannerConfig(interaction.target_property);
+            console.log('[Stream] Sending interaction_started:', interaction.interaction_id, interaction.target_property, 'hasBanner:', !!bannerConfig);
             sendEvent('interaction_started', {
               messageId,
               interactionId:  interaction.interaction_id,
               targetId:       interaction.target_id,
               targetProperty: interaction.target_property,
               payload:        interaction.payload,
+              banner:         bannerConfig,  // Include banner config (may be null)
             });
           }
 
@@ -1009,10 +1085,11 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
               debug('Next response received', { length: nextContent.length, iteration });
               debug('Next response content (first 300 chars):', nextContent.slice(0, 300));
 
-              // Accumulate this segment (stripped of interaction tags)
+              // Keep track of the clean content for final display
+              // Only the last response (after all interactions complete) will be shown
               let cleanSegment = stripInteractionTags(nextContent);
               if (cleanSegment.trim()) {
-                contentSegments.push(cleanSegment);
+                finalContent = cleanSegment;
               }
 
               // Check if this response also has interactions
@@ -1053,8 +1130,9 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
           sendEvent('interaction_max_reached', { messageId, iterations: iteration });
         }
 
-        // Combine all content segments (each already stripped of interaction tags)
-        let cleanFinalContent = contentSegments.join('\n\n');
+        // Use the final response content (after all interactions complete)
+        // If no follow-up response was received, fall back to stripped initial content
+        let cleanFinalContent = finalContent || stripInteractionTags(fullContent);
 
         // Strip any leaked interaction feedback format ([@target:method] interaction_id=...)
         // This can happen if Claude echoes the feedback in its response
@@ -1065,11 +1143,13 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
 
         // Store the final clean response as VISIBLE
         if (cleanFinalContent.trim()) {
-          storeAndBroadcastMessage(db, req.params.sessionId, req.user.id, 'assistant', cleanFinalContent, {
+          let storedMsg = storeAndBroadcastMessage(db, req.params.sessionId, req.user.id, 'assistant', cleanFinalContent, {
             hidden:        0,
             type:          'message',
             skipBroadcast: true,
           });
+          persistedMessageID = storedMsg.id;
+          debug('Stored interaction response with database ID:', persistedMessageID);
         }
 
         // Update fullContent for the message_complete event
@@ -1085,11 +1165,13 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
       } else {
         // No interactions - store normally
         debug('Storing assistant response', { length: fullContent.length });
-        storeAndBroadcastMessage(db, req.params.sessionId, req.user.id, 'assistant', fullContent, {
+        let storedMsg = storeAndBroadcastMessage(db, req.params.sessionId, req.user.id, 'assistant', fullContent, {
           hidden:        0,
           type:          'message',
           skipBroadcast: true,  // SSE already notifies client via message_complete
         });
+        persistedMessageID = storedMsg.id;
+        debug('Stored message with database ID:', persistedMessageID);
       }
     } else if (!aborted && !fullContent) {
       // No content received - store an error message so user knows what happened
@@ -1129,9 +1211,10 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
           warning:          'Agent returned no content',
         });
       } else {
-        debug('Sending message_complete', { contentLength: fullContent.length, executedElements: executedElements.length });
+        debug('Sending message_complete', { contentLength: fullContent.length, executedElements: executedElements.length, persistedMessageID });
         sendEvent('message_complete', {
           messageId,
+          persistedMessageID,  // The actual database row ID for persistence
           content:          fullContent,
           executedElements: executedElements.length,
         });

@@ -25,6 +25,7 @@ export {
   getAbilitiesBySource,
   getAbilitiesByCategory,
   getAbilitiesByTag,
+  getConditionalAbilities,
   getStartupAbilities,
   clearAbilities,
   clearAbilitiesBySource,
@@ -60,6 +61,12 @@ export {
   executeAbilitiesSequential,
   executeAbilitiesParallel,
 } from './executor.mjs';
+
+export {
+  checkConditionalAbilities,
+  formatConditionalInstructions,
+  getUnansweredPrompts,
+} from './conditional.mjs';
 
 // Loaders
 import { loadStartupAbility } from './loaders/startup.mjs';

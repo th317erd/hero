@@ -177,6 +177,7 @@
   flex: 1;
   resize: none;
   max-height: 150px;
+  caret-shape: block;
 }
 
 .input-container .btn {
@@ -676,8 +677,9 @@
 
 .scroll-to-bottom-btn {
   position: absolute;
-  bottom: 20px;
-  right: 30px;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
   width: 44px;
   height: 44px;
   padding: 0;
@@ -689,25 +691,25 @@
   align-items: center;
   justify-content: center;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  transition: all 0.2s ease;
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
   z-index: 50;
 }
 
 .scroll-to-bottom-btn:hover {
   background: var(--bg-tertiary);
   border-color: var(--accent);
-  transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 .scroll-to-bottom-btn:active {
-  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
 .scroll-to-bottom-btn .chevron-down {
-  font-size: 24px;
+  font-size: 20px;
   color: var(--text-secondary);
-  line-height: 1;
+  line-height: 0;
+  margin-top: 2px;
 }
 
 .scroll-to-bottom-btn:hover .chevron-down {

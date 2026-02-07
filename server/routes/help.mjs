@@ -22,6 +22,8 @@ const BUILTIN_COMMANDS = [
   { name: 'archive', description: 'Archive the current session' },
   { name: 'stream',  description: 'Toggle streaming mode (on/off)' },
   { name: 'ability', description: 'Manage abilities (create/list/view/delete)' },
+  { name: 'start',   description: 'Re-send startup instructions to the AI agent' },
+  { name: 'compact', description: 'Compact conversation history into a summary' },
 ];
 
 /**
