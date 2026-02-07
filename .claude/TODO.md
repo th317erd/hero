@@ -24,17 +24,17 @@
 
 ### Interaction Frames Implementation
 
-**Phase 1: Database Foundation**
-- [ ] Create `frames` table with new schema
-- [ ] Drop old `messages` table
-- [ ] Write frame CRUD functions
-- [ ] Tests for frame operations
+**Phase 1: Database Foundation** ✅ COMPLETE
+- [x] Create `frames` table with new schema (migration 014)
+- [x] Drop old `messages` table (migration 015)
+- [x] Write frame CRUD functions (server/lib/frames/index.mjs)
+- [x] Tests for frame operations (36 tests passing)
 
-**Phase 2: Frame Core Library**
-- [ ] `createFrame()`, `getFrames()`, `getFramesBySession()`
-- [ ] `compileFrames()` — replay/compilation logic
-- [ ] Target ID parsing utilities
-- [ ] Tests for compilation
+**Phase 2: Frame Core Library** ✅ COMPLETE
+- [x] `createFrame()`, `getFrames()`, `getFramesBySession()` - implemented
+- [x] `compileFrames()` — replay/compilation logic - implemented
+- [x] Target ID parsing utilities - implemented (prefix:id format)
+- [x] Tests for compilation - 36 tests covering all scenarios
 
 **Phase 3: Server-Side Frame Loop**
 - [ ] Refactor `messages-stream.mjs` to create frames

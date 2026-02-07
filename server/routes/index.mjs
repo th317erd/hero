@@ -8,6 +8,7 @@ import agentsRoutes from './agents.mjs';
 import sessionsRoutes from './sessions.mjs';
 import messagesRoutes from './messages.mjs';
 import messagesStreamRoutes from './messages-stream.mjs';
+import framesRoutes from './frames.mjs';
 import commandsRoutes from './commands.mjs';
 import toolsRoutes from './tools.mjs';
 import abilitiesRoutes from './abilities.mjs';
@@ -24,6 +25,7 @@ router.use('/agents', agentsRoutes);
 router.use('/sessions', sessionsRoutes);
 router.use('/sessions', messagesRoutes);        // Mounted under /sessions for /sessions/:id/messages
 router.use('/sessions', messagesStreamRoutes);  // Streaming endpoint: /sessions/:id/messages/stream
+router.use('/sessions', framesRoutes);          // Frames endpoint: /sessions/:id/frames
 router.use('/commands', commandsRoutes);
 router.use('/tools', toolsRoutes);
 router.use('/abilities', abilitiesRoutes);
