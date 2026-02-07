@@ -4,6 +4,23 @@ Last updated: 2026-02-06
 
 ## Recent Changes
 
+### Test Suite Unification (Complete)
+Unified all test files to use Node.js built-in test runner (`node:test`). Previously some files used Jest-style syntax without proper imports.
+
+**Files converted:**
+- `spec/lib/encryption-spec.mjs` - 17 tests for password/key encryption
+- `spec/lib/config-path-spec.mjs` - 10 tests for config directory paths
+- `spec/lib/agents/base-agent-spec.mjs` - 14 tests for base agent class
+- `spec/lib/plugins/hooks-spec.mjs` - 15 tests for plugin hooks
+- `spec/lib/plugins/loader-spec.mjs` - 11 tests for plugin loading
+
+**New test file:**
+- `spec/routes/usage-spec.mjs` - 30 tests for token charges system
+
+**Total test count:** 177 tests across 8 spec files
+
+**Run tests:** `npm test`
+
 ### Token Charges System (Complete)
 Implemented comprehensive token/cost tracking per API call with Global, Service, and Session spend views.
 

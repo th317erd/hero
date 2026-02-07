@@ -1,5 +1,8 @@
 'use strict';
 
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+
 import {
   encryptWithPassword,
   decryptWithPassword,
@@ -19,7 +22,7 @@ describe('Encryption module', () => {
       let encrypted = await encryptWithPassword(plaintext, password);
       let decrypted = await decryptWithPassword(encrypted, password);
 
-      expect(decrypted).toBe(plaintext);
+      assert.equal(decrypted, plaintext);
     });
 
     it('should produce different ciphertext for same plaintext (random IV)', async () => {
@@ -29,7 +32,7 @@ describe('Encryption module', () => {
       let encrypted1 = await encryptWithPassword(plaintext, password);
       let encrypted2 = await encryptWithPassword(plaintext, password);
 
-      expect(encrypted1).not.toBe(encrypted2);
+      assert.notEqual(encrypted1, encrypted2);
     });
 
     it('should fail to decrypt with wrong password', async () => {
@@ -39,15 +42,17 @@ describe('Encryption module', () => {
 
       let encrypted = await encryptWithPassword(plaintext, correctPassword);
 
-      await expectAsync(decryptWithPassword(encrypted, wrongPassword))
-        .toBeRejectedWithError(/Decryption failed/);
+      await assert.rejects(
+        () => decryptWithPassword(encrypted, wrongPassword),
+        /Decryption failed/
+      );
     });
 
     it('should handle empty strings', async () => {
       let encrypted = await encryptWithPassword('', 'password');
       let decrypted = await decryptWithPassword(encrypted, 'password');
 
-      expect(decrypted).toBe('');
+      assert.equal(decrypted, '');
     });
 
     it('should handle unicode characters', async () => {
@@ -57,7 +62,7 @@ describe('Encryption module', () => {
       let encrypted = await encryptWithPassword(plaintext, password);
       let decrypted = await decryptWithPassword(encrypted, password);
 
-      expect(decrypted).toBe(plaintext);
+      assert.equal(decrypted, plaintext);
     });
 
     it('should handle long passwords', async () => {
@@ -67,7 +72,7 @@ describe('Encryption module', () => {
       let encrypted = await encryptWithPassword(plaintext, password);
       let decrypted = await decryptWithPassword(encrypted, password);
 
-      expect(decrypted).toBe(plaintext);
+      assert.equal(decrypted, plaintext);
     });
   });
 
@@ -79,7 +84,7 @@ describe('Encryption module', () => {
       let encrypted = encryptWithKey(plaintext, key);
       let decrypted = decryptWithKey(encrypted, key);
 
-      expect(decrypted).toBe(plaintext);
+      assert.equal(decrypted, plaintext);
     });
 
     it('should produce different ciphertext for same plaintext (random IV)', () => {
@@ -89,7 +94,7 @@ describe('Encryption module', () => {
       let encrypted1 = encryptWithKey(plaintext, key);
       let encrypted2 = encryptWithKey(plaintext, key);
 
-      expect(encrypted1).not.toBe(encrypted2);
+      assert.notEqual(encrypted1, encrypted2);
     });
 
     it('should fail with wrong key', () => {
@@ -99,14 +104,20 @@ describe('Encryption module', () => {
 
       let encrypted = encryptWithKey(plaintext, key1);
 
-      expect(() => decryptWithKey(encrypted, key2)).toThrowError(/Decryption failed/);
+      assert.throws(
+        () => decryptWithKey(encrypted, key2),
+        /Decryption failed/
+      );
     });
 
     it('should reject invalid key length', () => {
       let plaintext = 'Test';
       let shortKey  = 'abc123';
 
-      expect(() => encryptWithKey(plaintext, shortKey)).toThrowError(/Invalid key length/);
+      assert.throws(
+        () => encryptWithKey(plaintext, shortKey),
+        /Invalid key length/
+      );
     });
   });
 
@@ -114,7 +125,7 @@ describe('Encryption module', () => {
     it('should generate a 64-character hex string (256 bits)', () => {
       let key = generateKey();
 
-      expect(key).toMatch(/^[0-9a-f]{64}$/);
+      assert.match(key, /^[0-9a-f]{64}$/);
     });
 
     it('should generate unique keys', () => {
@@ -123,7 +134,7 @@ describe('Encryption module', () => {
       for (let i = 0; i < 100; i++)
         keys.add(generateKey());
 
-      expect(keys.size).toBe(100);
+      assert.equal(keys.size, 100);
     });
   });
 
@@ -134,7 +145,7 @@ describe('Encryption module', () => {
       let hash  = await hashPassword(password);
       let valid = await verifyPassword(password, hash);
 
-      expect(valid).toBe(true);
+      assert.equal(valid, true);
     });
 
     it('should reject wrong passwords', async () => {
@@ -144,7 +155,7 @@ describe('Encryption module', () => {
       let hash  = await hashPassword(password);
       let valid = await verifyPassword(wrong, hash);
 
-      expect(valid).toBe(false);
+      assert.equal(valid, false);
     });
 
     it('should produce different hashes for same password (random salt)', async () => {
@@ -153,19 +164,19 @@ describe('Encryption module', () => {
       let hash1 = await hashPassword(password);
       let hash2 = await hashPassword(password);
 
-      expect(hash1).not.toBe(hash2);
+      assert.notEqual(hash1, hash2);
     });
 
     it('should hash in salt:hash format', async () => {
       let hash = await hashPassword('test');
 
-      expect(hash).toMatch(/^[0-9a-f]+:[0-9a-f]+$/);
+      assert.match(hash, /^[0-9a-f]+:[0-9a-f]+$/);
     });
 
     it('should reject malformed hashes', async () => {
       let valid = await verifyPassword('test', 'not-a-valid-hash');
 
-      expect(valid).toBe(false);
+      assert.equal(valid, false);
     });
   });
 });

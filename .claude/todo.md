@@ -31,6 +31,8 @@
 [x] Compacting memory - improved prompt to capture comprehensive context AND generate TODO lists
 [x] Add "Chevron Down" button to jump to bottom of chat - floats at bottom-right, auto-hides when near bottom
 [x] Add `/update_usage <cost>` command - stores corrections in database, adjusts tracking to match actual spend
+[x] Unit tests for token charges system - 30 tests covering cost calculation, spend queries, corrections
+[x] Unified test runner - converted all spec files from Jest to Node.js built-in test runner (177 tests total)
 
 ## Architecture Notes
 - **Abilities** = verbal "guides" for the agent, applied when the agent feels they should

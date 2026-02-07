@@ -1,5 +1,8 @@
 'use strict';
 
+import { describe, it, beforeEach, afterEach } from 'node:test';
+import assert from 'node:assert/strict';
+
 import { mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -58,8 +61,8 @@ describe('Plugin loader module', () => {
     it('should identify valid plugin structure', () => {
       let pluginDir = createTestPlugin('valid-plugin');
 
-      expect(existsSync(join(pluginDir, 'package.json'))).toBe(true);
-      expect(existsSync(join(pluginDir, 'index.mjs'))).toBe(true);
+      assert.equal(existsSync(join(pluginDir, 'package.json')), true);
+      assert.equal(existsSync(join(pluginDir, 'index.mjs')), true);
     });
 
     it('should create plugin with custom entry point', () => {
@@ -68,7 +71,7 @@ describe('Plugin loader module', () => {
         entryContent: 'export const name = "custom";',
       });
 
-      expect(existsSync(join(pluginDir, 'src', 'main.mjs'))).toBe(true);
+      assert.equal(existsSync(join(pluginDir, 'src', 'main.mjs')), true);
     });
   });
 
@@ -81,9 +84,9 @@ describe('Plugin loader module', () => {
       let packagePath    = join(pluginDir, 'package.json');
       let packageContent = JSON.parse(readFileSync(packagePath, 'utf8'));
 
-      expect(packageContent.name).toBe('metadata-test');
-      expect(packageContent.version).toBe('2.0.0');
-      expect(packageContent.hero.agents).toEqual(['claude']);
+      assert.equal(packageContent.name, 'metadata-test');
+      assert.equal(packageContent.version, '2.0.0');
+      assert.deepEqual(packageContent.hero.agents, ['claude']);
     });
   });
 
@@ -121,7 +124,7 @@ describe('Plugin loader module', () => {
 
       createTestPlugin('exports-test', { entryContent });
 
-      expect(true).toBe(true);
+      assert.ok(true);
     });
   });
 
@@ -132,7 +135,7 @@ describe('Plugin loader module', () => {
       let packagePath = join(tempPluginsDir, 'wildcard-plugin', 'package.json');
       let pkg         = JSON.parse(readFileSync(packagePath, 'utf8'));
 
-      expect(pkg.hero.agents).toContain('*');
+      assert.ok(pkg.hero.agents.includes('*'));
     });
 
     it('should support specific agent compatibility', () => {
@@ -146,8 +149,8 @@ describe('Plugin loader module', () => {
         readFileSync(join(tempPluginsDir, 'multi-agent', 'package.json'), 'utf8')
       );
 
-      expect(claudePackage.hero.agents).toEqual(['claude']);
-      expect(multiPackage.hero.agents).toEqual(['claude', 'openai']);
+      assert.deepEqual(claudePackage.hero.agents, ['claude']);
+      assert.deepEqual(multiPackage.hero.agents, ['claude', 'openai']);
     });
   });
 
@@ -168,7 +171,7 @@ describe('Plugin loader module', () => {
 
       createTestPlugin('cancellable-plugin', { entryContent });
 
-      expect(true).toBe(true);
+      assert.ok(true);
     });
 
     it('should allow tools to check abort signal', () => {
@@ -190,7 +193,7 @@ describe('Plugin loader module', () => {
 
       createTestPlugin('cancellable-tool-plugin', { entryContent });
 
-      expect(true).toBe(true);
+      assert.ok(true);
     });
   });
 });

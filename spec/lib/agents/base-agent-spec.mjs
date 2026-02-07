@@ -1,5 +1,8 @@
 'use strict';
 
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+
 import { BaseAgent } from '../../../server/lib/agents/base-agent.mjs';
 
 describe('BaseAgent', () => {
@@ -7,10 +10,10 @@ describe('BaseAgent', () => {
     it('should initialize with default values', () => {
       let agent = new BaseAgent();
 
-      expect(agent.apiKey).toBeUndefined();
-      expect(agent.apiUrl).toBeUndefined();
-      expect(agent.system).toBe('');
-      expect(agent.tools).toEqual([]);
+      assert.equal(agent.apiKey, undefined);
+      assert.equal(agent.apiUrl, undefined);
+      assert.equal(agent.system, '');
+      assert.deepEqual(agent.tools, []);
     });
 
     it('should accept configuration options', () => {
@@ -22,10 +25,10 @@ describe('BaseAgent', () => {
         tools:  tools,
       });
 
-      expect(agent.apiKey).toBe('test-key');
-      expect(agent.apiUrl).toBe('https://test.api');
-      expect(agent.system).toBe('You are a test agent');
-      expect(agent.tools).toBe(tools);
+      assert.equal(agent.apiKey, 'test-key');
+      assert.equal(agent.apiUrl, 'https://test.api');
+      assert.equal(agent.system, 'You are a test agent');
+      assert.equal(agent.tools, tools);
     });
   });
 
@@ -33,8 +36,10 @@ describe('BaseAgent', () => {
     it('should throw "not implemented" error', async () => {
       let agent = new BaseAgent();
 
-      await expectAsync(agent.sendMessage([]))
-        .toBeRejectedWithError(/must be implemented/);
+      await assert.rejects(
+        () => agent.sendMessage([]),
+        /must be implemented/
+      );
     });
   });
 
@@ -43,8 +48,10 @@ describe('BaseAgent', () => {
       let agent    = new BaseAgent();
       let iterator = agent.sendMessageStream([]);
 
-      await expectAsync(iterator.next())
-        .toBeRejectedWithError(/must be implemented/);
+      await assert.rejects(
+        () => iterator.next(),
+        /must be implemented/
+      );
     });
   });
 
@@ -52,8 +59,10 @@ describe('BaseAgent', () => {
     it('should throw error for unknown tool', async () => {
       let agent = new BaseAgent();
 
-      await expectAsync(agent.executeTool('unknown_tool', {}))
-        .toBeRejectedWithError(/not found/);
+      await assert.rejects(
+        () => agent.executeTool('unknown_tool', {}),
+        /not found/
+      );
     });
 
     it('should throw error for tool without execute function', async () => {
@@ -61,8 +70,10 @@ describe('BaseAgent', () => {
         tools: [{ name: 'no_execute_tool' }],
       });
 
-      await expectAsync(agent.executeTool('no_execute_tool', {}))
-        .toBeRejectedWithError(/no execute function/);
+      await assert.rejects(
+        () => agent.executeTool('no_execute_tool', {}),
+        /no execute function/
+      );
     });
 
     it('should execute tool with execute function', async () => {
@@ -75,7 +86,7 @@ describe('BaseAgent', () => {
 
       let result = await agent.executeTool('test_tool', { value: 42 });
 
-      expect(result).toBe('Result: 42');
+      assert.equal(result, 'Result: 42');
     });
 
     it('should pass abort signal to tool', async () => {
@@ -93,7 +104,7 @@ describe('BaseAgent', () => {
       let controller = new AbortController();
       await agent.executeTool('signal_tool', {}, controller.signal);
 
-      expect(receivedSignal).toBe(controller.signal);
+      assert.equal(receivedSignal, controller.signal);
     });
   });
 
@@ -101,7 +112,7 @@ describe('BaseAgent', () => {
     it('should return empty array when no tools', () => {
       let agent = new BaseAgent();
 
-      expect(agent.getToolDefinitions()).toEqual([]);
+      assert.deepEqual(agent.getToolDefinitions(), []);
     });
 
     it('should return tool definitions in API format', () => {
@@ -116,7 +127,7 @@ describe('BaseAgent', () => {
 
       let defs = agent.getToolDefinitions();
 
-      expect(defs).toEqual([{
+      assert.deepEqual(defs, [{
         name:         'my_tool',
         description:  'A test tool',
         input_schema: { type: 'object', properties: {} },
@@ -134,7 +145,7 @@ describe('BaseAgent', () => {
 
       let defs = agent.getToolDefinitions();
 
-      expect(defs[0].input_schema).toEqual({ type: 'object' });
+      assert.deepEqual(defs[0].input_schema, { type: 'object' });
     });
   });
 
@@ -145,7 +156,7 @@ describe('BaseAgent', () => {
 
       agent.setTools(newTools);
 
-      expect(agent.tools).toBe(newTools);
+      assert.equal(agent.tools, newTools);
     });
   });
 
@@ -156,7 +167,7 @@ describe('BaseAgent', () => {
 
       agent.addTool(tool);
 
-      expect(agent.tools).toContain(tool);
+      assert.ok(agent.tools.includes(tool));
     });
 
     it('should replace tool with same name', () => {
@@ -165,8 +176,8 @@ describe('BaseAgent', () => {
 
       agent.addTool(newTool);
 
-      expect(agent.tools.length).toBe(1);
-      expect(agent.tools[0].version).toBe(2);
+      assert.equal(agent.tools.length, 1);
+      assert.equal(agent.tools[0].version, 2);
     });
   });
 });

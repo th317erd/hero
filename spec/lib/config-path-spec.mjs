@@ -1,7 +1,11 @@
 'use strict';
 
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+
 import { platform, homedir } from 'os';
 import { join } from 'path';
+import { existsSync } from 'fs';
 import {
   getConfigDir,
   ensureConfigDir,
@@ -9,15 +13,14 @@ import {
   getPluginsDir,
   ensurePluginsDir,
 } from '../../server/lib/config-path.mjs';
-import { existsSync, rmSync } from 'fs';
 
 describe('Config path module', () => {
   describe('getConfigDir', () => {
     it('should return a string path', () => {
       let configDir = getConfigDir();
 
-      expect(typeof configDir).toBe('string');
-      expect(configDir.length).toBeGreaterThan(0);
+      assert.equal(typeof configDir, 'string');
+      assert.ok(configDir.length > 0);
     });
 
     it('should return OS-specific path', () => {
@@ -26,17 +29,17 @@ describe('Config path module', () => {
 
       switch (platform()) {
         case 'darwin':
-          expect(configDir).toBe(join(home, 'Library', 'Application Support', 'hero'));
+          assert.equal(configDir, join(home, 'Library', 'Application Support', 'hero'));
           break;
 
         case 'win32':
-          expect(configDir).toContain('hero');
+          assert.ok(configDir.includes('hero'));
           break;
 
         default:
           // Linux and others
-          expect(configDir).toContain('.config');
-          expect(configDir).toContain('hero');
+          assert.ok(configDir.includes('.config'));
+          assert.ok(configDir.includes('hero'));
           break;
       }
     });
@@ -44,7 +47,7 @@ describe('Config path module', () => {
     it('should include "hero" in the path', () => {
       let configDir = getConfigDir();
 
-      expect(configDir).toContain('hero');
+      assert.ok(configDir.includes('hero'));
     });
   });
 
@@ -52,14 +55,14 @@ describe('Config path module', () => {
     it('should return path ending with hero.db', () => {
       let dbPath = getDatabasePath();
 
-      expect(dbPath).toMatch(/hero\.db$/);
+      assert.match(dbPath, /hero\.db$/);
     });
 
     it('should be inside config directory', () => {
       let configDir = getConfigDir();
       let dbPath    = getDatabasePath();
 
-      expect(dbPath).toBe(join(configDir, 'hero.db'));
+      assert.equal(dbPath, join(configDir, 'hero.db'));
     });
   });
 
@@ -67,14 +70,14 @@ describe('Config path module', () => {
     it('should return path ending with plugins', () => {
       let pluginsDir = getPluginsDir();
 
-      expect(pluginsDir).toMatch(/plugins$/);
+      assert.match(pluginsDir, /plugins$/);
     });
 
     it('should be inside config directory', () => {
       let configDir  = getConfigDir();
       let pluginsDir = getPluginsDir();
 
-      expect(pluginsDir).toBe(join(configDir, 'plugins'));
+      assert.equal(pluginsDir, join(configDir, 'plugins'));
     });
   });
 
@@ -83,14 +86,14 @@ describe('Config path module', () => {
       // This test is somewhat integration-y, but important
       let configDir = ensureConfigDir();
 
-      expect(existsSync(configDir)).toBe(true);
+      assert.equal(existsSync(configDir), true);
     });
 
     it('should return the config directory path', () => {
       let result    = ensureConfigDir();
       let configDir = getConfigDir();
 
-      expect(result).toBe(configDir);
+      assert.equal(result, configDir);
     });
   });
 
@@ -98,14 +101,14 @@ describe('Config path module', () => {
     it('should create plugins directory if it does not exist', () => {
       let pluginsDir = ensurePluginsDir();
 
-      expect(existsSync(pluginsDir)).toBe(true);
+      assert.equal(existsSync(pluginsDir), true);
     });
 
     it('should return the plugins directory path', () => {
       let result     = ensurePluginsDir();
       let pluginsDir = getPluginsDir();
 
-      expect(result).toBe(pluginsDir);
+      assert.equal(result, pluginsDir);
     });
   });
 });

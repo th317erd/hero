@@ -1,5 +1,8 @@
 'use strict';
 
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+
 import {
   HOOK_TYPES,
   executeHook,
@@ -14,33 +17,33 @@ import {
 describe('Hooks module', () => {
   describe('HOOK_TYPES', () => {
     it('should define BEFORE_USER_MESSAGE', () => {
-      expect(HOOK_TYPES.BEFORE_USER_MESSAGE).toBe('beforeUserMessage');
+      assert.equal(HOOK_TYPES.BEFORE_USER_MESSAGE, 'beforeUserMessage');
     });
 
     it('should define AFTER_AGENT_RESPONSE', () => {
-      expect(HOOK_TYPES.AFTER_AGENT_RESPONSE).toBe('afterAgentResponse');
+      assert.equal(HOOK_TYPES.AFTER_AGENT_RESPONSE, 'afterAgentResponse');
     });
 
     it('should define BEFORE_COMMAND', () => {
-      expect(HOOK_TYPES.BEFORE_COMMAND).toBe('beforeCommand');
+      assert.equal(HOOK_TYPES.BEFORE_COMMAND, 'beforeCommand');
     });
 
     it('should define AFTER_COMMAND', () => {
-      expect(HOOK_TYPES.AFTER_COMMAND).toBe('afterCommand');
+      assert.equal(HOOK_TYPES.AFTER_COMMAND, 'afterCommand');
     });
 
     it('should define BEFORE_TOOL', () => {
-      expect(HOOK_TYPES.BEFORE_TOOL).toBe('beforeTool');
+      assert.equal(HOOK_TYPES.BEFORE_TOOL, 'beforeTool');
     });
 
     it('should define AFTER_TOOL', () => {
-      expect(HOOK_TYPES.AFTER_TOOL).toBe('afterTool');
+      assert.equal(HOOK_TYPES.AFTER_TOOL, 'afterTool');
     });
   });
 
   describe('executeHook', () => {
     it('should be a function', () => {
-      expect(typeof executeHook).toBe('function');
+      assert.equal(typeof executeHook, 'function');
     });
 
     it('should return original data when no plugins loaded', async () => {
@@ -48,58 +51,60 @@ describe('Hooks module', () => {
       let data   = { test: 'value' };
       let result = await executeHook('beforeUserMessage', data);
 
-      expect(result).toBe(data);
+      assert.equal(result, data);
     });
 
     it('should respect AbortSignal', async () => {
       let controller = new AbortController();
       controller.abort();
 
-      await expectAsync(executeHook('beforeUserMessage', 'test', {}, controller.signal))
-        .toBeRejectedWithError(/aborted/);
+      await assert.rejects(
+        () => executeHook('beforeUserMessage', 'test', {}, controller.signal),
+        /aborted/
+      );
     });
   });
 
   describe('hook helper functions', () => {
     it('beforeUserMessage should be a function', () => {
-      expect(typeof beforeUserMessage).toBe('function');
+      assert.equal(typeof beforeUserMessage, 'function');
     });
 
     it('afterAgentResponse should be a function', () => {
-      expect(typeof afterAgentResponse).toBe('function');
+      assert.equal(typeof afterAgentResponse, 'function');
     });
 
     it('beforeCommand should be a function', () => {
-      expect(typeof beforeCommand).toBe('function');
+      assert.equal(typeof beforeCommand, 'function');
     });
 
     it('afterCommand should be a function', () => {
-      expect(typeof afterCommand).toBe('function');
+      assert.equal(typeof afterCommand, 'function');
     });
 
     it('beforeTool should be a function', () => {
-      expect(typeof beforeTool).toBe('function');
+      assert.equal(typeof beforeTool, 'function');
     });
 
     it('afterTool should be a function', () => {
-      expect(typeof afterTool).toBe('function');
+      assert.equal(typeof afterTool, 'function');
     });
 
     it('beforeUserMessage should pass through data when no plugins', async () => {
       let result = await beforeUserMessage('hello', {});
-      expect(result).toBe('hello');
+      assert.equal(result, 'hello');
     });
 
     it('afterAgentResponse should pass through data when no plugins', async () => {
       let response = { content: [{ type: 'text', text: 'Hi' }] };
       let result   = await afterAgentResponse(response, {});
-      expect(result).toBe(response);
+      assert.equal(result, response);
     });
 
     it('beforeCommand should pass through data when no plugins', async () => {
       let data   = { command: 'test', args: 'arg1' };
       let result = await beforeCommand(data, {});
-      expect(result).toBe(data);
+      assert.equal(result, data);
     });
   });
 });
