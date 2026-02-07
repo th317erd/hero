@@ -379,6 +379,44 @@ function getMigrations() {
         ALTER TABLE messages ADD COLUMN private INTEGER DEFAULT 0;
       `,
     },
+    {
+      name: '014_frames_table',
+      sql:  `
+        -- Interaction Frames: Event-sourced conversation system
+        -- All conversation activity becomes immutable frames
+        -- State is derived by replaying frames from a checkpoint
+
+        CREATE TABLE frames (
+          id            TEXT PRIMARY KEY,  -- uuid
+          session_id    INTEGER NOT NULL,
+          parent_id     TEXT,              -- parent frame (nullable, for sub-frames)
+          target_ids    TEXT,              -- JSON array: ["agent:123", "user:456", "frame:xyz"]
+          timestamp     TEXT NOT NULL,     -- high-resolution UTC, ISO format (ordering is sacred)
+
+          type          TEXT NOT NULL,     -- message | request | result | update | compact
+          author_type   TEXT NOT NULL,     -- user | agent | system
+          author_id     INTEGER,           -- user.id or agent.id, null for system
+
+          payload       TEXT NOT NULL,     -- JSON content
+
+          FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX idx_frames_session ON frames(session_id, timestamp);
+        CREATE INDEX idx_frames_parent ON frames(parent_id);
+        CREATE INDEX idx_frames_type ON frames(type);
+      `,
+    },
+    {
+      name: '015_drop_messages',
+      sql:  `
+        -- Remove FK references to messages before dropping
+        UPDATE token_charges SET message_id = NULL WHERE message_id IS NOT NULL;
+
+        -- Drop the messages table - replaced by frames
+        DROP TABLE IF EXISTS messages;
+      `,
+    },
   ];
 }
 
