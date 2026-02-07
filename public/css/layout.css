@@ -47,22 +47,23 @@
 /* Header Usage Display */
 .header-usage {
   display: flex;
-  align-items: center;
-  gap: 16px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
   margin-left: auto;
   margin-right: 16px;
+  padding: 4px 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .usage-item {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
 }
 
 .usage-label {
@@ -72,10 +73,20 @@
 .usage-cost {
   font-weight: 600;
   color: var(--success);
+  min-width: 50px;
+  text-align: right;
 }
 
-.usage-item.usage-session {
-  border-color: var(--accent-muted);
+.usage-item.usage-service .usage-label {
+  color: var(--info);
+}
+
+.usage-item.usage-service .usage-cost {
+  color: var(--info);
+}
+
+.usage-item.usage-session .usage-label {
+  color: var(--accent);
 }
 
 .usage-item.usage-session .usage-cost {

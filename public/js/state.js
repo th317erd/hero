@@ -26,8 +26,9 @@ const state = {
   messageQueue:         [],    // Queued messages while agent is busy
   streamingMode:        true,  // Use streaming mode for agent responses
   streamingMessage:     null,  // Current streaming message state { id, content, elements }
-  sessionCost:          { inputTokens: 0, outputTokens: 0 },  // Cumulative token usage for session
-  globalCost:           { inputTokens: 0, outputTokens: 0 },  // Global token usage across all sessions
+  globalSpend:          { cost: 0 },  // Total spend across all agents
+  serviceSpend:         { cost: 0 },  // Spend for agents with same API key
+  sessionSpend:         { cost: 0 },  // Spend for current session
 };
 
 // ============================================================================

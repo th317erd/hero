@@ -826,13 +826,26 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
             output_tokens: chunk.output_tokens,
           });
 
-          // Update session cost in database
+          // Calculate cost in cents
+          let inputTokens = chunk.input_tokens || 0;
+          let outputTokens = chunk.output_tokens || 0;
+          let inputCost = inputTokens * (0.003 / 1000);  // $3 per 1M input tokens
+          let outputCost = outputTokens * (0.015 / 1000);  // $15 per 1M output tokens
+          let costCents = Math.round((inputCost + outputCost) * 100);
+
+          // Record charge in token_charges table
+          db.prepare(`
+            INSERT INTO token_charges (agent_id, session_id, message_id, input_tokens, output_tokens, cost_cents, charge_type)
+            VALUES (?, ?, ?, ?, ?, ?, 'usage')
+          `).run(session.agent_id, req.params.sessionId, messageId, inputTokens, outputTokens, costCents);
+
+          // Also update session totals for backwards compatibility
           db.prepare(`
             UPDATE sessions
             SET input_tokens = input_tokens + ?,
                 output_tokens = output_tokens + ?
             WHERE id = ?
-          `).run(chunk.input_tokens || 0, chunk.output_tokens || 0, req.params.sessionId);
+          `).run(inputTokens, outputTokens, req.params.sessionId);
         } else if (chunk.type === 'done') {
           debug(`Chunk #${chunkCount}: done`, { stopReason: chunk.stopReason });
           // End the parser

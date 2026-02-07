@@ -48,40 +48,39 @@ function formatCost(cost) {
 }
 
 /**
- * Update the header cost displays (global and session).
+ * Update the header cost displays (global, service, and session).
  */
 function updateCostDisplay() {
-  // Update session cost in chat header
-  let sessionCostEl = document.getElementById('session-cost-chat');
-  if (sessionCostEl) {
-    let sessionCost = calculateCost(state.sessionCost.inputTokens, state.sessionCost.outputTokens);
-    sessionCostEl.textContent = formatCost(sessionCost);
-  }
-
-  // Update global cost in both headers (sessions view and chat view)
+  // Update global cost in sessions view
   let globalCostSessions = document.getElementById('global-cost-sessions');
-  let globalCostChat = document.getElementById('global-cost-chat');
-  let globalCost = calculateCost(state.globalCost.inputTokens, state.globalCost.outputTokens);
-  let globalCostStr = formatCost(globalCost);
-
   if (globalCostSessions) {
-    globalCostSessions.textContent = globalCostStr;
+    globalCostSessions.textContent = formatCost(state.globalSpend.cost);
   }
+
+  // Update all costs in chat view
+  let globalCostChat = document.getElementById('global-cost-chat');
   if (globalCostChat) {
-    globalCostChat.textContent = globalCostStr;
+    globalCostChat.textContent = formatCost(state.globalSpend.cost);
+  }
+
+  let serviceCostChat = document.getElementById('service-cost-chat');
+  if (serviceCostChat) {
+    serviceCostChat.textContent = formatCost(state.serviceSpend.cost);
+  }
+
+  let sessionCostChat = document.getElementById('session-cost-chat');
+  if (sessionCostChat) {
+    sessionCostChat.textContent = formatCost(state.sessionSpend.cost);
   }
 }
 
 /**
- * Fetch and update global usage.
+ * Fetch and update global usage (for sessions list view).
  */
 async function loadGlobalUsage() {
   try {
     let usage = await fetchUsage();
-    state.globalCost = {
-      inputTokens:  usage.inputTokens || 0,
-      outputTokens: usage.outputTokens || 0,
-    };
+    state.globalSpend = { cost: usage.global?.cost || 0 };
     updateCostDisplay();
   } catch (error) {
     console.error('Failed to fetch global usage:', error);
@@ -89,10 +88,25 @@ async function loadGlobalUsage() {
 }
 
 /**
+ * Fetch and update session usage (for chat view).
+ */
+async function loadSessionUsage(sessionId) {
+  try {
+    let usage = await fetchSessionUsage(sessionId);
+    state.globalSpend = { cost: usage.global?.cost || 0 };
+    state.serviceSpend = { cost: usage.service?.cost || 0 };
+    state.sessionSpend = { cost: usage.session?.cost || 0 };
+    updateCostDisplay();
+  } catch (error) {
+    console.error('Failed to fetch session usage:', error);
+  }
+}
+
+/**
  * Reset session cost tracking.
  */
 function resetSessionCost() {
-  state.sessionCost = { inputTokens: 0, outputTokens: 0 };
+  state.sessionSpend = { cost: 0 };
   updateCostDisplay();
 }
 
@@ -115,17 +129,14 @@ async function loadSession(sessionId) {
       sampleHidden:  hiddenMsgs.slice(0, 2).map((m) => ({ id: m.id, role: m.role, hidden: m.hidden })),
     });
 
-    // Load session cost if available
-    if (session.cost) {
-      state.sessionCost = {
-        inputTokens:  session.cost.inputTokens || 0,
-        outputTokens: session.cost.outputTokens || 0,
-      };
-      if (state.sessionCost.inputTokens > 0 || state.sessionCost.outputTokens > 0) {
-        updateCostDisplay();
-      }
-    } else {
-      resetSessionCost();
+    // Load session usage (global, service, and session spend)
+    await loadSessionUsage(sessionId);
+
+    // Legacy: also check session.cost for backwards compatibility
+    if (!state.sessionSpend.cost && session.cost) {
+      let legacyCost = calculateCost(session.cost.inputTokens || 0, session.cost.outputTokens || 0);
+      state.sessionSpend.cost += legacyCost;
+      updateCostDisplay();
     }
 
     elements.sessionTitle.textContent = session.name;
@@ -1144,13 +1155,16 @@ async function processMessageStream(content) {
 
       onUsage: (data) => {
         debug('App', 'Token usage', data);
-        // Accumulate tokens for this session and global
+        // Calculate cost from tokens
         let inputTokens  = data.input_tokens || 0;
         let outputTokens = data.output_tokens || 0;
-        state.sessionCost.inputTokens  += inputTokens;
-        state.sessionCost.outputTokens += outputTokens;
-        state.globalCost.inputTokens   += inputTokens;
-        state.globalCost.outputTokens  += outputTokens;
+        let cost = calculateCost(inputTokens, outputTokens);
+
+        // Update local spend tracking (real-time display)
+        state.sessionSpend.cost += cost;
+        state.serviceSpend.cost += cost;
+        state.globalSpend.cost  += cost;
+
         // Update cost display
         updateCostDisplay();
       },
@@ -1941,12 +1955,12 @@ async function handleUpdateUsageCommand(args) {
     });
 
     let msg = `Usage correction applied.\n\n`;
-    msg += `**Previous:** ${formatCost(result.previousTotals.cost)} (${formatTokenCount(result.previousTotals.inputTokens)} in / ${formatTokenCount(result.previousTotals.outputTokens)} out)\n`;
-    msg += `**New:** ${formatCost(result.newTotals.cost)} (${formatTokenCount(result.newTotals.inputTokens)} in / ${formatTokenCount(result.newTotals.outputTokens)} out)\n`;
+    msg += `**Previous:** ${formatCost(result.previousCost)}\n`;
+    msg += `**New:** ${formatCost(result.newCost)}\n`;
 
-    if (result.correctionApplied.inputTokens !== 0 || result.correctionApplied.outputTokens !== 0) {
-      let sign = (result.correctionApplied.inputTokens >= 0) ? '+' : '';
-      msg += `**Adjustment:** ${sign}${formatTokenCount(result.correctionApplied.inputTokens)} in / ${sign}${formatTokenCount(result.correctionApplied.outputTokens)} out`;
+    if (result.correctionAmount !== 0) {
+      let sign = (result.correctionAmount >= 0) ? '+' : '';
+      msg += `**Adjustment:** ${sign}${formatCost(result.correctionAmount)}`;
     } else {
       msg += `No adjustment needed - tracking is accurate.`;
     }
@@ -1958,8 +1972,12 @@ async function handleUpdateUsageCommand(args) {
     renderMessages();
     scrollToBottom();
 
-    // Reload global usage to update the header display
-    await loadGlobalUsage();
+    // Reload usage to update the header display
+    if (state.currentSession) {
+      await loadSessionUsage(state.currentSession.id);
+    } else {
+      await loadGlobalUsage();
+    }
   } catch (error) {
     console.error('Failed to update usage:', error);
     state.messages.push({

@@ -25,9 +25,11 @@
 [ ] Add token scalar setting for adjusting cost calculation ratio (mentioned in update_usage requirements)
 
 ## Recently Completed (2026-02-06)
+[x] Token charges system - records every API call with agent_id, session_id, message_id, cost
+[x] 3-line spend display: Global Spend (all agents), Service Spend (same API key), Session Spend
+[x] Private messages column - for user-only messages not sent to agent
 [x] Compacting memory - improved prompt to capture comprehensive context AND generate TODO lists
 [x] Add "Chevron Down" button to jump to bottom of chat - floats at bottom-right, auto-hides when near bottom
-[x] Move cost/token display to header bar - shows global and session usage, session only visible in chat view
 [x] Add `/update_usage <cost>` command - stores corrections in database, adjusts tracking to match actual spend
 
 ## Architecture Notes

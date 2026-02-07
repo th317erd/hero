@@ -4,6 +4,42 @@ Last updated: 2026-02-06
 
 ## Recent Changes
 
+### Token Charges System (Complete)
+Implemented comprehensive token/cost tracking per API call with Global, Service, and Session spend views.
+
+**New Database Tables:**
+- `token_charges` - Records every API call with agent_id, session_id, message_id, tokens, cost
+- Added `private` column to messages for user-only messages (not sent to agent)
+
+**Usage Display (3 lines in header):**
+- **Global Spend:** Total cost across ALL agents for the user
+- **Service Spend:** Total cost for all agents sharing the same API key
+- **Session Spend:** Cost for the current session only
+
+**API Endpoints:**
+- `GET /api/usage` - Returns global spend
+- `GET /api/usage/session/:sessionId` - Returns global, service, and session spend
+- `POST /api/usage/charge` - Record a token charge
+- `POST /api/usage/correction` - Add a cost correction
+- `GET /api/usage/history` - Get charge history
+
+**Query Logic:**
+1. Get current session's agent
+2. Get that agent's encrypted api_key
+3. Find ALL agents with matching api_key (same service account)
+4. Sum charges for all matching agents = Service Spend
+5. Sum charges for just this session = Session Spend
+
+**Files changed:**
+- `server/database.mjs` - Migrations 012 (token_charges), 013 (messages.private)
+- `server/routes/usage.mjs` - Complete rewrite with new endpoints
+- `server/routes/messages-stream.mjs` - Record charges on each API call
+- `public/index.html` - 3-line spend display in headers
+- `public/js/state.js` - globalSpend, serviceSpend, sessionSpend state
+- `public/js/api.js` - fetchSessionUsage, recordCharge functions
+- `public/js/app.js` - loadSessionUsage, updated cost display logic
+- `public/css/layout.css` - Stacked usage display styling
+
 ### TODO List Updates (Complete)
 Implemented several improvements from the project TODO list.
 

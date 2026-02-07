@@ -350,6 +350,35 @@ function getMigrations() {
         CREATE INDEX idx_usage_corrections_user_id ON usage_corrections(user_id);
       `,
     },
+    {
+      name: '012_token_charges',
+      sql:  `
+        -- Token charges table for tracking all API usage and corrections
+        -- Each row represents tokens consumed in a single API call or a correction
+        CREATE TABLE token_charges (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          agent_id INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+          session_id INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
+          message_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
+          input_tokens INTEGER DEFAULT 0,
+          output_tokens INTEGER DEFAULT 0,
+          cost_cents INTEGER DEFAULT 0,
+          charge_type TEXT DEFAULT 'usage',
+          description TEXT,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX idx_token_charges_agent_id ON token_charges(agent_id);
+        CREATE INDEX idx_token_charges_session_id ON token_charges(session_id);
+        CREATE INDEX idx_token_charges_created_at ON token_charges(created_at);
+      `,
+    },
+    {
+      name: '013_messages_private',
+      sql:  `
+        -- Add private column to messages for user-only messages (not sent to agent)
+        ALTER TABLE messages ADD COLUMN private INTEGER DEFAULT 0;
+      `,
+    },
   ];
 }
 
