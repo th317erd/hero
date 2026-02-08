@@ -1,0 +1,50 @@
+'use strict';
+
+/**
+ * Hero Components Entry Point
+ *
+ * Imports and registers all Hero web components.
+ * Include this module to enable component-based UI.
+ */
+
+// Core infrastructure
+export { GlobalState, HeroComponent, DynamicProperty, Utils } from './hero-base.js';
+
+// Expose GlobalState globally for legacy scripts
+import { GlobalState as GS } from './hero-base.js';
+
+// Application shell
+export { HeroApp, parseRoute } from './hero-app.js';
+
+// Layout components
+export { HeroHeader } from './hero-header.js';
+export { HeroSidebar } from './hero-sidebar.js';
+
+// Chat components
+export { HeroChat } from './hero-chat.js';
+export { HeroInput } from './hero-input.js';
+
+// Services
+export { HeroWebSocket } from './hero-websocket.js';
+
+// Modals
+export { HeroModal, HeroModalSession, HeroModalAgent, HeroModalAbility } from './hero-modal.js';
+
+// One-time initialization
+if (!window.__heroComponentsLoaded) {
+  window.__heroComponentsLoaded = true;
+  window.GlobalState = GS;
+
+  console.log('[Hero] Components registered:', [
+    'hero-app',
+    'hero-header',
+    'hero-sidebar',
+    'hero-chat',
+    'hero-input',
+    'hero-websocket',
+    'hero-modal',
+    'hero-modal-session',
+    'hero-modal-agent',
+    'hero-modal-ability',
+  ].join(', '));
+}

@@ -3,18 +3,14 @@
 /**
  * Hero Modal - Base Modal Component
  *
- * Provides:
- * - Open/close behavior
- * - Escape key handling
- * - Backdrop click to close
- * - Form validation helpers
+ * Uses native <dialog> element with:
+ * - showModal() / close() methods
+ * - Escape key handling (native)
+ * - Backdrop click to close (autoclose attribute)
+ * - Auto-bound footer buttons (close on click unless prevented)
  */
 
-import {
-  HeroComponent,
-  GlobalState,
-  DynamicProperty,
-} from './hero-base.js';
+import { HeroComponent, GlobalState, DynamicProperty } from './hero-base.js';
 
 // ============================================================================
 // Helper Functions
@@ -33,16 +29,15 @@ function escapeHtml(text) {
 export class HeroModal extends HeroComponent {
   static tagName = 'hero-modal';
 
-  // Modal state
-  #isOpen = false;
+  // Error state
   #error = '';
 
   /**
-   * Check if modal is open.
-   * @returns {boolean}
+   * Get the dialog element.
+   * @returns {HTMLDialogElement|null}
    */
-  get isOpen() {
-    return this.#isOpen;
+  get $dialog() {
+    return this.querySelector('dialog');
   }
 
   /**
@@ -55,28 +50,11 @@ export class HeroModal extends HeroComponent {
 
   /**
    * Set error message.
-   * @param {string} msg
+   * @param {string} message
    */
-  set error(msg) {
-    this.#error = msg;
+  set error(message) {
+    this.#error = message;
     this.#updateError();
-  }
-
-  /**
-   * Component mounted.
-   */
-  mounted() {
-    // Listen for show-modal events
-    document.addEventListener('show-modal', (e) => {
-      if (e.detail.modal === this.modalName) {
-        this.open();
-      }
-    });
-
-    // Keyboard handler
-    this.addEventListener('keydown', (e) => this.#handleKeydown(e));
-
-    this.render();
   }
 
   /**
@@ -96,33 +74,128 @@ export class HeroModal extends HeroComponent {
   }
 
   /**
-   * Open the modal.
+   * Component mounted.
    */
-  open() {
-    this.#isOpen = true;
-    this.#error = '';
-    this.onOpen();
-    this.render();
-    this.style.display = 'flex';
+  mounted() {
+    super.mounted();
 
-    // Focus first input
-    requestAnimationFrame(() => {
-      let firstInput = this.querySelector('input, select, textarea');
-      if (firstInput) firstInput.focus();
+    // Listen for show-modal events
+    document.addEventListener('show-modal', (event) => {
+      if (event.detail.modal === this.modalName) {
+        this.openModal();
+      }
     });
   }
 
   /**
-   * Close the modal.
+   * Called after render to set up event handlers.
    */
-  close() {
-    this.#isOpen = false;
-    this.onClose();
+  #setupHandlers() {
+    let dialog = this.$dialog;
+    if (!dialog) return;
+
+    // Listen for close event to call onClose hook
+    dialog.addEventListener('close', () => {
+      this.onClose();
+    });
+
+    // Backdrop click to close (autoclose attribute)
+    if (dialog.hasAttribute('autoclose')) {
+      dialog.addEventListener('click', (event) => {
+        // Only close if clicking the backdrop (the dialog itself, not its content)
+        if (event.target === dialog) {
+          this.close();
+        }
+      });
+    }
+
+    // Auto-bind footer buttons to close
+    this.#bindFooterButtons();
+
+    // Attach form submit handler
+    let form = this.querySelector('form');
+    if (form) {
+      form.addEventListener('submit', (event) => this.handleSubmit(event));
+    }
+  }
+
+  /**
+   * Bind footer buttons to close on click.
+   */
+  #bindFooterButtons() {
+    let footer = this.querySelector('footer');
+    if (!footer) return;
+
+    let buttons = footer.querySelectorAll('button');
+    buttons.forEach((button) => {
+      // Don't override submit buttons
+      if (button.type === 'submit') return;
+
+      button.addEventListener('click', (event) => {
+        if (!event.defaultPrevented) {
+          this.close();
+        }
+      });
+    });
+  }
+
+  /**
+   * Open the modal.
+   */
+  openModal() {
+    this.#error = '';
+
+    // Allow onOpen to cancel opening (returns false)
+    if (this.onOpen() === false)
+      return;
+
+    // Show the component container
+    this.style.display = '';
+
+    this.showModal();
+
+    // Focus first input
+    requestAnimationFrame(() => {
+      let firstInput = this.querySelector('input, select, textarea');
+      if (firstInput)
+        firstInput.focus();
+    });
+  }
+
+  /**
+   * Show modal (delegates to native dialog).
+   */
+  showModal() {
+    let dialog = this.$dialog;
+    if (dialog) {
+      try {
+        dialog.showModal();
+      } catch (error) {
+        // Dialog may already be open
+      }
+    }
+  }
+
+  /**
+   * Close modal (delegates to native dialog).
+   * @param {string} [returnValue]
+   */
+  close(returnValue) {
+    let dialog = this.$dialog;
+    if (dialog) {
+      try {
+        dialog.close(returnValue);
+      } catch (error) {
+        // Dialog may already be closed
+      }
+    }
+    // Hide the component container
     this.style.display = 'none';
   }
 
   /**
    * Hook called when modal opens (override in subclass).
+   * Return false to cancel opening.
    */
   onOpen() {}
 
@@ -133,40 +206,31 @@ export class HeroModal extends HeroComponent {
 
   /**
    * Handle form submission (override in subclass).
-   * @param {Event} e
+   * @param {Event} event
    */
-  async handleSubmit(e) {
-    e.preventDefault();
-  }
-
-  /**
-   * Handle keydown events.
-   * @param {KeyboardEvent} e
-   */
-  #handleKeydown(e) {
-    if (e.key === 'Escape') {
-      this.close();
-    }
-  }
-
-  /**
-   * Handle backdrop click.
-   * @param {MouseEvent} e
-   */
-  #handleBackdropClick(e) {
-    if (e.target.classList.contains('modal-backdrop')) {
-      this.close();
-    }
+  async handleSubmit(event) {
+    event.preventDefault();
   }
 
   /**
    * Update error display.
    */
   #updateError() {
-    let errorEl = this.querySelector('.modal-error');
-    if (errorEl) {
-      errorEl.textContent = this.#error;
-      errorEl.style.display = this.#error ? 'block' : 'none';
+    let errorElement = this.querySelector('.error-message');
+    if (errorElement) {
+      errorElement.textContent = this.#error;
+      errorElement.style.display = (this.#error) ? 'block' : 'none';
+    }
+  }
+
+  /**
+   * Convenience method to update a global state property.
+   * @param {string} key - GlobalState key
+   * @param {*} value - New value
+   */
+  setGlobal(key, value) {
+    if (GlobalState[key]) {
+      GlobalState[key][DynamicProperty.set](value);
     }
   }
 
@@ -179,31 +243,32 @@ export class HeroModal extends HeroComponent {
   }
 
   /**
-   * Render the modal.
+   * Build the template.
+   * Subclasses override getContent() to provide form content.
+   */
+  static get template() {
+    return null; // Template built dynamically in render()
+  }
+
+  /**
+   * Render the modal content.
+   * Called by subclasses after construction.
    */
   render() {
     this.innerHTML = `
-      <div class="modal-backdrop" onclick="this.closest('hero-modal, hero-modal-session, hero-modal-agent, hero-modal-ability').close()">
-        <div class="modal-content" onclick="event.stopPropagation()">
-          <div class="modal-header">
-            <h2>${escapeHtml(this.modalTitle)}</h2>
-            <button class="modal-close" onclick="this.closest('hero-modal, hero-modal-session, hero-modal-agent, hero-modal-ability').close()">×</button>
-          </div>
-          <div class="modal-body">
-            ${this.getContent()}
-          </div>
-          <div class="modal-error" style="display: ${this.#error ? 'block' : 'none'}">
-            ${escapeHtml(this.#error)}
-          </div>
-        </div>
-      </div>
+      <dialog autoclose>
+        <header>
+          <h3>${escapeHtml(this.modalTitle)}</h3>
+        </header>
+        <main>
+          ${this.getContent()}
+          <div class="error-message" style="display: none;"></div>
+        </main>
+      </dialog>
     `;
 
-    // Attach form handler
-    let form = this.querySelector('form');
-    if (form) {
-      form.addEventListener('submit', (e) => this.handleSubmit(e));
-    }
+    // Set up handlers after rendering
+    this.#setupHandlers();
   }
 }
 
@@ -218,7 +283,15 @@ export class HeroModalSession extends HeroModal {
   get modalTitle() { return 'New Session'; }
 
   onOpen() {
-    // Refresh agents list
+    // If no agents, redirect to new-agent modal
+    let agents = GlobalState.agents.valueOf() || [];
+    if (agents.length === 0) {
+      document.dispatchEvent(new CustomEvent('show-modal', {
+        detail: { modal: 'new-agent' },
+      }));
+      return false;
+    }
+    return true;
   }
 
   getContent() {
@@ -236,31 +309,31 @@ export class HeroModalSession extends HeroModal {
     return `
       <form>
         <div class="form-group">
-          <label for="session-name">Session Name *</label>
-          <input type="text" id="session-name" name="name" required placeholder="My Chat">
+          <label for="session-name">Session Name</label>
+          <input type="text" id="session-name" name="name" required placeholder="e.g., project-x">
         </div>
         <div class="form-group">
-          <label for="session-agent">Agent *</label>
+          <label for="session-agent">Agent</label>
           <select id="session-agent" name="agentId" required>
             ${agentOptions}
           </select>
         </div>
         <div class="form-group">
           <label for="session-prompt">System Prompt (optional)</label>
-          <textarea id="session-prompt" name="systemPrompt" rows="4" placeholder="Custom instructions..."></textarea>
+          <textarea id="session-prompt" name="systemPrompt" rows="3" placeholder="Instructions for the AI agent..."></textarea>
         </div>
-        <div class="form-actions">
-          <button type="button" onclick="this.closest('hero-modal-session').close()">Cancel</button>
-          <button type="submit" class="primary">Create Session</button>
-        </div>
+        <footer>
+          <button type="button" class="button button-secondary">Cancel</button>
+          <button type="submit" class="button button-primary">Create</button>
+        </footer>
       </form>
     `;
   }
 
-  async handleSubmit(e) {
-    e.preventDefault();
+  async handleSubmit(event) {
+    event.preventDefault();
 
-    let form = e.target;
+    let form = event.target;
     let name = form.querySelector('[name="name"]').value.trim();
     let agentId = parseInt(form.querySelector('[name="agentId"]').value, 10);
     let systemPrompt = form.querySelector('[name="systemPrompt"]').value.trim() || null;
@@ -284,6 +357,11 @@ export class HeroModalSession extends HeroModal {
       this.error = error.message;
     }
   }
+
+  mounted() {
+    this.render();
+    super.mounted();
+  }
 }
 
 // ============================================================================
@@ -300,58 +378,66 @@ export class HeroModalAgent extends HeroModal {
     let abilities = GlobalState.abilities.valueOf() || { system: [], user: [] };
     let allAbilities = [...(abilities.system || []), ...(abilities.user || [])];
 
-    let abilitiesHtml = allAbilities.map((a) => `
+    let abilitiesHtml = allAbilities.map((ability) => `
       <label class="checkbox-item">
-        <input type="checkbox" name="abilities" value="${escapeHtml(a.name)}">
-        ${escapeHtml(a.name)}
+        <input type="checkbox" name="abilities" value="${escapeHtml(ability.name)}">
+        ${escapeHtml(ability.name)}
       </label>
     `).join('');
 
     return `
       <form>
-        <div class="form-group">
-          <label for="agent-name">Name *</label>
-          <input type="text" id="agent-name" name="name" required placeholder="Claude Assistant">
+        <div class="form-row">
+          <div class="form-group form-group-half">
+            <label for="agent-name">Agent Name</label>
+            <input type="text" id="agent-name" name="name" required placeholder="e.g., My Claude">
+          </div>
+          <div class="form-group form-group-half">
+            <label for="agent-type">Base Type</label>
+            <select id="agent-type" name="type" required onchange="this.closest('hero-modal-agent').filterModels()">
+              <option value="claude">Claude (Anthropic)</option>
+              <option value="openai">OpenAI</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group form-group-half">
+            <label for="agent-model">Model</label>
+            <select id="agent-model" name="model">
+              <option value="">Default</option>
+              <optgroup label="Claude" id="claude-models">
+                <option value="claude-sonnet-4-20250514">Claude Sonnet 4</option>
+                <option value="claude-opus-4-20250514">Claude Opus 4</option>
+                <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
+                <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku</option>
+              </optgroup>
+              <optgroup label="OpenAI" id="openai-models" style="display:none">
+                <option value="gpt-4o">GPT-4o</option>
+                <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                <option value="gpt-4">GPT-4</option>
+                <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+              </optgroup>
+            </select>
+          </div>
+          <div class="form-group form-group-half">
+            <label for="agent-api-url">API URL (optional)</label>
+            <input type="url" id="agent-api-url" name="apiUrl" placeholder="Custom endpoint...">
+          </div>
         </div>
         <div class="form-group">
-          <label for="agent-type">Type *</label>
-          <select id="agent-type" name="type" required onchange="this.closest('hero-modal-agent').filterModels()">
-            <option value="claude">Claude (Anthropic)</option>
-            <option value="openai">OpenAI</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label for="agent-model">Model</label>
-          <select id="agent-model" name="model">
-            <option value="">Default</option>
-            <optgroup label="Claude Models" id="claude-models">
-              <option value="claude-sonnet-4-20250514">Claude Sonnet 4</option>
-              <option value="claude-opus-4-20250514">Claude Opus 4</option>
-            </optgroup>
-            <optgroup label="OpenAI Models" id="openai-models" style="display:none">
-              <option value="gpt-4o">GPT-4o</option>
-              <option value="gpt-4-turbo">GPT-4 Turbo</option>
-            </optgroup>
-          </select>
-        </div>
-        <div class="form-group">
-          <label for="agent-api-key">API Key *</label>
+          <label for="agent-api-key">API Key</label>
           <input type="password" id="agent-api-key" name="apiKey" required placeholder="sk-...">
         </div>
         <div class="form-group">
-          <label for="agent-api-url">API URL (optional)</label>
-          <input type="url" id="agent-api-url" name="apiUrl" placeholder="https://api.anthropic.com">
-        </div>
-        <div class="form-group">
           <label>Default Abilities</label>
-          <div class="checkbox-list">
+          <div id="agent-abilities-list" class="checkbox-list">
             ${abilitiesHtml || '<em>No abilities available</em>'}
           </div>
         </div>
-        <div class="form-actions">
-          <button type="button" onclick="this.closest('hero-modal-agent').close()">Cancel</button>
-          <button type="submit" class="primary">Create Agent</button>
-        </div>
+        <footer>
+          <button type="button" class="button button-secondary">Cancel</button>
+          <button type="submit" class="button button-primary">Add Agent</button>
+        </footer>
       </form>
     `;
   }
@@ -361,14 +447,17 @@ export class HeroModalAgent extends HeroModal {
     let claudeGroup = this.querySelector('#claude-models');
     let openaiGroup = this.querySelector('#openai-models');
 
-    if (claudeGroup) claudeGroup.style.display = (type === 'claude') ? '' : 'none';
-    if (openaiGroup) openaiGroup.style.display = (type === 'openai') ? '' : 'none';
+    if (claudeGroup)
+      claudeGroup.style.display = (type === 'claude') ? '' : 'none';
+
+    if (openaiGroup)
+      openaiGroup.style.display = (type === 'openai') ? '' : 'none';
   }
 
-  async handleSubmit(e) {
-    e.preventDefault();
+  async handleSubmit(event) {
+    event.preventDefault();
 
-    let form = e.target;
+    let form = event.target;
     let name = form.querySelector('[name="name"]').value.trim();
     let type = form.querySelector('[name="type"]').value;
     let model = form.querySelector('[name="model"]').value;
@@ -376,7 +465,7 @@ export class HeroModalAgent extends HeroModal {
     let apiUrl = form.querySelector('[name="apiUrl"]').value.trim() || null;
 
     let abilities = Array.from(form.querySelectorAll('[name="abilities"]:checked'))
-      .map((cb) => cb.value);
+      .map((checkbox) => checkbox.value);
 
     if (!name || !type || !apiKey) {
       this.error = 'Please fill in all required fields';
@@ -384,7 +473,8 @@ export class HeroModalAgent extends HeroModal {
     }
 
     let config = {};
-    if (model) config.model = model;
+    if (model)
+      config.model = model;
 
     try {
       let { createAgent, fetchAgents } = await import('../api.js');
@@ -397,13 +487,17 @@ export class HeroModalAgent extends HeroModal {
       this.close();
 
       // Show new session modal
-      this.dispatchEvent(new CustomEvent('show-modal', {
+      document.dispatchEvent(new CustomEvent('show-modal', {
         detail: { modal: 'new-session' },
-        bubbles: true,
       }));
     } catch (error) {
       this.error = error.message;
     }
+  }
+
+  mounted() {
+    this.render();
+    super.mounted();
   }
 }
 
@@ -417,7 +511,7 @@ export class HeroModalAbility extends HeroModal {
   #editId = null;
 
   get modalName() { return 'ability'; }
-  get modalTitle() { return this.#editId ? 'Edit Ability' : 'New Ability'; }
+  get modalTitle() { return (this.#editId) ? 'Edit Ability' : 'New Ability'; }
 
   /**
    * Open for editing.
@@ -425,7 +519,7 @@ export class HeroModalAbility extends HeroModal {
    */
   openEdit(abilityId) {
     this.#editId = abilityId;
-    this.open();
+    this.openModal();
   }
 
   onOpen() {
@@ -435,47 +529,64 @@ export class HeroModalAbility extends HeroModal {
   getContent() {
     return `
       <form>
-        <div class="form-group">
-          <label for="ability-name">Name *</label>
-          <input type="text" id="ability-name" name="name" required placeholder="my_tool">
-        </div>
-        <div class="form-group">
-          <label for="ability-category">Category</label>
-          <select id="ability-category" name="category">
-            <option value="user">User</option>
-            <option value="system">System</option>
-          </select>
+        <div class="form-row">
+          <div class="form-group form-group-half">
+            <label for="ability-name">Name</label>
+            <input type="text" id="ability-name" name="name" required pattern="[a-z][a-z0-9_]*" placeholder="my_ability">
+            <small class="form-hint">Lowercase letters, numbers, underscores only.</small>
+          </div>
+          <div class="form-group form-group-half">
+            <label for="ability-category">Category</label>
+            <input type="text" id="ability-category" name="category" placeholder="custom">
+          </div>
         </div>
         <div class="form-group">
           <label for="ability-description">Description</label>
-          <input type="text" id="ability-description" name="description" placeholder="What this ability does...">
+          <input type="text" id="ability-description" name="description" placeholder="Brief description of this ability">
         </div>
         <div class="form-group">
-          <label for="ability-content">Content *</label>
-          <textarea id="ability-content" name="content" rows="10" required placeholder="Ability instructions..."></textarea>
+          <label for="ability-applies">When to Use</label>
+          <input type="text" id="ability-applies" name="applies" placeholder="e.g., when user asks about coding, for file operations, always">
+          <small class="form-hint">Describe the context or trigger for this ability (helps the agent know when to apply it)</small>
         </div>
         <div class="form-group">
-          <label>
-            <input type="checkbox" name="autoApprove"> Auto-approve
-          </label>
+          <label for="ability-content">Content (Markdown)</label>
+          <textarea id="ability-content" name="content" required rows="12" placeholder="Instructions for the AI agent..."></textarea>
+          <small class="form-hint">Template variables: {{DATE}}, {{TIME}}, {{USER_NAME}}, {{SESSION_NAME}}</small>
         </div>
-        <div class="form-actions">
-          <button type="button" onclick="this.closest('hero-modal-ability').close()">Cancel</button>
-          <button type="submit" class="primary">${this.#editId ? 'Save' : 'Create'}</button>
+        <div class="form-group">
+          <label>Permissions</label>
+          <div class="checkbox-list">
+            <label class="checkbox-item">
+              <input type="checkbox" id="ability-auto-approve" name="autoApprove">
+              <span>Auto-approve (skip confirmation)</span>
+            </label>
+          </div>
+          <select id="ability-danger-level" name="dangerLevel" class="form-select" style="margin-top: 8px;">
+            <option value="safe">Safe - Low risk</option>
+            <option value="moderate">Moderate - Some risk</option>
+            <option value="dangerous">Dangerous - High risk</option>
+          </select>
         </div>
+        <footer>
+          <button type="button" class="button button-secondary">Cancel</button>
+          <button type="submit" class="button button-primary">${(this.#editId) ? 'Save' : 'Create'}</button>
+        </footer>
       </form>
     `;
   }
 
-  async handleSubmit(e) {
-    e.preventDefault();
+  async handleSubmit(event) {
+    event.preventDefault();
 
-    let form = e.target;
+    let form = event.target;
     let name = form.querySelector('[name="name"]').value.trim();
-    let category = form.querySelector('[name="category"]').value;
+    let category = form.querySelector('[name="category"]').value.trim() || 'custom';
     let description = form.querySelector('[name="description"]').value.trim();
+    let applies = form.querySelector('[name="applies"]').value.trim();
     let content = form.querySelector('[name="content"]').value;
     let autoApprove = form.querySelector('[name="autoApprove"]').checked;
+    let dangerLevel = form.querySelector('[name="dangerLevel"]').value;
 
     if (!name || !content) {
       this.error = 'Please fill in all required fields';
@@ -485,10 +596,12 @@ export class HeroModalAbility extends HeroModal {
     try {
       let { createAbility, updateAbility, fetchAbilities } = await import('../api.js');
 
+      let data = { name, category, description, applies, content, autoApprove, dangerLevel };
+
       if (this.#editId) {
-        await updateAbility(this.#editId, { name, category, description, content, autoApprove });
+        await updateAbility(this.#editId, data);
       } else {
-        await createAbility({ name, category, description, content, autoApprove });
+        await createAbility(data);
       }
 
       // Refresh abilities
@@ -500,11 +613,19 @@ export class HeroModalAbility extends HeroModal {
       this.error = error.message;
     }
   }
+
+  mounted() {
+    this.render();
+    super.mounted();
+  }
 }
 
-// Register the components
+// ============================================================================
+// Register Components
+// ============================================================================
+
 if (typeof customElements !== 'undefined') {
-  customElements.define(HeroModal.tagName, HeroModal);
+  // Don't register HeroModal base class - it's abstract
   customElements.define(HeroModalSession.tagName, HeroModalSession);
   customElements.define(HeroModalAgent.tagName, HeroModalAgent);
   customElements.define(HeroModalAbility.tagName, HeroModalAbility);
