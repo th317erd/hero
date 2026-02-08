@@ -148,8 +148,7 @@ async function sendMessageStream(sessionId, content, callbacks = {}) {
             } else if (line === '' && eventType && eventData) {
               // End of event
               eventCount++;
-              console.log(`[TRACE-API] Event #${eventCount} received: ${eventType}`);
-              debug('API', `Event #${eventCount}:`, eventType);
+              debug('API', `Event #${eventCount} received:`, eventType);
 
               try {
                 let data = JSON.parse(eventData);
@@ -219,34 +218,34 @@ async function sendMessageStream(sessionId, content, callbacks = {}) {
                     break;
 
                   case 'interaction_started':
-                    console.log('[TRACE-API] interaction_started event received:', data);
+                    debug('API',' interaction_started event received:', data);
                     debug('API', 'Calling onInteractionStarted callback', data);
                     callbacks.onInteractionStarted?.(data);
                     break;
 
                   case 'interaction_update':
-                    console.log('[TRACE-API] interaction_update event received:', data);
+                    debug('API',' interaction_update event received:', data);
                     debug('API', 'Calling onInteractionUpdate callback', data);
                     callbacks.onInteractionUpdate?.(data);
                     break;
 
                   case 'interaction_result':
-                    console.log('[TRACE-API] interaction_result event received:', {
+                    debug('API',' interaction_result event received:', {
                       interactionId: data.interactionId,
                       status:        data.status,
                       hasResult:     !!data.result,
                     });
-                    console.log('[TRACE-API] callbacks.onInteractionResult exists?', typeof callbacks.onInteractionResult);
+                    debug('API',' callbacks.onInteractionResult exists?', typeof callbacks.onInteractionResult);
                     debug('API', 'Calling onInteractionResult callback');
                     if (callbacks.onInteractionResult) {
                       try {
                         callbacks.onInteractionResult(data);
-                        console.log('[TRACE-API] interaction_result callback completed');
+                        debug('API', 'interaction_result callback completed');
                       } catch (callbackError) {
-                        console.error('[TRACE-API] interaction_result callback THREW ERROR:', callbackError);
+                        console.error('[API] interaction_result callback threw error:', callbackError);
                       }
                     } else {
-                      console.log('[TRACE-API] NO onInteractionResult callback defined!');
+                      debug('API',' NO onInteractionResult callback defined!');
                     }
                     break;
 
@@ -256,7 +255,7 @@ async function sendMessageStream(sessionId, content, callbacks = {}) {
                     break;
 
                   case 'interaction_complete':
-                    console.log('[TRACE-API] interaction_complete event received:', {
+                    debug('API',' interaction_complete event received:', {
                       hasContent:      !!data.content,
                       contentLength:   data.content?.length,
                       contentPreview:  data.content?.slice(0, 100),
@@ -285,7 +284,7 @@ async function sendMessageStream(sessionId, content, callbacks = {}) {
                     break;
 
                   case 'message_complete':
-                    console.log('[TRACE-API] message_complete event received:', {
+                    debug('API',' message_complete event received:', {
                       hasContent:      !!data.content,
                       contentLength:   data.content?.length,
                       contentPreview:  data.content?.slice(0, 100),

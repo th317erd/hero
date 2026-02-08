@@ -95,23 +95,28 @@ export class PromptUpdateFunction extends InteractionFunction {
 
     let db = getDatabase();
 
-    // Get the message
-    let message = db.prepare('SELECT content FROM messages WHERE id = ?').get(message_id);
+    // Get the frame (message_id is now a frame ID)
+    let frame = db.prepare('SELECT id, payload FROM frames WHERE id = ?').get(message_id);
 
-    if (!message) {
+    if (!frame) {
       return {
         success: false,
-        error:   'Message not found',
+        error:   'Frame not found',
       };
     }
 
-    // Parse JSON content (stored as JSON string in database)
-    let contentStr;
+    // Parse payload JSON (stored as JSON string in database)
+    let framePayload;
     try {
-      contentStr = JSON.parse(message.content);
+      framePayload = JSON.parse(frame.payload);
     } catch {
-      contentStr = message.content;
+      return {
+        success: false,
+        error:   'Invalid frame payload',
+      };
     }
+
+    let contentStr = framePayload.content;
 
     // Escape XML special characters in the answer
     let escapedAnswer = escapeXml(answer);
@@ -170,8 +175,9 @@ export class PromptUpdateFunction extends InteractionFunction {
       };
     }
 
-    // Update the message in the database (store as JSON string)
-    db.prepare('UPDATE messages SET content = ? WHERE id = ?').run(JSON.stringify(updated), message_id);
+    // Update the frame payload in the database
+    framePayload.content = updated;
+    db.prepare('UPDATE frames SET payload = ? WHERE id = ?').run(JSON.stringify(framePayload), message_id);
 
     return {
       success:   true,

@@ -1,45 +1,27 @@
 'use strict';
 
 // ============================================================================
-// Utility Functions
+// System Message Helper
 // ============================================================================
 
 /**
- * Format a token count for human display.
- * @param {number} tokens - Token count
- * @returns {string} Formatted string (e.g., "1.2k", "15k")
+ * Display a system message to the user (shown as assistant message).
+ * Consolidates the common pattern of push + render + scroll.
+ * @param {string} text - Message text to display
  */
-function formatTokenCount(tokens) {
-  if (tokens < 1000) {
-    return tokens.toString();
-  } else if (tokens < 10000) {
-    return (tokens / 1000).toFixed(1) + 'k';
-  } else {
-    return Math.round(tokens / 1000) + 'k';
-  }
+function showSystemMessage(text) {
+  state.messages.push({
+    role:    'assistant',
+    content: [{ type: 'text', text }],
+  });
+  renderMessages();
+  forceScrollToBottom();
 }
 
-/**
- * Calculate API cost from token counts.
- * Claude Sonnet 4 pricing: $3/1M input, $15/1M output
- * @param {number} inputTokens - Input token count
- * @param {number} outputTokens - Output token count
- * @returns {number} Cost in dollars
- */
-function calculateCost(inputTokens, outputTokens) {
-  let inputCost  = (inputTokens / 1_000_000) * 3;    // $3 per 1M input
-  let outputCost = (outputTokens / 1_000_000) * 15;  // $15 per 1M output
-  return inputCost + outputCost;
-}
-
-/**
- * Format cost for display.
- * @param {number} cost - Cost in dollars
- * @returns {string} Formatted string (e.g., "$0.00", "$0.02", "$1.45")
- */
-function formatCost(cost) {
-  return '$' + cost.toFixed(2);
-}
+// ============================================================================
+// Cost Display Functions
+// ============================================================================
+// Note: formatTokenCount, calculateCost, formatCost are in utils.js
 
 /**
  * Update the header cost displays (global, service, and session).
@@ -1127,15 +1109,15 @@ async function processMessageStream(content) {
       },
 
       onInteractionStarted: (data) => {
-        console.log('[TRACE] onInteractionStarted called:', data);
-        console.log('[TRACE] state.streamingMessage:', !!state.streamingMessage);
-        console.log('[TRACE] hasBanner:', !!data.banner);
+        debug('Streaming',' onInteractionStarted called:', data);
+        debug('Streaming',' state.streamingMessage:', !!state.streamingMessage);
+        debug('Streaming',' hasBanner:', !!data.banner);
         debug('App', 'Interaction started', data);
 
         // Only show banners for functions that opt-in via banner config
         // Functions without a banner config in their register() method are silent
         if (!data.banner) {
-          console.log('[TRACE] No banner config, skipping banner for:', data.targetProperty);
+          debug('Streaming',' No banner config, skipping banner for:', data.targetProperty);
           return;
         }
 
@@ -1168,7 +1150,7 @@ async function processMessageStream(content) {
       },
 
       onInteractionUpdate: (data) => {
-        console.log('[TRACE] onInteractionUpdate:', data);
+        debug('Streaming',' onInteractionUpdate:', data);
         debug('App', 'Interaction update', data);
         // Update the pending banner with new content (e.g., actual query after "...")
         if (state.streamingMessage?.pendingInteractions?.[data.interactionId]) {
@@ -1182,7 +1164,7 @@ async function processMessageStream(content) {
       },
 
       onInteractionResult: (data) => {
-        console.log('[TRACE] onInteractionResult:', {
+        debug('Streaming',' onInteractionResult:', {
           interactionId:       data.interactionId,
           status:              data.status,
           hasStreamingMessage: !!state.streamingMessage,
@@ -1197,7 +1179,7 @@ async function processMessageStream(content) {
           pending.status = data.status;
           elapsedMs = Date.now() - pending.startTime;
         } else {
-          console.log('[TRACE] onInteractionResult: pending interaction not in state (may be finalized), updating banner directly');
+          debug('Streaming',' onInteractionResult: pending interaction not in state (may be finalized), updating banner directly');
         }
         // Always try to update the banner - it may still be in the DOM even after finalization
         updateInteractionBanner(data.interactionId, data.status, data.result, elapsedMs);
@@ -1209,7 +1191,7 @@ async function processMessageStream(content) {
       },
 
       onInteractionComplete: (data) => {
-        console.log('[TRACE] onInteractionComplete called:', {
+        debug('Streaming',' onInteractionComplete called:', {
           hasContent:            !!data.content,
           contentLength:         data.content?.length,
           hasStreamingMessage:   !!state.streamingMessage,
@@ -1220,9 +1202,9 @@ async function processMessageStream(content) {
         if (data.content && state.streamingMessage) {
           state.streamingMessage.content = data.content;
           updateStreamingContent(data.content);
-          console.log('[TRACE] Updated streaming content');
+          debug('Streaming',' Updated streaming content');
         } else {
-          console.log('[TRACE] Did NOT update streaming content');
+          debug('Streaming',' Did NOT update streaming content');
         }
         hideStreamingStatus();
       },
@@ -1254,7 +1236,7 @@ async function processMessageStream(content) {
       },
 
       onComplete: (data) => {
-        console.log('[TRACE] onComplete called:', {
+        debug('Streaming',' onComplete called:', {
           hasContent:      !!data.content,
           contentLength:   data.content?.length,
           warning:         data.warning,
@@ -1269,7 +1251,7 @@ async function processMessageStream(content) {
         }
         // Finalize the streaming message
         finalizeStreamingMessage(data);
-        console.log('[TRACE] Finalization complete');
+        debug('Streaming',' Finalization complete');
       },
 
       onError: (data) => {
@@ -1342,7 +1324,7 @@ function updateStreamingHeader(agentName) {
  */
 function updateStreamingContent(content) {
   let el = document.querySelector('#streaming-message .streaming-content');
-  console.log('[TRACE] updateStreamingContent:', {
+  debug('Streaming',' updateStreamingContent:', {
     elementFound:   !!el,
     contentLength:  content?.length,
     contentPreview: content?.slice(0, 100),
@@ -1480,7 +1462,7 @@ function updateStreamingToolResult(data) {
  * Idempotent - safe to call multiple times.
  */
 function finalizeStreamingMessage(data) {
-  console.log('[TRACE] finalizeStreamingMessage called:', {
+  debug('Streaming',' finalizeStreamingMessage called:', {
     hasData:               !!data,
     hasDataContent:        !!data?.content,
     dataContentLength:     data?.content?.length,
@@ -1491,7 +1473,7 @@ function finalizeStreamingMessage(data) {
 
   // Skip if already finalized
   if (!state.streamingMessage) {
-    console.log('[TRACE] Already finalized, skipping');
+    debug('Streaming',' Already finalized, skipping');
     debug('App', 'Already finalized, skipping');
     return;
   }
@@ -1511,7 +1493,7 @@ function finalizeStreamingMessage(data) {
   // Keep interaction banners visible (they show what actions were taken)
   // Just update their status to reflect completion
   let banners = document.querySelectorAll('#streaming-message .interaction-banner');
-  console.log('[TRACE] Found interaction banners to preserve:', banners.length);
+  debug('Streaming',' Found interaction banners to preserve:', banners.length);
 
   // Determine final content
   let finalContent = data.content || state.streamingMessage.content;
@@ -1519,7 +1501,7 @@ function finalizeStreamingMessage(data) {
 
   // Update the displayed content (may differ from streamed content due to interaction handling)
   let streamingEl = document.getElementById('streaming-message');
-  console.log('[TRACE] finalizeStreamingMessage update:', {
+  debug('Streaming',' finalizeStreamingMessage update:', {
     streamingElFound:  !!streamingEl,
     finalContentLen:   finalContent?.length,
     finalContentPrev:  finalContent?.slice(0, 100),
@@ -1527,7 +1509,7 @@ function finalizeStreamingMessage(data) {
   if (streamingEl) {
     let contentEl = streamingEl.querySelector('.streaming-content');
     if (contentEl) {
-      console.log('[TRACE] Setting innerHTML on streaming-content element');
+      debug('Streaming',' Setting innerHTML on streaming-content element');
       contentEl.innerHTML = renderMarkup(finalContent);
     }
 
@@ -1663,16 +1645,16 @@ function hideStreamingStatus() {
  * @param {string} icon - Icon emoji from banner config (default: '⚡')
  */
 function appendInteractionBanner(interactionId, label, content, status, icon = '⚡') {
-  console.log('[TRACE] appendInteractionBanner called:', { interactionId, label, content, status, icon });
+  debug('Streaming',' appendInteractionBanner called:', { interactionId, label, content, status, icon });
   let streamingEl = document.getElementById('streaming-message');
-  console.log('[TRACE] streamingEl found:', !!streamingEl);
+  debug('Streaming',' streamingEl found:', !!streamingEl);
   if (!streamingEl) {
-    console.log('[TRACE] No streaming element found, cannot append banner');
+    debug('Streaming',' No streaming element found, cannot append banner');
     return;
   }
 
   let bubble = streamingEl.querySelector('.message-bubble');
-  console.log('[TRACE] bubble found:', !!bubble);
+  debug('Streaming',' bubble found:', !!bubble);
   if (!bubble) return;
 
   // Create the banner element
@@ -1715,19 +1697,19 @@ function formatElapsedTime(ms) {
  * Update an interaction banner status.
  */
 function updateInteractionBanner(interactionId, status, result, elapsedMs) {
-  console.log('[TRACE] updateInteractionBanner:', { interactionId, status, elapsedMs });
+  debug('Streaming',' updateInteractionBanner:', { interactionId, status, elapsedMs });
 
   // Debug: list all banners in DOM
   let allBanners = document.querySelectorAll('.interaction-banner');
-  console.log('[TRACE] All banners in DOM:', allBanners.length);
+  debug('Streaming',' All banners in DOM:', allBanners.length);
   allBanners.forEach((b, i) => {
-    console.log(`[TRACE]   Banner ${i}: data-interaction-id="${b.getAttribute('data-interaction-id')}"`);
+    debug('Streaming', `Banner ${i}: data-interaction-id="${b.getAttribute('data-interaction-id')}"`);
   });
 
   let banner = document.querySelector(`.interaction-banner[data-interaction-id="${interactionId}"]`);
-  console.log('[TRACE] Banner found for interactionId:', !!banner, 'looking for:', interactionId);
+  debug('Streaming',' Banner found for interactionId:', !!banner, 'looking for:', interactionId);
   if (!banner) {
-    console.log('[TRACE] BANNER NOT FOUND - cannot update');
+    debug('Streaming',' BANNER NOT FOUND - cannot update');
     return;
   }
 
@@ -1745,21 +1727,21 @@ function updateInteractionBanner(interactionId, status, result, elapsedMs) {
       statusText = status;
     }
     statusEl.textContent = statusText;
-    console.log('[TRACE] Updated status text to:', statusText);
+    debug('Streaming',' Updated status text to:', statusText);
   } else {
-    console.log('[TRACE] No statusEl found in banner!');
+    debug('Streaming',' No statusEl found in banner!');
   }
 
   // Update class for styling
   banner.className = `interaction-banner interaction-banner-${status}`;
-  console.log('[TRACE] Updated banner class to:', banner.className);
+  debug('Streaming',' Updated banner class to:', banner.className);
 }
 
 /**
  * Update an interaction banner content (e.g., when query becomes available).
  */
 function updateInteractionBannerContent(interactionId, content) {
-  console.log('[TRACE] updateInteractionBannerContent:', { interactionId, content });
+  debug('Streaming',' updateInteractionBannerContent:', { interactionId, content });
   let banner = document.querySelector(`.interaction-banner[data-interaction-id="${interactionId}"]`);
   if (!banner) return;
 
@@ -1784,12 +1766,7 @@ async function handleCommand(content) {
       break;
 
     case 'session':
-      state.messages.push({
-        role:    'assistant',
-        content: [{ type: 'text', text: `Current session: ${state.currentSession?.name || 'None'}\nSession ID: ${state.currentSession?.id || 'N/A'}` }],
-      });
-      renderMessages();
-      forceScrollToBottom();
+      showSystemMessage(`Current session: ${state.currentSession?.name || 'None'}\nSession ID: ${state.currentSession?.id || 'N/A'}`);
       break;
 
     case 'archive':
@@ -1818,12 +1795,7 @@ async function handleCommand(content) {
       break;
 
     default:
-      state.messages.push({
-        role:    'assistant',
-        content: [{ type: 'text', text: `Unknown command: /${command}\nType /help for available commands.` }],
-      });
-      renderMessages();
-      forceScrollToBottom();
+      showSystemMessage(`Unknown command: /${command}\nType /help for available commands.`);
   }
 }
 
@@ -1936,20 +1908,10 @@ async function handleHelpCommand(filterArg = '') {
       text += '\nTry a different filter pattern or run `/help` without arguments to see all available help.';
     }
 
-    state.messages.push({
-      role:    'assistant',
-      content: [{ type: 'text', text }],
-    });
-    renderMessages();
-    forceScrollToBottom();
+    showSystemMessage(text);
   } catch (error) {
     console.error('Failed to fetch help:', error);
-    state.messages.push({
-      role:    'assistant',
-      content: [{ type: 'text', text: 'Failed to load help information.' }],
-    });
-    renderMessages();
-    forceScrollToBottom();
+    showSystemMessage('Failed to load help information.');
   }
 }
 
@@ -1982,12 +1944,7 @@ function handleStreamCommand(args) {
 
 async function handleArchiveCommand() {
   if (!state.currentSession) {
-    state.messages.push({
-      role:    'assistant',
-      content: [{ type: 'text', text: 'No active session to archive.' }],
-    });
-    renderMessages();
-    forceScrollToBottom();
+    showSystemMessage('No active session to archive.');
     return;
   }
 
@@ -1996,24 +1953,14 @@ async function handleArchiveCommand() {
       method: 'POST',
     });
 
-    state.messages.push({
-      role:    'assistant',
-      content: [{ type: 'text', text: `Session "${state.currentSession.name}" has been archived.` }],
-    });
-    renderMessages();
-    forceScrollToBottom();
+    showSystemMessage(`Session "${state.currentSession.name}" has been archived.`);
 
     // Reload sessions
     state.sessions = await fetchSessions();
     renderSessionsList();
   } catch (error) {
     console.error('Failed to archive session:', error);
-    state.messages.push({
-      role:    'assistant',
-      content: [{ type: 'text', text: 'Failed to archive session.' }],
-    });
-    renderMessages();
-    forceScrollToBottom();
+    showSystemMessage('Failed to archive session.');
   }
 }
 
@@ -2023,12 +1970,7 @@ async function handleArchiveCommand() {
  */
 async function handleStartCommand() {
   if (!state.currentSession) {
-    state.messages.push({
-      role:    'assistant',
-      content: [{ type: 'text', text: 'No active session. Please select or create a session first.' }],
-    });
-    renderMessages();
-    forceScrollToBottom();
+    showSystemMessage('No active session. Please select or create a session first.');
     return;
   }
 
@@ -2038,12 +1980,7 @@ async function handleStartCommand() {
     let result   = await response.json();
 
     if (!result.success) {
-      state.messages.push({
-        role:    'assistant',
-        content: [{ type: 'text', text: `Failed to load startup instructions: ${result.error}` }],
-      });
-      renderMessages();
-      forceScrollToBottom();
+      showSystemMessage(`Failed to load startup instructions: ${result.error}`);
       return;
     }
 
@@ -2052,12 +1989,7 @@ async function handleStartCommand() {
     await processMessageStream(systemContent);
   } catch (error) {
     console.error('Failed to execute start command:', error);
-    state.messages.push({
-      role:    'assistant',
-      content: [{ type: 'text', text: `Error: ${error.message}` }],
-    });
-    renderMessages();
-    forceScrollToBottom();
+    showSystemMessage(`Error: ${error.message}`);
   }
 }
 
@@ -2067,21 +1999,11 @@ async function handleStartCommand() {
  */
 async function handleCompactCommand() {
   if (!state.currentSession) {
-    state.messages.push({
-      role:    'assistant',
-      content: [{ type: 'text', text: 'No active session to compact.' }],
-    });
-    renderMessages();
-    forceScrollToBottom();
+    showSystemMessage('No active session to compact.');
     return;
   }
 
-  state.messages.push({
-    role:    'assistant',
-    content: [{ type: 'text', text: 'Compacting conversation history...' }],
-  });
-  renderMessages();
-  forceScrollToBottom();
+  showSystemMessage('Compacting conversation history...');
 
   try {
     let response = await fetch(`${BASE_PATH}/api/commands/compact`, {
@@ -2093,27 +2015,13 @@ async function handleCompactCommand() {
     let result = await response.json();
 
     if (result.success) {
-      state.messages.push({
-        role:    'assistant',
-        content: [{ type: 'text', text: `**Compaction complete**\n\n${result.message}\n\n- Snapshot ID: ${result.details?.snapshotId || 'N/A'}\n- Messages compacted: ${result.details?.messagesCount || 0}\n- Summary length: ${result.details?.summaryLength || 0} chars` }],
-      });
+      showSystemMessage(`**Compaction complete**\n\n${result.message}\n\n- Snapshot ID: ${result.details?.snapshotId || 'N/A'}\n- Messages compacted: ${result.details?.messagesCount || 0}\n- Summary length: ${result.details?.summaryLength || 0} chars`);
     } else {
-      state.messages.push({
-        role:    'assistant',
-        content: [{ type: 'text', text: `Compaction failed: ${result.error}` }],
-      });
+      showSystemMessage(`Compaction failed: ${result.error}`);
     }
-
-    renderMessages();
-    forceScrollToBottom();
   } catch (error) {
     console.error('Failed to compact conversation:', error);
-    state.messages.push({
-      role:    'assistant',
-      content: [{ type: 'text', text: `Error during compaction: ${error.message}` }],
-    });
-    renderMessages();
-    forceScrollToBottom();
+    showSystemMessage(`Error during compaction: ${error.message}`);
   }
 }
 
@@ -2126,12 +2034,7 @@ async function handleUpdateUsageCommand(args) {
   let input = args.trim();
 
   if (!input) {
-    state.messages.push({
-      role:    'assistant',
-      content: [{ type: 'text', text: `Usage: /update_usage <cost>\n\nProvide your current actual API cost (in dollars).\n\nExample: /update_usage 5.50\n\nThis will adjust the usage tracker to match your actual spend.` }],
-    });
-    renderMessages();
-    forceScrollToBottom();
+    showSystemMessage(`Usage: /update_usage <cost>\n\nProvide your current actual API cost (in dollars).\n\nExample: /update_usage 5.50\n\nThis will adjust the usage tracker to match your actual spend.`);
     return;
   }
 
@@ -2139,12 +2042,7 @@ async function handleUpdateUsageCommand(args) {
   let actualCost = parseFloat(input.replace(/^\$/, ''));
 
   if (isNaN(actualCost) || actualCost < 0) {
-    state.messages.push({
-      role:    'assistant',
-      content: [{ type: 'text', text: `Invalid cost: "${input}"\n\nPlease provide a number, e.g., /update_usage 5.50` }],
-    });
-    renderMessages();
-    forceScrollToBottom();
+    showSystemMessage(`Invalid cost: "${input}"\n\nPlease provide a number, e.g., /update_usage 5.50`);
     return;
   }
 
@@ -2165,12 +2063,7 @@ async function handleUpdateUsageCommand(args) {
       msg += `No adjustment needed - tracking is accurate.`;
     }
 
-    state.messages.push({
-      role:    'assistant',
-      content: [{ type: 'text', text: msg }],
-    });
-    renderMessages();
-    forceScrollToBottom();
+    showSystemMessage(msg);
 
     // Reload usage to update the header display
     if (state.currentSession) {
@@ -2180,12 +2073,7 @@ async function handleUpdateUsageCommand(args) {
     }
   } catch (error) {
     console.error('Failed to update usage:', error);
-    state.messages.push({
-      role:    'assistant',
-      content: [{ type: 'text', text: `Failed to update usage: ${error.message}` }],
-    });
-    renderMessages();
-    forceScrollToBottom();
+    showSystemMessage(`Failed to update usage: ${error.message}`);
   }
 }
 
@@ -2202,12 +2090,7 @@ async function handleAbilityCommand(args) {
 
     case 'edit':
       if (!name) {
-        state.messages.push({
-          role:    'assistant',
-          content: [{ type: 'text', text: 'Usage: /ability edit <name>' }],
-        });
-        renderMessages();
-        forceScrollToBottom();
+        showSystemMessage('Usage: /ability edit <name>');
         return;
       }
       await editAbilityByName(name);
@@ -2215,12 +2098,7 @@ async function handleAbilityCommand(args) {
 
     case 'delete':
       if (!name) {
-        state.messages.push({
-          role:    'assistant',
-          content: [{ type: 'text', text: 'Usage: /ability delete <name>' }],
-        });
-        renderMessages();
-        forceScrollToBottom();
+        showSystemMessage('Usage: /ability delete <name>');
         return;
       }
       await deleteAbilityByName(name);
@@ -2266,20 +2144,10 @@ async function listAbilities() {
 
     text += '\nCommands: /ability create, /ability edit <name>, /ability delete <name>';
 
-    state.messages.push({
-      role:    'assistant',
-      content: [{ type: 'text', text }],
-    });
-    renderMessages();
-    forceScrollToBottom();
+    showSystemMessage(text);
   } catch (error) {
     console.error('Failed to list abilities:', error);
-    state.messages.push({
-      role:    'assistant',
-      content: [{ type: 'text', text: 'Failed to load abilities.' }],
-    });
-    renderMessages();
-    forceScrollToBottom();
+    showSystemMessage('Failed to load abilities.');
   }
 }
 
@@ -2291,12 +2159,7 @@ async function editAbilityByName(name) {
     let ability = data.abilities.find((a) => a.name === name && a.source === 'user');
 
     if (!ability) {
-      state.messages.push({
-        role:    'assistant',
-        content: [{ type: 'text', text: `Ability "${name}" not found or cannot be edited (only user abilities can be edited).` }],
-      });
-      renderMessages();
-      forceScrollToBottom();
+      showSystemMessage(`Ability "${name}" not found or cannot be edited (only user abilities can be edited).`);
       return;
     }
 
@@ -2314,12 +2177,7 @@ async function deleteAbilityByName(name) {
     let ability = data.abilities.find((a) => a.name === name && a.source === 'user');
 
     if (!ability) {
-      state.messages.push({
-        role:    'assistant',
-        content: [{ type: 'text', text: `Ability "${name}" not found or cannot be deleted (only user abilities can be deleted).` }],
-      });
-      renderMessages();
-      forceScrollToBottom();
+      showSystemMessage(`Ability "${name}" not found or cannot be deleted (only user abilities can be deleted).`);
       return;
     }
 
@@ -2328,20 +2186,10 @@ async function deleteAbilityByName(name) {
 
     await fetch(`${BASE_PATH}/api/abilities/${ability.id}`, { method: 'DELETE' });
 
-    state.messages.push({
-      role:    'assistant',
-      content: [{ type: 'text', text: `Ability "${name}" deleted.` }],
-    });
-    renderMessages();
-    forceScrollToBottom();
+    showSystemMessage(`Ability "${name}" deleted.`);
   } catch (error) {
     console.error('Failed to delete ability:', error);
-    state.messages.push({
-      role:    'assistant',
-      content: [{ type: 'text', text: 'Failed to delete ability.' }],
-    });
-    renderMessages();
-    forceScrollToBottom();
+    showSystemMessage('Failed to delete ability.');
   }
 }
 

@@ -1,19 +1,23 @@
 'use strict';
 
 // ============================================================================
-// Conversation Compaction System
+// Conversation Compaction System (Frame-Based)
 // ============================================================================
-// Automatically compacts conversation history into snapshots to manage context
-// size. Uses debouncing to avoid compacting during active conversation.
+// Automatically compacts conversation history into compact frames to manage
+// context size. Uses debouncing to avoid compacting during active conversation.
 //
 // Thresholds:
 // - MIN_THRESHOLD: Start attempting to compact (debounced)
 // - MAX_THRESHOLD: Force immediate compaction
 //
-// Snapshots are stored as hidden messages with type='snapshot'. When loading
-// history, we get the most recent snapshot + any messages after it.
+// Compact frames are stored as checkpoints. When loading history, we get the
+// most recent compact frame + any frames after it.
 
-import { getDatabase } from '../database.mjs';
+import {
+  countMessagesSinceCompact,
+  buildConversationForCompaction,
+} from './frames/context.mjs';
+import { createCompactFrame } from './frames/broadcast.mjs';
 import { broadcastToUser } from './websocket.mjs';
 
 // Default settings (can be overridden per-agent)
@@ -43,78 +47,9 @@ function getCompactionSettings(agent) {
 }
 
 /**
- * Count non-snapshot messages after the most recent snapshot.
- */
-function countMessagesAfterSnapshot(sessionId) {
-  let db = getDatabase();
-
-  // Find most recent snapshot
-  let snapshot = db.prepare(`
-    SELECT id, created_at FROM messages
-    WHERE session_id = ? AND type = 'snapshot'
-    ORDER BY created_at DESC
-    LIMIT 1
-  `).get(sessionId);
-
-  if (snapshot) {
-    // Count messages after snapshot
-    let result = db.prepare(`
-      SELECT COUNT(*) as count FROM messages
-      WHERE session_id = ? AND created_at > ? AND type != 'snapshot'
-    `).get(sessionId, snapshot.created_at);
-    return result.count;
-  } else {
-    // No snapshot - count all messages
-    let result = db.prepare(`
-      SELECT COUNT(*) as count FROM messages
-      WHERE session_id = ? AND type != 'snapshot'
-    `).get(sessionId);
-    return result.count;
-  }
-}
-
-/**
- * Get messages for compaction (all messages since last snapshot).
- */
-function getMessagesForCompaction(sessionId) {
-  let db = getDatabase();
-
-  // Find most recent snapshot
-  let snapshot = db.prepare(`
-    SELECT id, created_at FROM messages
-    WHERE session_id = ? AND type = 'snapshot'
-    ORDER BY created_at DESC
-    LIMIT 1
-  `).get(sessionId);
-
-  let messages;
-  if (snapshot) {
-    messages = db.prepare(`
-      SELECT role, content, type FROM messages
-      WHERE session_id = ? AND created_at > ? AND type != 'snapshot' AND hidden = 0
-      ORDER BY created_at ASC
-    `).all(sessionId, snapshot.created_at);
-  } else {
-    messages = db.prepare(`
-      SELECT role, content, type FROM messages
-      WHERE session_id = ? AND type != 'snapshot' AND hidden = 0
-      ORDER BY created_at ASC
-    `).all(sessionId);
-  }
-
-  return messages;
-}
-
-/**
  * Build the compaction prompt for the agent.
  */
-function buildCompactionPrompt(messages) {
-  let conversation = messages.map((m) => {
-    let content = (typeof m.content === 'string') ? m.content : JSON.parse(m.content);
-    let role    = (m.role === 'user') ? 'User' : 'Assistant';
-    return `${role}: ${content}`;
-  }).join('\n\n');
-
+function buildCompactionPrompt(conversation) {
   return `You are creating a memory snapshot to preserve the context of this conversation. This snapshot will be used as the starting context for future messages, so it MUST capture everything needed to continue working.
 
 Create a comprehensive snapshot with TWO sections:
@@ -146,39 +81,25 @@ MEMORY SNAPSHOT:`;
 }
 
 /**
- * Store a snapshot message.
- */
-function storeSnapshot(sessionId, userId, content) {
-  let db = getDatabase();
-
-  let stmt = db.prepare(`
-    INSERT INTO messages (session_id, user_id, role, content, hidden, type, created_at)
-    VALUES (?, ?, 'assistant', ?, 1, 'snapshot', datetime('now'))
-  `);
-
-  let result = stmt.run(sessionId, userId, JSON.stringify(content));
-  debug('Snapshot stored', { sessionId, messageId: result.lastInsertRowid, contentLength: content.length });
-
-  return result.lastInsertRowid;
-}
-
-/**
  * Perform the actual compaction.
  */
 async function performCompaction(sessionId, userId, agent) {
   debug('Performing compaction', { sessionId });
 
   try {
-    // Get messages to compact
-    let messages = getMessagesForCompaction(sessionId);
+    // Get conversation text for compaction
+    let conversation = buildConversationForCompaction(sessionId);
 
-    if (messages.length < 3) {
-      debug('Not enough messages to compact', { count: messages.length });
-      return { success: false, reason: 'Not enough messages' };
+    if (!conversation || conversation.length < 100) {
+      debug('Not enough content to compact', { length: conversation?.length });
+      return { success: false, reason: 'Not enough content' };
     }
 
+    // Count messages for logging
+    let messageCount = countMessagesSinceCompact(sessionId);
+
     // Build compaction prompt
-    let prompt = buildCompactionPrompt(messages);
+    let prompt = buildCompactionPrompt(conversation);
 
     // Ask agent to summarize
     debug('Requesting summary from agent');
@@ -202,23 +123,29 @@ async function performCompaction(sessionId, userId, agent) {
       return { success: false, reason: 'No summary returned' };
     }
 
-    // Store snapshot
-    let snapshotId = storeSnapshot(sessionId, userId, summary);
-
-    // Broadcast to user that compaction happened (optional)
-    broadcastToUser(userId, {
-      type:      'compaction_complete',
+    // Store compact frame
+    let compactFrame = createCompactFrame({
       sessionId: sessionId,
-      messageCount: messages.length,
+      userId:    userId,
+      context:   summary,
+      snapshot:  {}, // Can include additional structured data if needed
     });
 
-    debug('Compaction complete', { sessionId, snapshotId, originalMessages: messages.length });
+    // Broadcast to user that compaction happened
+    broadcastToUser(userId, {
+      type:         'compaction_complete',
+      sessionId:    sessionId,
+      messageCount: messageCount,
+      frameId:      compactFrame.id,
+    });
+
+    debug('Compaction complete', { sessionId, frameId: compactFrame.id, originalMessages: messageCount });
 
     return {
-      success:          true,
-      snapshotId:       snapshotId,
-      compactedCount:   messages.length,
-      summaryLength:    summary.length,
+      success:        true,
+      frameId:        compactFrame.id,
+      compactedCount: messageCount,
+      summaryLength:  summary.length,
     };
 
   } catch (error) {
@@ -238,7 +165,7 @@ export async function checkCompaction(sessionId, userId, agent, options = {}) {
     return { triggered: false, reason: 'Compaction disabled' };
   }
 
-  let messageCount = countMessagesAfterSnapshot(sessionId);
+  let messageCount = countMessagesSinceCompact(sessionId);
   debug('Checking compaction', { sessionId, messageCount, min: settings.minThreshold, max: settings.maxThreshold });
 
   // Below minimum - no action needed
@@ -301,82 +228,10 @@ export async function forceCompaction(sessionId, userId, agent) {
   return await performCompaction(sessionId, userId, agent);
 }
 
-/**
- * Load messages for agent context, using snapshots.
- * Returns: most recent snapshot (if any) + messages after it.
- */
-export function loadMessagesWithSnapshot(sessionId, maxRecentMessages = 20) {
-  let db = getDatabase();
-
-  // Find most recent snapshot
-  let snapshot = db.prepare(`
-    SELECT id, content, created_at FROM messages
-    WHERE session_id = ? AND type = 'snapshot'
-    ORDER BY created_at DESC
-    LIMIT 1
-  `).get(sessionId);
-
-  let messages = [];
-
-  // If we have a snapshot, start with it as context
-  if (snapshot) {
-    let snapshotContent = JSON.parse(snapshot.content);
-    messages.push({
-      role:    'assistant',
-      content: `[RESTORED CONTEXT - Continue from here]\n\n${snapshotContent}\n\n[END RESTORED CONTEXT - Resume conversation below]`,
-    });
-
-    // Get messages after snapshot
-    let recentMessages = db.prepare(`
-      SELECT role, content FROM messages
-      WHERE session_id = ? AND created_at > ? AND type NOT IN ('snapshot', 'system')
-      ORDER BY created_at ASC
-      LIMIT ?
-    `).all(sessionId, snapshot.created_at, maxRecentMessages);
-
-    for (let m of recentMessages) {
-      messages.push({
-        role:    m.role,
-        content: JSON.parse(m.content),
-      });
-    }
-
-    debug('Loaded messages with snapshot', {
-      sessionId,
-      snapshotId:    snapshot.id,
-      recentCount:   recentMessages.length,
-    });
-  } else {
-    // No snapshot - load recent messages directly
-    let recentMessages = db.prepare(`
-      SELECT role, content FROM messages
-      WHERE session_id = ? AND type NOT IN ('snapshot', 'system')
-      ORDER BY created_at DESC
-      LIMIT ?
-    `).all(sessionId, maxRecentMessages);
-
-    // Reverse to get chronological order
-    recentMessages.reverse();
-
-    for (let m of recentMessages) {
-      messages.push({
-        role:    m.role,
-        content: JSON.parse(m.content),
-      });
-    }
-
-    debug('Loaded messages without snapshot', {
-      sessionId,
-      count: messages.length,
-    });
-  }
-
-  return messages;
-}
+export { getCompactionSettings };
 
 export default {
   checkCompaction,
   forceCompaction,
-  loadMessagesWithSnapshot,
   getCompactionSettings,
 };

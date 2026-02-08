@@ -35,8 +35,8 @@ router.get('/', (req, res) => {
     whereClause += ` AND (
       s.name LIKE ?
       OR EXISTS (
-        SELECT 1 FROM messages m
-        WHERE m.session_id = s.id AND m.content LIKE ?
+        SELECT 1 FROM frames f
+        WHERE f.session_id = s.id AND f.type = 'message' AND f.payload LIKE ?
       )
     )`;
     let searchPattern = `%${searchQuery}%`;
@@ -55,8 +55,8 @@ router.get('/', (req, res) => {
       a.id as agent_id,
       a.name as agent_name,
       a.type as agent_type,
-      (SELECT COUNT(*) FROM messages WHERE session_id = s.id) as message_count,
-      (SELECT content FROM messages WHERE session_id = s.id ORDER BY created_at DESC LIMIT 1) as last_message
+      (SELECT COUNT(*) FROM frames WHERE session_id = s.id AND type = 'message') as message_count,
+      (SELECT payload FROM frames WHERE session_id = s.id AND type = 'message' ORDER BY timestamp DESC LIMIT 1) as last_message
     FROM sessions s
     JOIN agents a ON s.agent_id = a.id
     WHERE ${whereClause}
@@ -222,12 +222,28 @@ router.get('/:id', (req, res) => {
   if (!session)
     return res.status(404).json({ error: 'Session not found' });
 
-  let messages = db.prepare(`
-    SELECT id, role, content, hidden, type, created_at, updated_at
-    FROM messages
-    WHERE session_id = ?
-    ORDER BY created_at ASC
+  // Get message frames for backward compatibility
+  let frames = db.prepare(`
+    SELECT id, type, author_type, payload, timestamp
+    FROM frames
+    WHERE session_id = ? AND type = 'message'
+    ORDER BY timestamp ASC
   `).all(req.params.id);
+
+  // Convert frames to legacy message format
+  let messages = frames.map((f) => {
+    let payload = JSON.parse(f.payload);
+    let role = payload.role || ((f.author_type === 'agent') ? 'assistant' : 'user');
+    return {
+      id:        f.id,
+      role:      role,
+      content:   payload.content,
+      hidden:    !!payload.hidden,
+      type:      f.type,
+      createdAt: f.timestamp,
+      updatedAt: f.timestamp,
+    };
+  });
 
   return res.json({
     id:              session.id,
@@ -245,15 +261,7 @@ router.get('/:id', (req, res) => {
       inputTokens:  session.input_tokens || 0,
       outputTokens: session.output_tokens || 0,
     },
-    messages:  messages.map((m) => ({
-      id:        m.id,
-      role:      m.role,
-      content:   JSON.parse(m.content),
-      hidden:    !!m.hidden,
-      type:      m.type || 'message',
-      createdAt: m.created_at,
-      updatedAt: m.updated_at,
-    })),
+    messages:  messages,
     createdAt: session.created_at,
     updatedAt: session.updated_at,
   });

@@ -94,3 +94,44 @@ function formatRelativeDate(dateString) {
   // Older: show date
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ` ${timeStr}`;
 }
+
+// ============================================================================
+// Cost Utilities
+// ============================================================================
+
+/**
+ * Format a token count for human display.
+ * @param {number} tokens - Token count
+ * @returns {string} Formatted string (e.g., "1.2k", "15k")
+ */
+function formatTokenCount(tokens) {
+  if (tokens < 1000) {
+    return tokens.toString();
+  } else if (tokens < 10000) {
+    return (tokens / 1000).toFixed(1) + 'k';
+  } else {
+    return Math.round(tokens / 1000) + 'k';
+  }
+}
+
+/**
+ * Calculate API cost from token counts.
+ * Claude Sonnet 4 pricing: $3/1M input, $15/1M output
+ * @param {number} inputTokens - Input token count
+ * @param {number} outputTokens - Output token count
+ * @returns {number} Cost in dollars
+ */
+function calculateCost(inputTokens, outputTokens) {
+  let inputCost  = (inputTokens / 1_000_000) * 3;    // $3 per 1M input
+  let outputCost = (outputTokens / 1_000_000) * 15;  // $15 per 1M output
+  return inputCost + outputCost;
+}
+
+/**
+ * Format cost for display.
+ * @param {number} cost - Cost in dollars
+ * @returns {string} Formatted string (e.g., "$0.00", "$0.02", "$1.45")
+ */
+function formatCost(cost) {
+  return '$' + cost.toFixed(2);
+}

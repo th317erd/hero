@@ -1,17 +1,29 @@
 'use strict';
 
+// ============================================================================
+// Non-Streaming Messages Route (Frame-Based)
+// ============================================================================
+// Provides non-streaming message handling. For most use cases, prefer the
+// streaming endpoint at /messages/stream.
+
 import { randomUUID } from 'crypto';
 import { Router } from 'express';
 import { getDatabase } from '../database.mjs';
 import { decryptWithKey } from '../encryption.mjs';
 import { requireAuth, getDataKey } from '../middleware/auth.mjs';
-import { createAgent, getAgentTypes } from '../lib/agents/index.mjs';
+import { createAgent } from '../lib/agents/index.mjs';
 import { getSystemProcess, isSystemProcess, injectProcesses } from '../lib/processes/index.mjs';
 import { detectInteractions, executeInteractions, formatInteractionFeedback } from '../lib/interactions/index.mjs';
 import { buildContext } from '../lib/pipeline/context.mjs';
 import { processMarkup, hasExecutableElements } from '../lib/markup/index.mjs';
 import { getStartupAbilities } from '../lib/abilities/registry.mjs';
 import { loadUserAbilities } from '../lib/abilities/loaders/user.mjs';
+import { loadFramesForContext } from '../lib/frames/context.mjs';
+import {
+  createUserMessageFrame,
+  createAgentMessageFrame,
+  createSystemMessageFrame,
+} from '../lib/frames/broadcast.mjs';
 
 const router = Router();
 
@@ -29,28 +41,33 @@ router.get('/:sessionId/messages', (req, res) => {
   if (!session)
     return res.status(404).json({ error: 'Session not found' });
 
-  let messages = db.prepare(`
-    SELECT id, role, content, hidden, type, created_at
-    FROM messages
-    WHERE session_id = ?
-    ORDER BY created_at ASC
+  // Get message frames and convert to legacy format
+  let frames = db.prepare(`
+    SELECT id, type, author_type, payload, timestamp
+    FROM frames
+    WHERE session_id = ? AND type = 'message'
+    ORDER BY timestamp ASC
   `).all(req.params.sessionId);
 
-  return res.json({
-    messages: messages.map((m) => ({
-      id:        m.id,
-      role:      m.role,
-      content:   JSON.parse(m.content),
-      hidden:    !!m.hidden,
-      type:      m.type || 'message',
-      createdAt: m.created_at,
-    })),
+  let messages = frames.map((f) => {
+    let payload = JSON.parse(f.payload);
+    let role = payload.role || ((f.author_type === 'agent') ? 'assistant' : 'user');
+    return {
+      id:        f.id,
+      role:      role,
+      content:   payload.content,
+      hidden:    !!payload.hidden,
+      type:      f.type,
+      createdAt: f.timestamp,
+    };
   });
+
+  return res.json({ messages });
 });
 
 /**
  * POST /api/sessions/:sessionId/messages
- * Send a message and get the agent's response.
+ * Send a message and get the agent's response (non-streaming).
  */
 router.post('/:sessionId/messages', async (req, res) => {
   let { content } = req.body;
@@ -59,6 +76,7 @@ router.post('/:sessionId/messages', async (req, res) => {
     return res.status(400).json({ error: 'Message content required' });
 
   let db = getDatabase();
+  let sessionId = parseInt(req.params.sessionId, 10);
 
   // Get session with agent info
   let session = db.prepare(`
@@ -74,7 +92,7 @@ router.post('/:sessionId/messages', async (req, res) => {
     FROM sessions s
     JOIN agents a ON s.agent_id = a.id
     WHERE s.id = ? AND s.user_id = ?
-  `).get(req.params.sessionId, req.user.id);
+  `).get(sessionId, req.user.id);
 
   if (!session)
     return res.status(404).json({ error: 'Session not found' });
@@ -82,8 +100,7 @@ router.post('/:sessionId/messages', async (req, res) => {
   try {
     let dataKey = getDataKey(req);
 
-    // Load user abilities (ensures user's _onstart_* abilities are available)
-    // This also loads any plugin abilities the user has configured
+    // Load user abilities
     loadUserAbilities(req.user.id, dataKey);
 
     // Decrypt agent credentials
@@ -122,68 +139,65 @@ router.post('/:sessionId/messages', async (req, res) => {
     // Inject processes into user message content
     let processedContent = injectProcesses(content, processMap);
 
-    // Get existing messages
-    let existingMessages = db.prepare(`
-      SELECT role, content
-      FROM messages
-      WHERE session_id = ?
-      ORDER BY created_at ASC
-    `).all(req.params.sessionId);
+    // Check if this is the first message
+    let frameCount = db.prepare(`
+      SELECT COUNT(*) as count FROM frames
+      WHERE session_id = ? AND type = 'message'
+    `).get(sessionId)?.count || 0;
 
-    let messages = existingMessages.map((m) => ({
-      role:    m.role,
-      content: JSON.parse(m.content),
-    }));
+    let messages = [];
 
     // If this is the first message, inject startup abilities
-    if (existingMessages.length === 0) {
+    if (frameCount === 0) {
       let startupAbilities = getStartupAbilities();
 
       if (startupAbilities.length > 0) {
-        // Combine all startup ability contents into a single setup message
         let startupContent = startupAbilities
           .filter((a) => a.type === 'process' && a.content)
           .map((a) => a.content)
           .join('\n\n---\n\n');
 
         if (startupContent) {
-          // Store startup messages as hidden (hidden=1) with type='system' so they're not displayed in UI
-          db.prepare(`
-            INSERT INTO messages (session_id, role, content, hidden, type)
-            VALUES (?, 'user', ?, 1, 'system')
-          `).run(req.params.sessionId, JSON.stringify(`[System Initialization]\n\n${startupContent}`));
+          let onstartUserContent = `[System Initialization]\n\n${startupContent}`;
 
-          // Add to messages array for the AI
-          messages.push({
-            role:    'user',
-            content: `[System Initialization]\n\n${startupContent}`,
+          // Store startup messages as hidden frames
+          createSystemMessageFrame({
+            sessionId: sessionId,
+            userId:    req.user.id,
+            content:   onstartUserContent,
+            hidden:    true,
           });
 
-          // Also add a placeholder assistant acknowledgment to set up the conversation flow
+          messages.push({ role: 'user', content: onstartUserContent });
+
+          // Also add a placeholder assistant acknowledgment
           let ackContent = 'Understood. I\'ve processed the initialization instructions. Ready to assist.';
-          db.prepare(`
-            INSERT INTO messages (session_id, role, content, hidden, type)
-            VALUES (?, 'assistant', ?, 1, 'system')
-          `).run(req.params.sessionId, JSON.stringify(ackContent));
-
-          messages.push({
-            role:    'assistant',
-            content: ackContent,
+          createAgentMessageFrame({
+            sessionId: sessionId,
+            userId:    req.user.id,
+            agentId:   session.agent_id,
+            content:   ackContent,
+            hidden:    true,
           });
 
-          console.log(`Injected ${startupAbilities.length} startup abilities for session ${req.params.sessionId}`);
+          messages.push({ role: 'assistant', content: ackContent });
         }
       }
+    } else {
+      // Load existing messages from frames
+      messages = loadFramesForContext(sessionId, { maxRecentFrames: 20 });
     }
 
-    // Store user message (original, without process injection)
-    db.prepare(`
-      INSERT INTO messages (session_id, role, content)
-      VALUES (?, 'user', ?)
-    `).run(req.params.sessionId, JSON.stringify(content));
+    // Store user message as frame
+    createUserMessageFrame({
+      sessionId: sessionId,
+      userId:    req.user.id,
+      content:   content,
+      hidden:    false,
+    });
 
     // Update session timestamp
-    db.prepare('UPDATE sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(req.params.sessionId);
+    db.prepare('UPDATE sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(sessionId);
 
     // Add user message to history (with processes injected for AI)
     messages.push({ role: 'user', content: processedContent });
@@ -198,59 +212,62 @@ router.post('/:sessionId/messages', async (req, res) => {
 
     let response = await agent.sendMessage(messages);
 
-    // Interaction execution loop - detect and execute interactions, feed results back
-    let maxIterations = 10; // Prevent infinite loops
+    // Interaction execution loop
+    let maxIterations = 10;
     let iterations    = 0;
 
     while (iterations < maxIterations) {
       iterations++;
 
-      // Check if response is an interaction block
       let interactionBlock = detectInteractions(response.content);
 
       if (!interactionBlock)
-        break; // Not an interaction block, exit loop
+        break;
 
-      // Store the interaction request from assistant (hidden interaction message)
-      db.prepare(`
-        INSERT INTO messages (session_id, role, content, hidden, type)
-        VALUES (?, 'assistant', ?, 1, 'interaction')
-      `).run(req.params.sessionId, JSON.stringify(response.content));
+      // Store the interaction request as hidden frame
+      createAgentMessageFrame({
+        sessionId: sessionId,
+        userId:    req.user.id,
+        agentId:   session.agent_id,
+        content:   response.content,
+        hidden:    true,
+      });
 
-      // Build context for interaction execution
+      // Build context and execute interactions
       let interactionContext = {
-        sessionId: req.params.sessionId,
+        sessionId: sessionId,
         userId:    req.user.id,
         dataKey:   dataKey,
       };
 
       let results = await executeInteractions(interactionBlock, interactionContext);
 
-      // Format results as feedback for AI
+      // Format results as feedback
       let feedback = formatInteractionFeedback(results);
 
-      // Store feedback as hidden feedback message
-      db.prepare(`
-        INSERT INTO messages (session_id, role, content, hidden, type)
-        VALUES (?, 'user', ?, 1, 'feedback')
-      `).run(req.params.sessionId, JSON.stringify(feedback));
+      // Store feedback as hidden frame
+      createSystemMessageFrame({
+        sessionId: sessionId,
+        userId:    req.user.id,
+        content:   feedback,
+        hidden:    true,
+      });
 
-      // Add to message history and continue conversation
+      // Add to message history and continue
       messages.push({ role: 'assistant', content: response.content });
       messages.push({ role: 'user', content: feedback });
 
-      // Get next response from agent
+      // Get next response
       response = await agent.sendMessage(messages);
     }
 
-    // Process HML markup elements in the response
+    // Process HML markup elements
     let finalContent = response.content;
 
     if (typeof finalContent === 'string' && hasExecutableElements(finalContent)) {
-      // Build context for HML execution
       let hmlContext = buildContext({
         req,
-        sessionId: req.params.sessionId,
+        sessionId: sessionId,
         dataKey:   dataKey,
         messageId: randomUUID(),
       });
@@ -261,19 +278,14 @@ router.post('/:sessionId/messages', async (req, res) => {
         finalContent = markupResult.text;
     }
 
-    // Store final assistant response
-    db.prepare(`
-      INSERT INTO messages (session_id, role, content)
-      VALUES (?, 'assistant', ?)
-    `).run(req.params.sessionId, JSON.stringify(finalContent));
-
-    // Store any tool result messages that occurred during the agentic loop
-    if (response.toolMessages && response.toolMessages.length > 0) {
-      let insertStmt = db.prepare('INSERT INTO messages (session_id, role, content) VALUES (?, ?, ?)');
-
-      for (let msg of response.toolMessages)
-        insertStmt.run(req.params.sessionId, msg.role, JSON.stringify(msg.content));
-    }
+    // Store final assistant response as frame
+    createAgentMessageFrame({
+      sessionId: sessionId,
+      userId:    req.user.id,
+      agentId:   session.agent_id,
+      content:   finalContent,
+      hidden:    false,
+    });
 
     return res.json({
       content:        finalContent,
@@ -289,7 +301,7 @@ router.post('/:sessionId/messages', async (req, res) => {
 
 /**
  * DELETE /api/sessions/:sessionId/messages
- * Clear all messages in a session.
+ * Clear all frames in a session.
  */
 router.delete('/:sessionId/messages', (req, res) => {
   let db      = getDatabase();
@@ -298,7 +310,7 @@ router.delete('/:sessionId/messages', (req, res) => {
   if (!session)
     return res.status(404).json({ error: 'Session not found' });
 
-  db.prepare('DELETE FROM messages WHERE session_id = ?').run(req.params.sessionId);
+  db.prepare('DELETE FROM frames WHERE session_id = ?').run(req.params.sessionId);
   db.prepare('UPDATE sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(req.params.sessionId);
 
   return res.json({ success: true });

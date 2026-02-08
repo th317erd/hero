@@ -104,26 +104,30 @@ export function formatConditionalInstructions(instructions) {
 export function getUnansweredPrompts(sessionID) {
   let db = getDatabase();
 
-  // Get recent assistant messages that might contain prompts
-  let messages = db.prepare(`
-    SELECT id, content, created_at
-    FROM messages
-    WHERE session_id = ? AND role = 'assistant' AND hidden = 0
-    ORDER BY created_at DESC
+  // Get recent agent message frames that might contain prompts
+  let frames = db.prepare(`
+    SELECT id, payload, timestamp
+    FROM frames
+    WHERE session_id = ? AND type = 'message' AND author_type = 'agent'
+    ORDER BY timestamp DESC
     LIMIT 10
   `).all(sessionID);
 
   let unansweredPrompts = [];
 
-  for (let message of messages) {
-    let content;
+  for (let frame of frames) {
+    let payload;
 
     try {
-      content = JSON.parse(message.content);
+      payload = JSON.parse(frame.payload);
     } catch {
-      content = message.content;
+      continue;
     }
 
+    // Skip hidden frames
+    if (payload.hidden) continue;
+
+    let content = payload.content;
     if (typeof content !== 'string') continue;
 
     // Find all hml-prompt elements (and legacy user-prompt/user_prompt)
@@ -140,7 +144,7 @@ export function getUnansweredPrompts(sessionID) {
 
       if (!isAnswered) {
         unansweredPrompts.push({
-          messageID: message.id,
+          messageID: frame.id,  // Frame ID (backward compatible field name)
           promptID:  promptID,
           question:  question,
         });

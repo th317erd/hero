@@ -36,8 +36,8 @@
 - [x] Target ID parsing utilities - implemented (prefix:id format)
 - [x] Tests for compilation - 36 tests covering all scenarios
 
-**Phase 3: Server-Side Frame Loop** (PARTIAL)
-- [ ] Refactor `messages-stream.mjs` to create frames
+**Phase 3: Server-Side Frame Loop** ✅ COMPLETE
+- [x] Refactor `messages-stream.mjs` to create frames
 - [x] Frame-based context builder for agent calls - `server/lib/frames/context.mjs`
   - `loadFramesForContext()` - Load frames for AI context
   - `getFramesForDisplay()` - Get frames with compiled state
@@ -47,24 +47,33 @@
   - GET /sessions/:id/frames - List frames with filters
   - GET /sessions/:id/frames/stats - Frame statistics
   - GET /sessions/:id/frames/:frameId - Single frame
-- [ ] Tests for agent turn frame creation
+- [x] Frame broadcast helpers - `server/lib/frames/broadcast.mjs`
+  - `createAndBroadcastFrame()` - Core function
+  - `createUserMessageFrame()`, `createAgentMessageFrame()`, `createSystemMessageFrame()`
+  - `createRequestFrame()`, `createResultFrame()`, `createCompactFrame()`, `createUpdateFrame()`
+- [x] Updated `compaction.mjs` to use frames
+- [x] Updated `sessions.mjs` to use frames for message counts and previews
+- [x] Updated `messages.mjs` (non-streaming) to use frames
+- [x] Updated `conditional.mjs` to use frames for prompt detection
+- [x] Updated `prompt-update.mjs` to update frame payloads
+- [x] Tests for frame broadcast helpers (12 tests)
 
-**Phase 4: WebSocket Protocol**
+**Phase 4: WebSocket Protocol** (Pending - client update deferred)
 - [ ] Change WS to emit frames (including phantoms)
 - [ ] Fetch frames via API on load, WS for real-time
 - [ ] Tests for frame streaming
 
-**Phase 5: Interactions & Commands**
+**Phase 5: Interactions & Commands** (Pending - client update deferred)
 - [ ] Refactor websearch to emit request/result frames
 - [ ] Other commands follow same pattern
 - [ ] Parent/child frame relationships
 - [ ] Tests for interaction chains
 
-**Phase 6: Compaction**
-- [ ] Trigger compaction logic
-- [ ] Agent generates compact frame
-- [ ] Load-from-compact logic
-- [ ] Tests for compact + reload
+**Phase 6: Compaction** ✅ COMPLETE
+- [x] Trigger compaction logic (using `countMessagesSinceCompact`)
+- [x] Agent generates compact frame (using `createCompactFrame`)
+- [x] Load-from-compact logic (using `loadFramesForContext`)
+- [x] Compaction module fully migrated to frames
 
 **Notes:**
 - Client updates deferred (big plans coming)
@@ -277,6 +286,10 @@ Immutable log = no deletes. Ever.
 [ ] Add token scalar setting for adjusting cost calculation ratio (mentioned in update_usage requirements)
 
 ## Recently Completed (2026-02-07)
+[x] Nginx config: Added /mythix-ui/ location block for mythix-ecosystem libraries
+[x] Client-side cleanup: Moved cost utilities (formatTokenCount, calculateCost, formatCost) to utils.js
+[x] Client-side cleanup: Converted debug TRACE statements to use debug() function in app.js and api.js
+[x] Client-side cleanup: Added showSystemMessage() helper, reduced app.js by 116 lines (27 patterns consolidated)
 [x] `<hml-prompt>` Web Component - full-featured inline user prompts
     - All input types: text, number, color, checkbox, checkboxes, radio, select, range
     - JSON options via `<data>` element for select/radio/checkboxes

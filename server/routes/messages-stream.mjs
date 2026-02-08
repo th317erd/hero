@@ -28,7 +28,15 @@ import { loadUserAbilities } from '../lib/abilities/loaders/user.mjs';
 import { checkConditionalAbilities, formatConditionalInstructions } from '../lib/abilities/index.mjs';
 import { broadcastToUser } from '../lib/websocket.mjs';
 import { detectInteractions, executeInteractions, formatInteractionFeedback, searchWeb, getRegisteredFunctionClass } from '../lib/interactions/index.mjs';
-import { checkCompaction, loadMessagesWithSnapshot } from '../lib/compaction.mjs';
+import { checkCompaction } from '../lib/compaction.mjs';
+import { loadFramesForContext } from '../lib/frames/context.mjs';
+import {
+  createUserMessageFrame,
+  createAgentMessageFrame,
+  createSystemMessageFrame,
+  createRequestFrame,
+  createResultFrame,
+} from '../lib/frames/broadcast.mjs';
 
 /**
  * Get the banner config for a function by name.
@@ -162,57 +170,6 @@ function deduplicateParagraphs(text) {
 
 // All routes require authentication
 router.use(requireAuth);
-
-/**
- * Store a message in the database and broadcast to WebSocket.
- *
- * @param {object} db - Database instance
- * @param {number} sessionId - Session ID
- * @param {number} userId - User ID
- * @param {string} role - Message role ('user' or 'assistant')
- * @param {string} content - Message content
- * @param {object} options - Additional options
- * @returns {object} The stored message record
- */
-function storeAndBroadcastMessage(db, sessionId, userId, role, content, options = {}) {
-  let { hidden = 0, type = 'message', skipBroadcast = false } = options;
-
-  let result = db.prepare(`
-    INSERT INTO messages (session_id, role, content, hidden, type, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-  `).run(sessionId, role, JSON.stringify(content), hidden, type);
-
-  let messageId = result.lastInsertRowid;
-
-  // Get the full message record
-  let message = db.prepare(`
-    SELECT id, session_id, role, content, hidden, type, created_at, updated_at
-    FROM messages WHERE id = ?
-  `).get(messageId);
-
-  // Broadcast to WebSocket so clients get the message in real-time
-  // Skip for streamed messages - SSE message_complete handles those
-  if (!skipBroadcast) {
-    broadcastToUser(userId, {
-      type:      'new_message',
-      sessionId: sessionId,
-      message:   {
-        id:        message.id,
-        sessionId: message.session_id,
-        role:      message.role,
-        content:   JSON.parse(message.content),
-        hidden:    message.hidden === 1,
-        type:      message.type,
-        createdAt: message.created_at,
-        updatedAt: message.updated_at,
-      },
-    });
-  }
-
-  debug('Message stored and broadcast', { id: messageId, role, hidden, type, skipBroadcast });
-
-  return message;
-}
 
 /**
  * Process onstart abilities for a new session.
@@ -460,13 +417,11 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
     // Inject processes into user message content
     let processedContent = injectProcesses(content, processMap);
 
-    // Get existing messages
-    let existingMessages = db.prepare(`
-      SELECT id, role, content, hidden, type, created_at
-      FROM messages
-      WHERE session_id = ?
-      ORDER BY created_at ASC
-    `).all(req.params.sessionId);
+    // Check if there are existing frames in the session
+    let existingFrameCount = db.prepare(`
+      SELECT COUNT(*) as count FROM frames
+      WHERE session_id = ? AND type = 'message'
+    `).get(req.params.sessionId)?.count || 0;
 
     // Create agent
     debug('Creating agent', { type: session.agent_type, hasApiKey: !!apiKey, hasApiUrl: !!session.agent_api_url });
@@ -484,7 +439,7 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
     // =========================================================================
     // FIRST MESSAGE FLOW: Process onstart abilities before user's message
     // =========================================================================
-    if (existingMessages.length === 0) {
+    if (existingFrameCount === 0) {
       debug('First message in session, checking for onstart abilities');
 
       let startupAbilities = getStartupAbilities();
@@ -535,17 +490,22 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
             return;
           }
 
-          // Store onstart user message (hidden, type=system)
+          // Store onstart user message as hidden system frame
           let onstartUserContent = `[System Initialization]\n\n${startupContent}`;
-          storeAndBroadcastMessage(db, req.params.sessionId, req.user.id, 'user', onstartUserContent, {
-            hidden: 1,
-            type:   'system',
+          createSystemMessageFrame({
+            sessionId: parseInt(req.params.sessionId, 10),
+            userId:    req.user.id,
+            content:   onstartUserContent,
+            hidden:    true,
           });
 
-          // Store agent acknowledgment (hidden, type=system)
-          storeAndBroadcastMessage(db, req.params.sessionId, req.user.id, 'assistant', ackContent, {
-            hidden: 1,
-            type:   'system',
+          // Store agent acknowledgment as hidden agent frame
+          createAgentMessageFrame({
+            sessionId: parseInt(req.params.sessionId, 10),
+            userId:    req.user.id,
+            agentId:   session.agent_id,
+            content:   ackContent,
+            hidden:    true,
           });
 
           // Add to messages array for context
@@ -566,19 +526,21 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
         }
       }
     } else {
-      // Load messages using snapshot system (handles compaction automatically)
-      messages = loadMessagesWithSnapshot(req.params.sessionId, 20);
-      debug('Loaded messages with snapshot system', { count: messages.length });
+      // Load messages using frame-based context (handles compaction automatically)
+      messages = loadFramesForContext(parseInt(req.params.sessionId, 10), { maxRecentFrames: 20 });
+      debug('Loaded messages from frames', { count: messages.length });
     }
 
     // =========================================================================
     // USER MESSAGE: Store and stream response
     // =========================================================================
 
-    // Store user message
-    storeAndBroadcastMessage(db, req.params.sessionId, req.user.id, 'user', content, {
-      hidden: 0,
-      type:   'message',
+    // Store user message as frame
+    createUserMessageFrame({
+      sessionId: parseInt(req.params.sessionId, 10),
+      userId:    req.user.id,
+      content:   content,
+      hidden:    false,
     });
 
     db.prepare('UPDATE sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(req.params.sessionId);
@@ -932,10 +894,13 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
 
       // Convert raw error to user-friendly message
       let errorMessage = getFriendlyErrorMessage(streamError.message);
-      debug('Storing error message to database');
-      storeAndBroadcastMessage(db, req.params.sessionId, req.user.id, 'assistant', errorMessage, {
-        hidden: 0,
-        type:   'error',
+      debug('Storing error message as frame');
+      createAgentMessageFrame({
+        sessionId: parseInt(req.params.sessionId, 10),
+        userId:    req.user.id,
+        agentId:   session.agent_id,
+        content:   errorMessage,
+        hidden:    false,
       });
 
       // Send error event to frontend
@@ -1021,10 +986,13 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
           res.write(':executing\n\n');
           if (res.flush) res.flush();
 
-          // Store the interaction request as HIDDEN (intermediate message)
-          storeAndBroadcastMessage(db, req.params.sessionId, req.user.id, 'assistant', currentContent, {
-            hidden:        1,
-            type:          'interaction',
+          // Store the interaction request as HIDDEN frame (intermediate message)
+          createAgentMessageFrame({
+            sessionId:     parseInt(req.params.sessionId, 10),
+            userId:        req.user.id,
+            agentId:       session.agent_id,
+            content:       currentContent,
+            hidden:        true,
             skipBroadcast: true,
           });
 
@@ -1048,10 +1016,12 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
           // Format results as feedback
           let feedback = formatInteractionFeedback(results);
 
-          // Store feedback as hidden message
-          storeAndBroadcastMessage(db, req.params.sessionId, req.user.id, 'user', feedback, {
-            hidden: 1,
-            type:   'feedback',
+          // Store feedback as hidden system frame
+          createSystemMessageFrame({
+            sessionId: parseInt(req.params.sessionId, 10),
+            userId:    req.user.id,
+            content:   feedback,
+            hidden:    true,
           });
 
           // Add to message history (strip interaction tags so Claude sees clean context)
@@ -1141,15 +1111,18 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
         // Clean up extra whitespace
         cleanFinalContent = cleanFinalContent.replace(/\n{3,}/g, '\n\n').trim();
 
-        // Store the final clean response as VISIBLE
+        // Store the final clean response as VISIBLE frame
         if (cleanFinalContent.trim()) {
-          let storedMsg = storeAndBroadcastMessage(db, req.params.sessionId, req.user.id, 'assistant', cleanFinalContent, {
-            hidden:        0,
-            type:          'message',
+          let storedFrame = createAgentMessageFrame({
+            sessionId:     parseInt(req.params.sessionId, 10),
+            userId:        req.user.id,
+            agentId:       session.agent_id,
+            content:       cleanFinalContent,
+            hidden:        false,
             skipBroadcast: true,
           });
-          persistedMessageID = storedMsg.id;
-          debug('Stored interaction response with database ID:', persistedMessageID);
+          persistedMessageID = storedFrame.id;
+          debug('Stored interaction response with frame ID:', persistedMessageID);
         }
 
         // Update fullContent for the message_complete event
@@ -1163,15 +1136,18 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
         });
 
       } else {
-        // No interactions - store normally
-        debug('Storing assistant response', { length: fullContent.length });
-        let storedMsg = storeAndBroadcastMessage(db, req.params.sessionId, req.user.id, 'assistant', fullContent, {
-          hidden:        0,
-          type:          'message',
+        // No interactions - store as frame
+        debug('Storing assistant response as frame', { length: fullContent.length });
+        let storedFrame = createAgentMessageFrame({
+          sessionId:     parseInt(req.params.sessionId, 10),
+          userId:        req.user.id,
+          agentId:       session.agent_id,
+          content:       fullContent,
+          hidden:        false,
           skipBroadcast: true,  // SSE already notifies client via message_complete
         });
-        persistedMessageID = storedMsg.id;
-        debug('Stored message with database ID:', persistedMessageID);
+        persistedMessageID = storedFrame.id;
+        debug('Stored message with frame ID:', persistedMessageID);
       }
     } else if (!aborted && !fullContent) {
       // No content received - store an error message so user knows what happened
@@ -1183,9 +1159,12 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
       debug('Agent returned no content - storing error message');
 
       let errorMessage = 'The agent did not return a response. This may indicate an API issue or rate limiting.';
-      storeAndBroadcastMessage(db, req.params.sessionId, req.user.id, 'assistant', errorMessage, {
-        hidden: 0,
-        type:   'error',
+      createAgentMessageFrame({
+        sessionId: parseInt(req.params.sessionId, 10),
+        userId:    req.user.id,
+        agentId:   session.agent_id,
+        content:   errorMessage,
+        hidden:    false,
       });
 
       sendEvent('error', {
@@ -1247,16 +1226,18 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
     debug('Outer catch error:', error.message, error.stack);
     clearInterval(keepAliveInterval);
 
-    // Store error message to database so it persists
+    // Store error message as frame so it persists
     let errorMessage = getFriendlyErrorMessage(error.message);
     try {
-      let db = getDatabase();
-      storeAndBroadcastMessage(db, req.params.sessionId, req.user.id, 'assistant', errorMessage, {
-        hidden: 0,
-        type:   'error',
+      createAgentMessageFrame({
+        sessionId: parseInt(req.params.sessionId, 10),
+        userId:    req.user.id,
+        agentId:   session?.agent_id,  // session may not be defined in outer catch
+        content:   errorMessage,
+        hidden:    false,
       });
-    } catch (dbError) {
-      console.error('Failed to store error message:', dbError);
+    } catch (frameError) {
+      console.error('Failed to store error frame:', frameError);
     }
 
     sendEvent('error', { error: errorMessage });
