@@ -2,6 +2,142 @@
 
 Last updated: 2026-02-07
 
+## In Progress: Mythix-UI Client Migration
+
+**Branch:** `feature/mythix-ui-migration`
+
+### Overview
+Migrating the Hero frontend from vanilla JavaScript to the Mythix-UI Web Component framework for:
+- Reactive state management (DynamicProperty)
+- Component-based architecture
+- Better separation of concerns
+- Integration with Interaction Frames system
+
+### Decisions
+
+| Decision | Choice |
+|----------|--------|
+| Shadow DOM | Light DOM primary, component-scoped styles where sensible |
+| Templates | Inline JS (template literals or Element API) |
+| State | 3-tier: Global (sessions/agents), Session (frames), Component (local UI) |
+| Testing | JSDOM for unit tests, Puppeteer for integration |
+| CSS | Global stylesheets remain, component styles where sensible |
+| WebSocket | Separate file, app-level instance, per-session + global channels |
+
+### Component Structure
+
+```
+public/js/components/
+├── hero-base.js           # ✅ GlobalState + HeroComponent base class
+├── hero-app.js            # ✅ Root shell, auth, routing
+├── hero-sidebar.js        # ✅ Session list, search, archive
+├── hero-chat.js           # ✅ Message area, streaming, scroll button
+├── hero-input.js          # ✅ Message input with send button
+├── hero-websocket.js      # ✅ Standalone WebSocket handler
+├── hero-header.js         # ✅ Top bar, cost display, agent dropdown
+└── hero-modal.js          # ✅ Session, agent, ability modals
+
+spec/components/
+├── hero-base-spec.mjs     # ✅ 15 tests
+├── hero-app-spec.mjs      # ✅ 28 tests
+├── hero-sidebar-spec.mjs  # ✅ 31 tests
+├── hero-chat-spec.mjs     # ✅ 40 tests
+├── hero-input-spec.mjs    # ✅ 34 tests
+├── hero-websocket-spec.mjs # ✅ 32 tests
+├── hero-header-spec.mjs   # ✅ 32 tests
+└── hero-modal-spec.mjs    # ✅ 35 tests
+```
+
+### State Tiers
+
+```
+GlobalState (Utils.dynamicPropID)
+├── heroUser           # Current authenticated user
+├── heroSessions       # All sessions list
+├── heroAgents         # All agents list
+├── heroAbilities      # System + user abilities
+└── heroCurrentSession # Currently selected session
+
+SessionState (DynamicProperty on hero-chat)
+├── frames             # Compiled frames from server
+├── streamingFrame     # Current streaming message
+└── isTyping           # Typing indicator state
+
+ComponentState (local DynamicProperty)
+├── Modal open/close states
+├── Form field values
+└── Scroll position
+```
+
+### Build Order (Top-Down)
+1. ✅ `hero-base.js` - Infrastructure (GlobalState, HeroComponent base class)
+2. ✅ `hero-app.js` - Root shell with auth, routing
+3. ✅ `hero-sidebar.js` - Session list, search, archive
+4. ✅ `hero-header.js` - Top bar, cost display
+5. ✅ `hero-chat.js` - Chat view, message rendering, streaming
+6. ✅ `hero-input.js` - Message input, commands, queue
+7. ✅ `hero-websocket.js` - WebSocket handler
+8. ✅ Modals (session, agent, ability)
+
+### Completed Components
+
+**hero-base.js** - Core infrastructure
+- `GlobalState` object with reactive DynamicProperty values
+- `HeroComponent` base class extending MythixUIComponent
+- Convenience methods: `setGlobal()`, `subscribeGlobal()`, `debug()`
+- Light DOM by default (no Shadow DOM)
+
+**hero-app.js** - Root application shell
+- Route parsing (`parseRoute()`) with base path support
+- View switching (login, sessions, chat)
+- Authentication state management
+- WebSocket connection lifecycle
+- Initial data loading (sessions, agents, abilities)
+
+**hero-sidebar.js** - Session list
+- Session filtering by search query
+- Visibility toggle (show/hide archived and agent sessions)
+- Empty states (no agents, no sessions, no results)
+- Session hierarchy with depth-based indentation
+- Archive/restore toggle
+- Global cost display
+
+**hero-chat.js** - Chat messages area
+- Message list rendering with role classes
+- Hidden message filtering and type badges
+- Tool use and tool result rendering
+- Streaming message support with typing indicator
+- Scroll-to-bottom button
+- Debounced rendering to prevent loops
+- Token estimation display
+
+**hero-input.js** - Message input
+- Auto-resizing textarea
+- Command detection (/ prefix)
+- Message queue for busy state
+- Keyboard shortcuts (Enter to send, Shift+Enter for newline)
+- Loading state management
+
+### Tests
+All components have comprehensive test suites in `spec/components/`:
+- `hero-base-spec.mjs` - 15 tests
+- `hero-app-spec.mjs` - 28 tests
+- `hero-sidebar-spec.mjs` - 31 tests
+- `hero-chat-spec.mjs` - 40 tests
+- `hero-input-spec.mjs` - 34 tests
+- `hero-websocket-spec.mjs` - 32 tests
+- `hero-header-spec.mjs` - 32 tests
+- `hero-modal-spec.mjs` - 35 tests
+
+Total: **505 tests passing** (247 component + 258 server tests)
+
+### Notes
+- Markdown/HML renderer strategy TBD - currently using basic escapeHtml
+- Keep existing `api.js` functions, update as needed
+- Per-session WS connections + global updates for sessions/agents/abilities
+
+---
+
 ## Recent Changes
 
 ### HML Prompt Web Component (Complete)
