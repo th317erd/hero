@@ -552,6 +552,104 @@ function handleStreamCommand(args) {
 
 ## Web Components
 
+Hero uses Mythix-UI as the base web component framework. Components extend `MythixUIComponent` or specialized base classes like `MythixUIModal`.
+
+### Import Maps
+
+Mythix-UI uses `@cdn/` style imports that must be resolved via an import map. This allows the same code to work with both CDN hosting and local development.
+
+**Configuration in `index.html`:**
+
+```html
+<script type="importmap">
+{
+  "imports": {
+    "@cdn/mythix-ui-core@1": "/mythix-ui/mythix-ui-core/dist/index.js",
+    "@cdn/mythix-ui-modal@1": "/mythix-ui/mythix-ui-modal/dist/mythix-ui-modal.js"
+  }
+}
+</script>
+```
+
+**Usage in components:**
+
+```javascript
+// Import from CDN-style path (resolved by import map)
+import { MythixUIModal } from '@cdn/mythix-ui-modal@1';
+
+export class HeroModal extends MythixUIModal {
+  // Component implementation
+}
+```
+
+The import map maps `@cdn/` paths to local `/mythix-ui/` paths during development. For production, these could point to a CDN URL instead.
+
+### Hero Component Base Classes
+
+Hero provides base classes that extend Mythix-UI:
+
+| Class | Extends | Purpose |
+|-------|---------|---------|
+| `HeroComponent` | `MythixUIComponent` | Base for all Hero components |
+| `HeroModal` | `MythixUIModal` | Base for modal dialogs |
+
+**HeroComponent features:**
+- `GlobalState` integration for reactive state
+- `subscribeGlobal()` for state subscriptions
+- `setGlobal()` for updating global state
+- `processElements()` for event macro binding
+
+**HeroModal features:**
+- Native `<dialog>` element
+- Auto-bound footer buttons via `slot="footer"`
+- Escape key and backdrop click handling
+- Error display helpers
+
+### Modal Components
+
+Modals use the native `<dialog>` element via MythixUIModal:
+
+```javascript
+export class HeroModalSession extends HeroModal {
+  static tagName = 'hero-modal-session';
+
+  get modalName() { return 'new-session'; }
+  get modalTitle() { return 'New Session'; }
+
+  getContent() {
+    return `
+      <form>
+        <!-- Form fields -->
+        <footer slot="footer">
+          <button type="button" class="button button-secondary">Cancel</button>
+          <button type="submit" class="button button-primary">Create</button>
+        </footer>
+      </form>
+    `;
+  }
+
+  mounted() {
+    this.render();
+    super.mounted();
+  }
+}
+```
+
+**Key patterns:**
+- `slot="footer"` - Footer buttons are auto-bound by MythixUIModal (click closes dialog)
+- `getContent()` - Override to provide form content
+- `handleSubmit()` - Override for form submission logic
+- `onOpen()` / `onClose()` - Lifecycle hooks
+
+**Opening modals:**
+
+```javascript
+// Dispatch show-modal event
+document.dispatchEvent(new CustomEvent('show-modal', {
+  detail: { modal: 'new-session' }
+}));
+```
+
 ### HML Prompt (`<hml-prompt>`)
 
 Inline user prompt component for collecting input within chat messages.

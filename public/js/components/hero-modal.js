@@ -3,14 +3,15 @@
 /**
  * Hero Modal - Base Modal Component
  *
- * Uses native <dialog> element with:
- * - showModal() / close() methods
+ * Extends MythixUIModal to leverage:
+ * - Native <dialog> element
+ * - Auto-bound footer buttons via slots (close on click)
  * - Escape key handling (native)
  * - Backdrop click to close (autoclose attribute)
- * - Auto-bound footer buttons (close on click unless prevented)
  */
 
-import { HeroComponent, GlobalState, DynamicProperty } from './hero-base.js';
+import { MythixUIModal } from '@cdn/mythix-ui-modal@1';
+import { GlobalState, DynamicProperty } from './hero-base.js';
 
 // ============================================================================
 // Helper Functions
@@ -26,19 +27,11 @@ function escapeHtml(text) {
 // HeroModal Base Class
 // ============================================================================
 
-export class HeroModal extends HeroComponent {
+export class HeroModal extends MythixUIModal {
   static tagName = 'hero-modal';
 
   // Error state
   #error = '';
-
-  /**
-   * Get the dialog element.
-   * @returns {HTMLDialogElement|null}
-   */
-  get $dialog() {
-    return this.querySelector('dialog');
-  }
 
   /**
    * Get current error message.
@@ -85,32 +78,13 @@ export class HeroModal extends HeroComponent {
         this.openModal();
       }
     });
-  }
-
-  /**
-   * Called after render to set up event handlers.
-   */
-  #setupHandlers() {
-    let dialog = this.$dialog;
-    if (!dialog) return;
 
     // Listen for close event to call onClose hook
-    dialog.addEventListener('close', () => {
+    this.$dialog.addEventListener('close', () => {
       this.onClose();
+      // Hide component container when dialog closes
+      this.style.display = 'none';
     });
-
-    // Backdrop click to close (autoclose attribute)
-    if (dialog.hasAttribute('autoclose')) {
-      dialog.addEventListener('click', (event) => {
-        // Only close if clicking the backdrop (the dialog itself, not its content)
-        if (event.target === dialog) {
-          this.close();
-        }
-      });
-    }
-
-    // Auto-bind footer buttons to close
-    this.#bindFooterButtons();
 
     // Attach form submit handler
     let form = this.querySelector('form');
@@ -120,30 +94,11 @@ export class HeroModal extends HeroComponent {
   }
 
   /**
-   * Bind footer buttons to close on click.
-   */
-  #bindFooterButtons() {
-    let footer = this.querySelector('footer');
-    if (!footer) return;
-
-    let buttons = footer.querySelectorAll('button');
-    buttons.forEach((button) => {
-      // Don't override submit buttons
-      if (button.type === 'submit') return;
-
-      button.addEventListener('click', (event) => {
-        if (!event.defaultPrevented) {
-          this.close();
-        }
-      });
-    });
-  }
-
-  /**
    * Open the modal.
    */
   openModal() {
     this.#error = '';
+    this.#updateError();
 
     // Allow onOpen to cancel opening (returns false)
     if (this.onOpen() === false)
@@ -160,37 +115,6 @@ export class HeroModal extends HeroComponent {
       if (firstInput)
         firstInput.focus();
     });
-  }
-
-  /**
-   * Show modal (delegates to native dialog).
-   */
-  showModal() {
-    let dialog = this.$dialog;
-    if (dialog) {
-      try {
-        dialog.showModal();
-      } catch (error) {
-        // Dialog may already be open
-      }
-    }
-  }
-
-  /**
-   * Close modal (delegates to native dialog).
-   * @param {string} [returnValue]
-   */
-  close(returnValue) {
-    let dialog = this.$dialog;
-    if (dialog) {
-      try {
-        dialog.close(returnValue);
-      } catch (error) {
-        // Dialog may already be closed
-      }
-    }
-    // Hide the component container
-    this.style.display = 'none';
   }
 
   /**
@@ -267,8 +191,14 @@ export class HeroModal extends HeroComponent {
       </dialog>
     `;
 
-    // Set up handlers after rendering
-    this.#setupHandlers();
+    // Re-attach form handler after render
+    let form = this.querySelector('form');
+    if (form) {
+      form.addEventListener('submit', (event) => this.handleSubmit(event));
+    }
+
+    // Trigger slot change handlers to bind footer buttons
+    this.onFooterSlotChange();
   }
 }
 
@@ -322,7 +252,7 @@ export class HeroModalSession extends HeroModal {
           <label for="session-prompt">System Prompt (optional)</label>
           <textarea id="session-prompt" name="systemPrompt" rows="3" placeholder="Instructions for the AI agent..."></textarea>
         </div>
-        <footer>
+        <footer slot="footer">
           <button type="button" class="button button-secondary">Cancel</button>
           <button type="submit" class="button button-primary">Create</button>
         </footer>
@@ -434,7 +364,7 @@ export class HeroModalAgent extends HeroModal {
             ${abilitiesHtml || '<em>No abilities available</em>'}
           </div>
         </div>
-        <footer>
+        <footer slot="footer">
           <button type="button" class="button button-secondary">Cancel</button>
           <button type="submit" class="button button-primary">Add Agent</button>
         </footer>
@@ -568,7 +498,7 @@ export class HeroModalAbility extends HeroModal {
             <option value="dangerous">Dangerous - High risk</option>
           </select>
         </div>
-        <footer>
+        <footer slot="footer">
           <button type="button" class="button button-secondary">Cancel</button>
           <button type="submit" class="button button-primary">${(this.#editId) ? 'Save' : 'Create'}</button>
         </footer>
