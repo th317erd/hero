@@ -197,8 +197,23 @@ export class HeroModal extends MythixUIModal {
       form.addEventListener('submit', (event) => this.handleSubmit(event));
     }
 
-    // Trigger slot change handlers to bind footer buttons
-    this.onFooterSlotChange();
+    // Manually bind footer buttons (since we don't use shadow DOM with slots)
+    this.#bindFooterButtons();
+  }
+
+  /**
+   * Bind click handlers to footer buttons.
+   * Cancel/secondary buttons close the modal.
+   */
+  #bindFooterButtons() {
+    let footer = this.querySelector('footer[slot="footer"]');
+    if (!footer)
+      return;
+
+    let buttons = footer.querySelectorAll('button[type="button"]');
+    for (let button of buttons) {
+      button.addEventListener('click', () => this.close());
+    }
   }
 }
 

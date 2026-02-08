@@ -337,7 +337,7 @@ export class HeroSidebar extends HeroComponent {
         return `
           <div class="no-sessions">
             <p>No agents configured yet.</p>
-            <p><span class="no-agents-link" onclick="this.closest('hero-sidebar').showNewAgentModal()">Add an agent</span> to get started.</p>
+            <p><span class="no-agents-link" onclick="this.closest('hero-sidebar').showNewAgentModal()">Add an Agent</span> to get started.</p>
           </div>
         `;
       case 'no-sessions':

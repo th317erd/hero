@@ -8,14 +8,31 @@ async function loadSessions() {
   try {
     state.sessions = await fetchSessions();
     state.agents   = await fetchAgents();
-    renderSessionsList();
+
+    // Update GlobalState for hero-sidebar component
+    if (typeof GlobalState !== 'undefined') {
+      GlobalState.sessions.value = state.sessions;
+      GlobalState.agents.value = state.agents;
+    }
+
+    // Only call renderSessionsList if the element exists (legacy support)
+    if (elements.sessionsList) {
+      renderSessionsList();
+    }
   } catch (error) {
     console.error('Failed to load sessions:', error);
-    elements.sessionsList.innerHTML = '<div class="loading">Failed to load sessions</div>';
+    if (elements.sessionsList) {
+      elements.sessionsList.innerHTML = '<div class="loading">Failed to load sessions</div>';
+    }
   }
 }
 
 function renderSessionsList() {
+  // Skip if using hero-sidebar component (no legacy element)
+  if (!elements.sessionsList) {
+    return;
+  }
+
   let filteredSessions = state.sessions;
 
   if (state.searchQuery) {
@@ -31,7 +48,7 @@ function renderSessionsList() {
       elements.sessionsList.innerHTML = `
         <div class="no-sessions">
           <p>No agents configured yet.</p>
-          <p><span class="no-agents-link" onclick="showNewAgentModal()">Add an agent</span> to get started.</p>
+          <p><span class="no-agents-link" onclick="document.dispatchEvent(new CustomEvent('show-modal', { detail: { modal: 'new-agent' } }))">Add an Agent</span> to get started.</p>
         </div>
       `;
     } else if (state.sessions.length === 0) {
