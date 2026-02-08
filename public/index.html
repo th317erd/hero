@@ -11,9 +11,17 @@
   <link rel="stylesheet" href="css/abilities.css">
 </head>
 <body>
-  <div id="app">
+  <hero-app id="app">
+    <!-- WebSocket handler -->
+    <hero-websocket></hero-websocket>
+
+    <!-- Modal components -->
+    <hero-modal-session id="new-session-component" style="display: none;"></hero-modal-session>
+    <hero-modal-agent id="new-agent-component" style="display: none;"></hero-modal-agent>
+    <hero-modal-ability id="ability-component" style="display: none;"></hero-modal-ability>
+
     <!-- Login View -->
-    <div id="login-view" class="view" style="display: none;">
+    <div id="login-view" class="view" data-view="login" style="display: none;">
       <div class="login-container">
         <div class="login-title">
           <img src="assets/images/hero-cape.svg?v=1" alt="Hero" class="logo logo-lg">
@@ -36,89 +44,21 @@
     </div>
 
     <!-- Sessions List View -->
-    <div id="sessions-view" class="view" style="display: none;">
-      <header class="header">
-        <div class="header-left">
-          <img src="assets/images/hero-cape.svg?v=1" alt="Hero" class="logo">
-          <h1>Hero</h1>
-        </div>
-        <div class="header-usage" id="header-usage-sessions">
-          <div class="usage-item" title="Total usage across all agents">
-            <span class="usage-label">Global Spend:</span>
-            <span class="usage-cost" id="global-cost-sessions">$0.00</span>
-          </div>
-        </div>
-        <div class="header-actions">
-          <button id="agents-btn" class="btn btn-secondary">Agents</button>
-          <button id="abilities-btn" class="btn btn-secondary">Abilities</button>
-          <button id="new-session-btn" class="btn btn-primary">New Session</button>
-          <button id="logout-btn" class="btn btn-secondary">Logout</button>
-        </div>
-      </header>
+    <div id="sessions-view" class="view" data-view="sessions" style="display: none;">
+      <hero-header id="sessions-header"></hero-header>
       <main class="sessions-main">
-        <div class="sessions-content">
-          <div class="sessions-header">
-            <h2>Your Sessions</h2>
-            <div class="sessions-toolbar">
-              <div class="search-box">
-                <input type="text" id="session-search" placeholder="Search sessions..." autocomplete="off">
-              </div>
-              <button id="toggle-archived" class="btn btn-icon" title="Show/hide archived sessions">
-                <span class="icon-eye">👁</span>
-              </button>
-            </div>
-          </div>
-          <div id="sessions-list" class="sessions-list">
-            <div class="loading">Loading sessions...</div>
-          </div>
-        </div>
+        <hero-sidebar id="sessions-sidebar"></hero-sidebar>
       </main>
     </div>
 
     <!-- Chat View -->
-    <div id="chat-view" class="view" style="display: none;">
-      <header class="header">
-        <div class="header-left">
-          <button id="back-btn" class="btn btn-icon" title="Back to sessions">&larr;</button>
-          <h1 id="session-title">Session</h1>
-        </div>
-        <div class="header-usage" id="header-usage-chat">
-          <div class="usage-item" title="Total usage across all agents">
-            <span class="usage-label">Global Spend:</span>
-            <span class="usage-cost" id="global-cost-chat">$0.00</span>
-          </div>
-          <div class="usage-item usage-service" title="Usage for this API key/service">
-            <span class="usage-label">Service Spend:</span>
-            <span class="usage-cost" id="service-cost-chat">$0.00</span>
-          </div>
-          <div class="usage-item usage-session" title="Usage in this session">
-            <span class="usage-label">Session Spend:</span>
-            <span class="usage-cost" id="session-cost-chat">$0.00</span>
-          </div>
-        </div>
-        <div class="header-actions">
-          <label class="checkbox-label">
-            <input type="checkbox" id="show-hidden-toggle">
-            <span>Show hidden</span>
-          </label>
-          <select id="session-select" class="session-select">
-            <option value="">Switch session...</option>
-          </select>
-          <button id="clear-btn" class="btn btn-secondary">Clear</button>
-          <button id="chat-logout-btn" class="btn btn-secondary">Logout</button>
-        </div>
-      </header>
+    <div id="chat-view" class="view" data-view="chat" style="display: none;">
+      <hero-header id="chat-header"></hero-header>
       <main class="chat-main">
-        <div id="messages" class="messages-container"></div>
-        <button id="scroll-to-bottom" class="scroll-to-bottom-btn" title="Scroll to bottom" style="display: none;">
-          <span class="chevron-down">&#8964;</span>
-        </button>
+        <hero-chat id="chat"></hero-chat>
       </main>
       <footer class="chat-footer">
-        <div class="input-container">
-          <textarea id="message-input" placeholder="Type a message... (Enter to send, Shift+Enter for new line)" rows="1"></textarea>
-          <button id="send-btn" class="btn btn-primary">Send</button>
-        </div>
+        <hero-input id="chat-input"></hero-input>
       </footer>
     </div>
 
@@ -367,7 +307,13 @@
       </div>
       <div id="operations-list" class="operations-list"></div>
     </div>
-  </div>
+  </hero-app>
+
+  <!-- Component imports (ES modules) -->
+  <script type="module">
+    // Hero components (includes Mythix-UI dependency)
+    import './js/components/index.js';
+  </script>
 
   <script src="https://cdn.jsdelivr.net/npm/markdown-it@14.1.0/dist/markdown-it.min.js"></script>
   <script src="js/components/hml-prompt.js?v=9"></script>

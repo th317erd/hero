@@ -55,7 +55,8 @@ const elements = {
   // Chat
   sessionTitle:       document.getElementById('session-title'),
   sessionSelect:      document.getElementById('session-select'),
-  messagesContainer:  document.getElementById('messages'),
+  messagesContainer:  document.getElementById('chat'),  // hero-chat component
+  heroChat:           document.getElementById('chat'),  // hero-chat component reference
   messageInput:       document.getElementById('message-input'),
   sendBtn:            document.getElementById('send-btn'),
   clearBtn:           document.getElementById('clear-btn'),

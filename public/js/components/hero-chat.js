@@ -102,6 +102,70 @@ export class HeroChat extends HeroComponent {
   }
 
   /**
+   * Get the messages container element (for external insertions).
+   * @returns {HTMLElement|null}
+   */
+  get $messages() {
+    return this.querySelector('.messages');
+  }
+
+  /**
+   * Get the innerHTML of the messages container (for compatibility).
+   * @returns {string}
+   */
+  get innerHTML() {
+    let msgs = this.$messages;
+    return (msgs) ? msgs.innerHTML : '';
+  }
+
+  /**
+   * Set innerHTML of the messages container (for compatibility).
+   * @param {string} html
+   */
+  set innerHTML(html) {
+    let msgs = this.$messages;
+    if (msgs) {
+      msgs.innerHTML = html;
+    }
+  }
+
+  /**
+   * Insert HTML adjacent to messages (for compatibility with approval/question UI).
+   * @param {string} position - 'beforeend', 'afterbegin', etc.
+   * @param {string} html
+   */
+  insertAdjacentHTML(position, html) {
+    let msgs = this.$messages;
+    if (msgs) {
+      msgs.insertAdjacentHTML(position, html);
+      this.scrollToBottom();
+    }
+  }
+
+  /**
+   * Append a child element to messages (for compatibility).
+   * @param {Node} child
+   * @returns {Node}
+   */
+  appendChild(child) {
+    let msgs = this.$messages;
+    if (msgs) {
+      let result = msgs.appendChild(child);
+      this.scrollToBottom();
+      return result;
+    }
+    return child;
+  }
+
+  /**
+   * Get parent element (for compatibility - returns the chat-main).
+   * @returns {HTMLElement|null}
+   */
+  get parentElement() {
+    return this.querySelector('.chat-main');
+  }
+
+  /**
    * Component mounted.
    */
   mounted() {
@@ -116,8 +180,8 @@ export class HeroChat extends HeroComponent {
       })
     );
 
-    // Setup scroll listener
-    let container = this.querySelector('.chat-main');
+    // Setup scroll listener on parent .chat-main
+    let container = this.closest('.chat-main');
     if (container) {
       container.addEventListener('scroll', () => this.#updateScrollButton());
     }
@@ -195,11 +259,19 @@ export class HeroChat extends HeroComponent {
   }
 
   /**
+   * Get the scrollable container (parent .chat-main).
+   * @returns {HTMLElement|null}
+   */
+  #getScrollContainer() {
+    return this.closest('.chat-main');
+  }
+
+  /**
    * Check if near bottom of scroll.
    * @returns {boolean}
    */
   isNearBottom() {
-    let container = this.querySelector('.chat-main');
+    let container = this.#getScrollContainer();
     if (!container) return true;
     return container.scrollHeight - container.scrollTop - container.clientHeight < this.#scrollThreshold;
   }
@@ -218,7 +290,7 @@ export class HeroChat extends HeroComponent {
    */
   forceScrollToBottom() {
     requestAnimationFrame(() => {
-      let container = this.querySelector('.chat-main');
+      let container = this.#getScrollContainer();
       if (container) {
         container.scrollTop = container.scrollHeight;
       }
@@ -281,7 +353,12 @@ export class HeroChat extends HeroComponent {
     let session = this.session;
 
     if (!session) {
-      this.innerHTML = '<div class="no-session">Select a session to start chatting</div>';
+      // Render empty state - uses class for styling compatibility
+      HeroComponent.prototype.render.call(this, `
+        <div class="messages messages-container">
+          <div class="no-session">Select a session to start chatting</div>
+        </div>
+      `);
       return;
     }
 
@@ -293,31 +370,16 @@ export class HeroChat extends HeroComponent {
       streamingHtml = this.#renderStreamingMessage();
     }
 
-    this.innerHTML = `
-      <div class="chat-header">
-        <h2 class="session-title">${escapeHtml(session.name)}</h2>
-        <div class="chat-actions">
-          <button class="toggle-hidden" onclick="this.closest('hero-chat').toggleHiddenMessages()">
-            ${this.#showHiddenMessages ? 'Hide' : 'Show'} hidden
-          </button>
-        </div>
-      </div>
-      <div class="chat-main">
-        <div class="messages">
-          ${messagesHtml}
-          ${streamingHtml}
-        </div>
+    // Render just the messages container (header is handled by hero-header externally)
+    HeroComponent.prototype.render.call(this, `
+      <div class="messages messages-container">
+        ${messagesHtml}
+        ${streamingHtml}
       </div>
       <button class="scroll-to-bottom" style="display: none" onclick="this.closest('hero-chat').forceScrollToBottom()">
         ↓
       </button>
-    `;
-
-    // Re-attach scroll listener
-    let container = this.querySelector('.chat-main');
-    if (container) {
-      container.addEventListener('scroll', () => this.#updateScrollButton());
-    }
+    `);
   }
 
   /**
@@ -404,12 +466,16 @@ export class HeroChat extends HeroComponent {
   }
 
   /**
-   * Render markup (placeholder - will use external renderer).
+   * Render markup using HML renderer.
    * @param {string} text
    * @returns {string}
    */
   #renderMarkup(text) {
-    // For now, just escape HTML - will integrate with markup.js
+    // Use global renderMarkup from markup.js if available
+    if (typeof window.renderMarkup === 'function') {
+      return window.renderMarkup(text);
+    }
+    // Fallback: escape HTML
     return escapeHtml(text).replace(/\n/g, '<br>');
   }
 

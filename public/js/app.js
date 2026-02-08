@@ -165,6 +165,36 @@ function renderMessagesImpl() {
     renderMaxWaitTimer = null;
   }
 
+  // Use hero-chat component if available
+  if (elements.heroChat && typeof elements.heroChat.setMessages === 'function') {
+    // Set the show hidden state
+    if (state.showHiddenMessages !== elements.heroChat._showHiddenState) {
+      elements.heroChat._showHiddenState = state.showHiddenMessages;
+      if (state.showHiddenMessages) {
+        elements.heroChat.toggleHiddenMessages();
+      }
+    }
+
+    // Update messages via component
+    elements.heroChat.setMessages(state.messages);
+
+    // Set streaming state
+    elements.heroChat.setStreaming(state.streamingMessage);
+
+    // Attach event handlers for user prompt elements
+    state.messages.forEach((message) => {
+      if (message.id) {
+        let messageElement = document.getElementById(`msg-${message.id}`);
+        if (messageElement) {
+          attachUserPromptHandlers(messageElement, message.id);
+        }
+      }
+    });
+
+    return;
+  }
+
+  // Fallback: legacy DOM rendering
   // Preserve streaming message element if it exists (not in state.messages yet)
   let streamingEl = document.getElementById('streaming-message');
   if (streamingEl) {
@@ -855,31 +885,54 @@ function hideTypingIndicator() {
 }
 
 async function handleSendMessage() {
-  let content = elements.messageInput.value.trim();
+  let content = elements.messageInput?.value?.trim();
 
   if (!content || !state.currentSession)
     return;
 
   // Clear input immediately
-  elements.messageInput.value        = '';
-  elements.messageInput.style.height = 'auto';
+  if (elements.messageInput) {
+    elements.messageInput.value        = '';
+    elements.messageInput.style.height = 'auto';
+  }
 
   // Check for commands (always process immediately)
   if (content.startsWith('/')) {
     await handleCommand(content);
-    elements.messageInput.focus();
+    elements.messageInput?.focus();
     return;
   }
 
   // If busy, queue the message instead
   if (state.isLoading) {
     queueMessage(content);
-    elements.messageInput.focus();
+    elements.messageInput?.focus();
     return;
   }
 
   // Process the message (use streaming or batch based on mode)
   if (state.streamingMode)
+    await processMessageStream(content);
+  else
+    await processMessage(content);
+}
+
+/**
+ * Handle sending a message with content already extracted.
+ * Used by hero-input component.
+ */
+async function handleSendMessageContent(content, streaming = true) {
+  if (!content || !state.currentSession)
+    return;
+
+  // If busy, queue the message instead
+  if (state.isLoading) {
+    queueMessage(content);
+    return;
+  }
+
+  // Process the message
+  if (streaming)
     await processMessageStream(content);
   else
     await processMessage(content);
@@ -3482,14 +3535,18 @@ async function confirmDeleteAgent(agentId, name) {
 // Login
 elements.loginForm.addEventListener('submit', handleLogin);
 
-// Sessions
-elements.newSessionBtn.addEventListener('click', () => {
-  if (state.agents.length === 0)
-    showNewAgentModal();
-  else
-    showNewSessionModal();
-});
-elements.logoutBtn.addEventListener('click', handleLogout);
+// Sessions (elements may be null if using hero-header component)
+if (elements.newSessionBtn) {
+  elements.newSessionBtn.addEventListener('click', () => {
+    if (state.agents.length === 0)
+      showNewAgentModal();
+    else
+      showNewSessionModal();
+  });
+}
+if (elements.logoutBtn) {
+  elements.logoutBtn.addEventListener('click', handleLogout);
+}
 
 // Session search
 let searchDebounce = null;
@@ -3516,26 +3573,39 @@ if (elements.toggleArchived) {
   });
 }
 
-// Chat
-elements.sendBtn.addEventListener('click', handleSendMessage);
-elements.messageInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    handleSendMessage();
-  }
-});
-elements.messageInput.addEventListener('input', () => {
-  autoResizeTextarea(elements.messageInput);
-});
-elements.clearBtn.addEventListener('click', handleClearMessages);
-elements.backBtn.addEventListener('click', () => navigate('/'));
-elements.chatLogoutBtn.addEventListener('click', handleLogout);
-elements.sessionSelect.addEventListener('change', () => {
-  let sessionId = elements.sessionSelect.value;
+// Chat (elements may be null if using hero-input component)
+if (elements.sendBtn) {
+  elements.sendBtn.addEventListener('click', handleSendMessage);
+}
+if (elements.messageInput) {
+  elements.messageInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  });
+  elements.messageInput.addEventListener('input', () => {
+    autoResizeTextarea(elements.messageInput);
+  });
+}
+// Chat header elements (may be null if using hero-header component)
+if (elements.clearBtn) {
+  elements.clearBtn.addEventListener('click', handleClearMessages);
+}
+if (elements.backBtn) {
+  elements.backBtn.addEventListener('click', () => navigate('/'));
+}
+if (elements.chatLogoutBtn) {
+  elements.chatLogoutBtn.addEventListener('click', handleLogout);
+}
+if (elements.sessionSelect) {
+  elements.sessionSelect.addEventListener('change', () => {
+    let sessionId = elements.sessionSelect.value;
 
-  if (sessionId)
-    navigate(`/sessions/${sessionId}`);
-});
+    if (sessionId)
+      navigate(`/sessions/${sessionId}`);
+  });
+}
 
 // Scroll-to-bottom button
 if (elements.scrollToBottomBtn && elements.chatMain) {
@@ -3580,8 +3650,10 @@ elements.newAgentModal.addEventListener('click', (e) => {
     hideNewAgentModal();
 });
 
-// Abilities
-elements.abilitiesBtn.addEventListener('click', showAbilitiesModal);
+// Abilities (abilitiesBtn may be null if using hero-header component)
+if (elements.abilitiesBtn) {
+  elements.abilitiesBtn.addEventListener('click', showAbilitiesModal);
+}
 elements.closeAbilitiesModal.addEventListener('click', hideAbilitiesModal);
 elements.abilitiesModal.addEventListener('click', (e) => {
   if (e.target === elements.abilitiesModal)
@@ -3602,8 +3674,10 @@ elements.editAbilityModal.addEventListener('click', (e) => {
     hideEditAbilityModal();
 });
 
-// Agents Modal
-elements.agentsBtn.addEventListener('click', showAgentsModal);
+// Agents Modal (agentsBtn may be null if using hero-header component)
+if (elements.agentsBtn) {
+  elements.agentsBtn.addEventListener('click', showAgentsModal);
+}
 elements.closeAgentsModal.addEventListener('click', hideAgentsModal);
 elements.addAgentFromList.addEventListener('click', () => {
   hideAgentsModal();
@@ -3647,6 +3721,76 @@ elements.toggleOperations.addEventListener('click', () => {
 
 // Browser navigation
 window.addEventListener('popstate', handleRoute);
+
+// ============================================================================
+// Component Events (hero-header, etc.)
+// ============================================================================
+
+// Handle navigate events from components
+document.addEventListener('navigate', (e) => {
+  let path = e.detail?.path;
+  if (path) {
+    window.history.pushState({}, '', BASE_PATH + path);
+    handleRoute();
+  }
+});
+
+// Handle logout events from components
+document.addEventListener('logout', () => {
+  handleLogout();
+});
+
+// Handle show-modal events from components
+// Note: 'new-session' and 'new-agent' are handled by hero-modal-* components
+document.addEventListener('show-modal', (e) => {
+  let modal = e.detail?.modal;
+  switch (modal) {
+    case 'abilities':
+      showAbilitiesModal();
+      break;
+    case 'agents':
+      showAgentsModal();
+      break;
+    // 'new-session' → handled by <hero-modal-session>
+    // 'new-agent' → handled by <hero-modal-agent>
+  }
+});
+
+// Handle clear-messages events from components
+document.addEventListener('clear-messages', () => {
+  if (elements.clearBtn)
+    elements.clearBtn.click();
+});
+
+// Handle toggle-hidden events from components
+document.addEventListener('toggle-hidden', (e) => {
+  state.showHiddenMessages = e.detail?.show ?? false;
+  renderMessages();
+});
+
+// Handle send events from hero-input
+document.addEventListener('send', async (e) => {
+  let { content, streaming, sessionId } = e.detail || {};
+  if (content && sessionId) {
+    // Call the existing sendMessage logic
+    let inputEl = document.querySelector('hero-input');
+    await handleSendMessageContent(content, streaming);
+    if (inputEl) inputEl.loading = false;
+  }
+});
+
+// Handle command events from hero-input
+document.addEventListener('command', (e) => {
+  let command = e.detail?.command;
+  if (command) {
+    handleCommand(command);
+  }
+});
+
+// Handle clear events from hero-input
+document.addEventListener('clear', () => {
+  handleClearMessages();
+});
 
 // ============================================================================
 // Initialize
