@@ -1,88 +1,105 @@
-# Hero Client Migration - Complete ✅
+# Hero Client Migration - Phase 1 Complete
 
-## All Components Implemented
+## Summary
 
-### Infrastructure
-- `hero-base.js` - GlobalState + HeroComponent base class (15 tests)
+Successfully migrated key UI components to Mythix-UI web components.
 
-### Core Components
-| Component | Description | Tests |
-|-----------|-------------|-------|
-| `hero-app.js` | Root shell, routing, auth | 28 |
-| `hero-sidebar.js` | Session list, search, archive | 31 |
-| `hero-chat.js` | Messages, streaming, scroll button | 40 |
-| `hero-input.js` | Input, commands, queue | 34 |
-| `hero-websocket.js` | WebSocket connection handler | 32 |
-| `hero-header.js` | Top bar, cost display | 32 |
-| `hero-modal.js` | Base modal + Session/Agent/Ability modals | 35 |
+### Components Replaced
 
-**Total: 247 new component tests**
+| Original | Component | Status |
+|----------|-----------|--------|
+| Sessions header | `<hero-header>` | Complete |
+| Chat header | `<hero-header>` | Complete |
+| Sessions list | `<hero-sidebar>` | Complete |
+| Message input | `<hero-input>` | Complete |
+| Messages container | `<hero-chat>` | Pending |
+| Modals | `<hero-modal-*>` | Pending |
 
-### Test Count
+### Event Wiring Complete
+
+Component events wired to existing app.js handlers:
+- `navigate` → handleRoute
+- `logout` → handleLogout
+- `show-modal` → showAbilitiesModal, showAgentsModal, showNewSessionModal, showNewAgentModal
+- `clear-messages` → handleClearMessages
+- `toggle-hidden` → renderMessages
+- `send` → handleSendMessageContent
+- `command` → handleCommand
+- `clear` → handleClearMessages
+
+---
+
+## Files Modified
+
+```
+public/index.html
+  - Wrapped with <hero-app>
+  - Added <hero-websocket>
+  - Replaced headers with <hero-header>
+  - Replaced sessions list with <hero-sidebar>
+  - Replaced message input with <hero-input>
+
+public/js/app.js
+  - Added component event listeners
+  - Added null checks for replaced elements
+  - Added handleSendMessageContent function
+
+public/js/components/hero-header.js
+  - Added newSession() method
+  - Added clearMessages() method
+  - Added show hidden toggle handler
+  - Added btn classes to buttons
+
+server/index.mjs
+  - Added /mythix-ui static route
+  - Added /hero/* static routes
+  - Added /components-test route
+
+package.json
+  - Added mythix-ui-core dependency
+```
+
+---
+
+## Test Results
 **505 tests passing** (247 component + 258 server tests)
 
 ---
 
-## Files Created
+## Remaining Work (Future)
 
-```
-public/js/components/
-├── hero-base.js        # GlobalState + HeroComponent
-├── hero-app.js         # Root shell, routing
-├── hero-sidebar.js     # Session list
-├── hero-chat.js        # Chat messages
-├── hero-input.js       # Message input
-├── hero-websocket.js   # WebSocket handler
-├── hero-header.js      # Top bar, costs
-└── hero-modal.js       # Modals (session, agent, ability)
+1. **Replace messages container** - Use `<hero-chat>` for message rendering
+   - Complex due to HML rendering, streaming, tool use display
 
-spec/components/
-├── hero-base-spec.mjs      (15 tests)
-├── hero-app-spec.mjs       (28 tests)
-├── hero-sidebar-spec.mjs   (31 tests)
-├── hero-chat-spec.mjs      (40 tests)
-├── hero-input-spec.mjs     (34 tests)
-├── hero-websocket-spec.mjs (32 tests)
-├── hero-header-spec.mjs    (32 tests)
-└── hero-modal-spec.mjs     (35 tests)
-```
+2. **Replace modals** - Use `<hero-modal-*>` components
+   - Session modal, Agent modal, Ability modal
+
+3. **Remove old code** - Clean up replaced vanilla JS after full migration
 
 ---
 
-## Next Steps
-
-The component architecture is complete. To fully integrate:
-
-1. **Create index.html entry point** - Use `<hero-app>` as root element
-2. **Wire up event handlers** - Connect component events to api.js calls
-3. **Test in browser** - Integration testing with Puppeteer
-4. **Migrate existing functionality** - Move remaining app.js code to components
-5. **Remove old code** - Clean up replaced vanilla JS
-
----
-
-## Component Event Flow
+## Architecture
 
 ```
-<hero-app>
-  ├── Routing events → handleRoute()
-  ├── Auth events → checkAuth(), logout()
-  │
-  ├── <hero-header>
-  │     └── navigate, logout, show-modal events
-  │
-  ├── <hero-sidebar>
-  │     └── navigate, logout, show-modal, toggleArchive events
-  │
-  ├── <hero-chat>
-  │     └── setMessages, addMessage, setStreaming
-  │
-  ├── <hero-input>
-  │     └── send, command, queued, clear events
-  │
-  ├── <hero-websocket>
-  │     └── ws:message, ws:open, ws:close events
-  │
-  └── <hero-modal-*>
-        └── navigate, show-modal events
+<hero-app id="app">
+  <hero-websocket />
+
+  <!-- Login View -->
+  <div data-view="login">...</div>
+
+  <!-- Sessions View -->
+  <div data-view="sessions">
+    <hero-header />
+    <hero-sidebar />
+  </div>
+
+  <!-- Chat View -->
+  <div data-view="chat">
+    <hero-header />
+    <div id="messages">...</div>  <!-- Future: <hero-chat> -->
+    <hero-input />
+  </div>
+
+  <!-- Modals (existing HTML, future: <hero-modal-*>) -->
+</hero-app>
 ```

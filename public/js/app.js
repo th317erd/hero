@@ -184,7 +184,7 @@ function renderMessagesImpl() {
     // Attach event handlers for user prompt elements
     state.messages.forEach((message) => {
       if (message.id) {
-        let messageElement = document.getElementById(`msg-${message.id}`);
+        let messageElement = document.getElementById(`message-${message.id}`);
         if (messageElement) {
           attachUserPromptHandlers(messageElement, message.id);
         }
@@ -217,7 +217,7 @@ function renderMessagesImpl() {
   // Attach event handlers for user prompt elements
   visibleMessages.forEach((message) => {
     if (message.id) {
-      let messageElement = document.getElementById(`msg-${message.id}`);
+      let messageElement = document.getElementById(`message-${message.id}`);
       if (messageElement) {
         attachUserPromptHandlers(messageElement, message.id);
       }
@@ -436,7 +436,7 @@ function renderQuestionAssertion(assertion) {
   let optionsHtml = '';
   if (Array.isArray(options) && options.length > 0) {
     optionsHtml = options.map((opt) =>
-      `<button class="btn btn-secondary question-option" data-assertion-id="${id}" data-answer="${escapeHtml(String(opt))}">${escapeHtml(String(opt))}</button>`
+      `<button class="button button-secondary question-option" data-assertion-id="${id}" data-answer="${escapeHtml(String(opt))}">${escapeHtml(String(opt))}</button>`
     ).join('');
   }
 
@@ -453,7 +453,7 @@ function renderQuestionAssertion(assertion) {
       <div class="question-actions">
         ${optionsHtml}
         <input type="text" class="question-input" placeholder="${placeholder}" data-assertion-id="${id}" data-mode="${mode}" tabindex="0">
-        <button class="btn btn-primary question-submit" data-assertion-id="${id}">Submit</button>
+        <button class="button button-primary question-submit" data-assertion-id="${id}">Submit</button>
       </div>
     </div>
   `;
@@ -521,10 +521,10 @@ function renderAbilityApproval(approval) {
         ${paramsHtml}
       </div>
       <div class="approval-actions">
-        <button class="btn-approve" onclick="handleAbilityApprove('${escapeHtml(executionId)}')">
+        <button class="button-approve" onclick="handleAbilityApprove('${escapeHtml(executionId)}')">
           <span>👍</span> Approve
         </button>
-        <button class="btn-deny" onclick="handleAbilityDeny('${escapeHtml(executionId)}')">
+        <button class="button-deny" onclick="handleAbilityDeny('${escapeHtml(executionId)}')">
           <span>👎</span> Deny
         </button>
       </div>
@@ -559,8 +559,8 @@ function renderAbilityQuestion(question) {
   if (type === 'binary') {
     inputHtml = `
       <div class="question-binary">
-        <button class="btn-yes" onclick="handleAbilityQuestionAnswer('${escapeHtml(questionId)}', true)">👍</button>
-        <button class="btn-no" onclick="handleAbilityQuestionAnswer('${escapeHtml(questionId)}', false)">👎</button>
+        <button class="button-yes" onclick="handleAbilityQuestionAnswer('${escapeHtml(questionId)}', true)">👍</button>
+        <button class="button-no" onclick="handleAbilityQuestionAnswer('${escapeHtml(questionId)}', false)">👎</button>
       </div>
     `;
   } else if (type === 'number' || type === 'float') {
@@ -568,7 +568,7 @@ function renderAbilityQuestion(question) {
     inputHtml = `
       <input type="number" step="${step}" class="question-input" id="ability-q-${escapeHtml(questionId)}"
              placeholder="Enter a ${type}..." value="${defaultValue || ''}">
-      <button class="btn btn-primary" onclick="submitAbilityQuestionInput('${escapeHtml(questionId)}', '${type}')">Submit</button>
+      <button class="button button-primary" onclick="submitAbilityQuestionInput('${escapeHtml(questionId)}', '${type}')">Submit</button>
     `;
   } else if (options && options.length > 0) {
     // Multiple choice
@@ -584,7 +584,7 @@ function renderAbilityQuestion(question) {
     inputHtml = `
       <input type="text" class="question-input" id="ability-q-${escapeHtml(questionId)}"
              placeholder="Type your answer..." value="${defaultValue || ''}">
-      <button class="btn btn-primary" onclick="submitAbilityQuestionInput('${escapeHtml(questionId)}', 'string')">Submit</button>
+      <button class="button button-primary" onclick="submitAbilityQuestionInput('${escapeHtml(questionId)}', 'string')">Submit</button>
     `;
   }
 
@@ -790,8 +790,8 @@ function copyToClipboard(text, buttonEl) {
         copiedSpan.style.display = 'none';
       }, 1500);
     }
-  }).catch((err) => {
-    console.error('Failed to copy:', err);
+  }).catch((error) => {
+    console.error('Failed to copy:', error);
   });
 }
 
@@ -2105,18 +2105,18 @@ async function handleUpdateUsageCommand(args) {
       reason:     'User-reported actual cost',
     });
 
-    let msg = `Usage correction applied.\n\n`;
-    msg += `**Previous:** ${formatCost(result.previousCost)}\n`;
-    msg += `**New:** ${formatCost(result.newCost)}\n`;
+    let usageMessage = `Usage correction applied.\n\n`;
+    usageMessage += `**Previous:** ${formatCost(result.previousCost)}\n`;
+    usageMessage += `**New:** ${formatCost(result.newCost)}\n`;
 
     if (result.correctionAmount !== 0) {
       let sign = (result.correctionAmount >= 0) ? '+' : '';
-      msg += `**Adjustment:** ${sign}${formatCost(result.correctionAmount)}`;
+      usageMessage += `**Adjustment:** ${sign}${formatCost(result.correctionAmount)}`;
     } else {
-      msg += `No adjustment needed - tracking is accurate.`;
+      usageMessage += `No adjustment needed - tracking is accurate.`;
     }
 
-    showSystemMessage(msg);
+    showSystemMessage(usageMessage);
 
     // Reload usage to update the header display
     if (state.currentSession) {
@@ -2841,26 +2841,26 @@ function handleMessageAppend(message) {
   let { messageId, content } = message;
 
   // Find the message in state
-  let msg = state.messages.find((m) => m.id === messageId);
-  if (!msg)
+  let foundMessage = state.messages.find((m) => m.id === messageId);
+  if (!foundMessage)
     return;
 
   // Append content
-  if (typeof msg.content === 'string') {
-    msg.content += content;
-  } else if (Array.isArray(msg.content)) {
-    let lastBlock = msg.content[msg.content.length - 1];
+  if (typeof foundMessage.content === 'string') {
+    foundMessage.content += content;
+  } else if (Array.isArray(foundMessage.content)) {
+    let lastBlock = foundMessage.content[foundMessage.content.length - 1];
     if (lastBlock && lastBlock.type === 'text') {
       lastBlock.text += content;
     } else {
-      msg.content.push({ type: 'text', text: content });
+      foundMessage.content.push({ type: 'text', text: content });
     }
   }
 
   // Update the message in the DOM
-  let msgEl = document.querySelector(`[data-message-id="${messageId}"] .message-content`);
-  if (msgEl)
-    msgEl.textContent = (typeof msg.content === 'string') ? msg.content : msg.content.find((b) => b.type === 'text')?.text || '';
+  let messageElement = document.querySelector(`[data-message-id="${messageId}"] .message-content`);
+  if (messageElement)
+    messageElement.textContent = (typeof foundMessage.content === 'string') ? foundMessage.content : foundMessage.content.find((b) => b.type === 'text')?.text || '';
 }
 
 function handleElementNew(message) {
@@ -2937,14 +2937,14 @@ function updateAssertionUI(messageId, assertionId) {
 
 function attachQuestionListeners(messageId, assertionId) {
   // Option buttons
-  document.querySelectorAll(`.question-option[data-assertion-id="${assertionId}"]`).forEach((btn) => {
-    btn.onclick = () => submitQuestionAnswer(assertionId, btn.dataset.answer);
+  document.querySelectorAll(`.question-option[data-assertion-id="${assertionId}"]`).forEach((button) => {
+    button.onclick = () => submitQuestionAnswer(assertionId, button.dataset.answer);
   });
 
   // Submit button
-  let submitBtn = document.querySelector(`.question-submit[data-assertion-id="${assertionId}"]`);
-  if (submitBtn) {
-    submitBtn.onclick = () => {
+  let submitButton = document.querySelector(`.question-submit[data-assertion-id="${assertionId}"]`);
+  if (submitButton) {
+    submitButton.onclick = () => {
       let input = document.querySelector(`.question-input[data-assertion-id="${assertionId}"]`);
       if (input && input.value.trim())
         submitQuestionAnswer(assertionId, input.value.trim());
@@ -3154,7 +3154,7 @@ function renderOperationsPanel() {
         <div class="operation-status ${op.status}">${op.status}</div>
       </div>
       ${(op.status === 'pending' || op.status === 'running')
-        ? `<button class="btn operation-abort" onclick="abortOperation('${op.id}')">Abort</button>`
+        ? `<button class="button operation-abort" onclick="abortOperation('${op.id}')">Abort</button>`
         : ''}
     </div>
   `).join('');
@@ -3239,8 +3239,8 @@ function renderUserAbilities() {
         <div class="ability-description">${escapeHtml(a.description || 'No description')}</div>
       </div>
       <div class="ability-actions">
-        <button class="btn btn-secondary" onclick="editAbility(${a.id})">Edit</button>
-        <button class="btn btn-secondary" onclick="confirmDeleteAbility(${a.id}, '${escapeHtml(a.name)}')">Delete</button>
+        <button class="button button-secondary" onclick="editAbility(${a.id})">Edit</button>
+        <button class="button button-secondary" onclick="confirmDeleteAbility(${a.id}, '${escapeHtml(a.name)}')">Delete</button>
       </div>
     </div>
   `).join('');
@@ -3363,8 +3363,8 @@ async function confirmDeleteAbility(id, name) {
 }
 
 function switchAbilityTab(tab) {
-  document.querySelectorAll('.tab-btn').forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.tab === tab);
+  document.querySelectorAll('.tab-button').forEach((button) => {
+    button.classList.toggle('active', button.dataset.tab === tab);
   });
 
   document.querySelectorAll('.tab-content').forEach((content) => {
@@ -3459,8 +3459,8 @@ function renderAgentsList() {
           </div>
         </div>
         <div class="agent-actions">
-          <button class="btn btn-secondary btn-sm" onclick="showAgentConfigModal(${agent.id})">Config</button>
-          <button class="btn btn-secondary btn-sm" onclick="confirmDeleteAgent(${agent.id}, '${escapeHtml(agent.name)}')">Delete</button>
+          <button class="button button-secondary button-sm" onclick="showAgentConfigModal(${agent.id})">Config</button>
+          <button class="button button-secondary button-sm" onclick="confirmDeleteAgent(${agent.id}, '${escapeHtml(agent.name)}')">Delete</button>
         </div>
       </div>
     `;
@@ -3589,8 +3589,8 @@ if (elements.messageInput) {
   });
 }
 // Chat header elements (may be null if using hero-header component)
-if (elements.clearBtn) {
-  elements.clearBtn.addEventListener('click', handleClearMessages);
+if (elements.clearButton) {
+  elements.clearButton.addEventListener('click', handleClearMessages);
 }
 if (elements.backBtn) {
   elements.backBtn.addEventListener('click', () => navigate('/'));
@@ -3650,43 +3650,61 @@ elements.newAgentModal.addEventListener('click', (e) => {
     hideNewAgentModal();
 });
 
-// Abilities (abilitiesBtn may be null if using hero-header component)
-if (elements.abilitiesBtn) {
-  elements.abilitiesBtn.addEventListener('click', showAbilitiesModal);
+// Abilities (abilitiesButton may be null if using hero-header component)
+if (elements.abilitiesButton) {
+  elements.abilitiesButton.addEventListener('click', showAbilitiesModal);
 }
-elements.closeAbilitiesModal.addEventListener('click', hideAbilitiesModal);
-elements.abilitiesModal.addEventListener('click', (e) => {
-  if (e.target === elements.abilitiesModal)
-    hideAbilitiesModal();
-});
-elements.newAbilityBtn.addEventListener('click', showNewAbilityModal);
+if (elements.closeAbilitiesModal) {
+  elements.closeAbilitiesModal.addEventListener('click', hideAbilitiesModal);
+}
+if (elements.abilitiesModal) {
+  elements.abilitiesModal.addEventListener('click', (e) => {
+    if (e.target === elements.abilitiesModal)
+      hideAbilitiesModal();
+  });
+}
+if (elements.newAbilityButton) {
+  elements.newAbilityButton.addEventListener('click', showNewAbilityModal);
+}
 
 // Abilities tab switching
-document.querySelectorAll('.tab-btn').forEach((btn) => {
-  btn.addEventListener('click', () => switchAbilityTab(btn.dataset.tab));
+document.querySelectorAll('.tab-button').forEach((button) => {
+  button.addEventListener('click', () => switchAbilityTab(button.dataset.tab));
 });
 
 // Edit Ability Modal
-elements.editAbilityForm.addEventListener('submit', handleSaveUserAbility);
-elements.cancelEditAbility.addEventListener('click', () => hideEditAbilityModal(true));
-elements.editAbilityModal.addEventListener('click', (e) => {
-  if (e.target === elements.editAbilityModal)
-    hideEditAbilityModal();
-});
-
-// Agents Modal (agentsBtn may be null if using hero-header component)
-if (elements.agentsBtn) {
-  elements.agentsBtn.addEventListener('click', showAgentsModal);
+if (elements.editAbilityForm) {
+  elements.editAbilityForm.addEventListener('submit', handleSaveUserAbility);
 }
-elements.closeAgentsModal.addEventListener('click', hideAgentsModal);
-elements.addAgentFromList.addEventListener('click', () => {
-  hideAgentsModal();
-  showNewAgentModal();
-});
-elements.agentsModal.addEventListener('click', (e) => {
-  if (e.target === elements.agentsModal)
+if (elements.cancelEditAbility) {
+  elements.cancelEditAbility.addEventListener('click', () => hideEditAbilityModal(true));
+}
+if (elements.editAbilityModal) {
+  elements.editAbilityModal.addEventListener('click', (e) => {
+    if (e.target === elements.editAbilityModal)
+      hideEditAbilityModal();
+  });
+}
+
+// Agents Modal (agentsButton may be null if using hero-header component)
+if (elements.agentsButton) {
+  elements.agentsButton.addEventListener('click', showAgentsModal);
+}
+if (elements.closeAgentsModal) {
+  elements.closeAgentsModal.addEventListener('click', hideAgentsModal);
+}
+if (elements.addAgentFromList) {
+  elements.addAgentFromList.addEventListener('click', () => {
     hideAgentsModal();
-});
+    showNewAgentModal();
+  });
+}
+if (elements.agentsModal) {
+  elements.agentsModal.addEventListener('click', (e) => {
+    if (e.target === elements.agentsModal)
+      hideAgentsModal();
+  });
+}
 
 // Agent Config Modal
 elements.agentConfigForm.addEventListener('submit', handleSaveAgentConfig);
@@ -3758,8 +3776,7 @@ document.addEventListener('show-modal', (e) => {
 
 // Handle clear-messages events from components
 document.addEventListener('clear-messages', () => {
-  if (elements.clearBtn)
-    elements.clearBtn.click();
+  handleClearMessages();
 });
 
 // Handle toggle-hidden events from components
@@ -3769,7 +3786,7 @@ document.addEventListener('toggle-hidden', (e) => {
 });
 
 // Handle send events from hero-input
-document.addEventListener('send', async (e) => {
+document.addEventListener('hero:send-message', async (e) => {
   let { content, streaming, sessionId } = e.detail || {};
   if (content && sessionId) {
     // Call the existing sendMessage logic
@@ -3780,7 +3797,7 @@ document.addEventListener('send', async (e) => {
 });
 
 // Handle command events from hero-input
-document.addEventListener('command', (e) => {
+document.addEventListener('hero:command', (e) => {
   let command = e.detail?.command;
   if (command) {
     handleCommand(command);
@@ -3788,7 +3805,7 @@ document.addEventListener('command', (e) => {
 });
 
 // Handle clear events from hero-input
-document.addEventListener('clear', () => {
+document.addEventListener('hero:clear', () => {
   handleClearMessages();
 });
 

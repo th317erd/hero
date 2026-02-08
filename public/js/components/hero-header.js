@@ -144,7 +144,7 @@ export class HeroHeader extends HeroComponent {
    * Navigate back to sessions.
    */
   goBack() {
-    this.dispatchEvent(new CustomEvent('navigate', {
+    this.dispatchEvent(new CustomEvent('hero:navigate', {
       detail: { path: '/' },
       bubbles: true,
     }));
@@ -154,14 +154,14 @@ export class HeroHeader extends HeroComponent {
    * Logout user.
    */
   logout() {
-    this.dispatchEvent(new CustomEvent('logout', { bubbles: true }));
+    this.dispatchEvent(new CustomEvent('hero:logout', { bubbles: true }));
   }
 
   /**
    * Show abilities modal.
    */
   showAbilities() {
-    this.dispatchEvent(new CustomEvent('show-modal', {
+    this.dispatchEvent(new CustomEvent('hero:show-modal', {
       detail: { modal: 'abilities' },
       bubbles: true,
     }));
@@ -171,8 +171,36 @@ export class HeroHeader extends HeroComponent {
    * Show agents modal.
    */
   showAgents() {
-    this.dispatchEvent(new CustomEvent('show-modal', {
+    this.dispatchEvent(new CustomEvent('hero:show-modal', {
       detail: { modal: 'agents' },
+      bubbles: true,
+    }));
+  }
+
+  /**
+   * Show new session modal.
+   */
+  newSession() {
+    this.dispatchEvent(new CustomEvent('hero:show-modal', {
+      detail: { modal: 'new-session' },
+      bubbles: true,
+    }));
+  }
+
+  /**
+   * Clear messages in current session.
+   */
+  clearMessages() {
+    this.dispatchEvent(new CustomEvent('hero:clear-messages', { bubbles: true }));
+  }
+
+  /**
+   * Toggle show hidden messages.
+   * @param {Event} e
+   */
+  #handleShowHiddenToggle(e) {
+    this.dispatchEvent(new CustomEvent('hero:toggle-hidden', {
+      detail: { show: e.target.checked },
       bubbles: true,
     }));
   }
@@ -184,7 +212,7 @@ export class HeroHeader extends HeroComponent {
   #handleSessionChange(e) {
     let sessionId = parseInt(e.target.value, 10);
     if (sessionId) {
-      this.dispatchEvent(new CustomEvent('navigate', {
+      this.dispatchEvent(new CustomEvent('hero:navigate', {
         detail: { path: `/sessions/${sessionId}` },
         bubbles: true,
       }));
@@ -207,16 +235,16 @@ export class HeroHeader extends HeroComponent {
     let usageHtml = this.#renderUsage(globalSpend);
     let actionsHtml = this.#renderActions();
 
-    this.innerHTML = `
+    HeroComponent.prototype.render.call(this, `
       <header class="header">
         <div class="header-left">
           ${this.#view === 'chat' ? `
-            <button class="back-btn" onclick="this.closest('hero-header').goBack()">← Back</button>
-          ` : ''}
-          <h1 class="header-title">${escapeHtml(this.title)}</h1>
-          ${this.#view === 'chat' && this.currentSession ? `
-            <span class="header-agent">(${escapeHtml(this.agentName)})</span>
-          ` : ''}
+            <button class="button button-icon back-button" data-event-onclick="goBack" title="Back to sessions">&larr;</button>
+            <h1 class="header-title" id="session-title">${escapeHtml(this.title)}</h1>
+          ` : `
+            <img src="assets/images/hero-cape.svg?v=1" alt="Hero" class="logo">
+            <h1 class="header-title">Hero</h1>
+          `}
           ${wsConnected ? '' : '<span class="ws-status disconnected">⚠ Disconnected</span>'}
         </div>
         ${usageHtml}
@@ -224,12 +252,17 @@ export class HeroHeader extends HeroComponent {
           ${actionsHtml}
         </div>
       </header>
-    `;
+    `);
 
-    // Attach session select handler if present
+    // Attach change handlers
     let sessionSelect = this.querySelector('.session-select');
     if (sessionSelect) {
       sessionSelect.addEventListener('change', (e) => this.#handleSessionChange(e));
+    }
+
+    let showHiddenToggle = this.querySelector('.show-hidden-toggle');
+    if (showHiddenToggle) {
+      showHiddenToggle.addEventListener('change', (e) => this.#handleShowHiddenToggle(e));
     }
   }
 
@@ -279,15 +312,10 @@ export class HeroHeader extends HeroComponent {
   #renderActions() {
     if (this.#view === 'sessions') {
       return `
-        <button class="abilities-btn" onclick="this.closest('hero-header').showAbilities()">
-          Abilities
-        </button>
-        <button class="agents-btn" onclick="this.closest('hero-header').showAgents()">
-          Agents
-        </button>
-        <button class="logout-btn" onclick="this.closest('hero-header').logout()">
-          Logout
-        </button>
+        <button class="button button-secondary agents-button" data-event-onclick="showAgents">Agents</button>
+        <button class="button button-secondary abilities-button" data-event-onclick="showAbilities">Abilities</button>
+        <button class="button button-primary new-session-button" data-event-onclick="newSession">New Session</button>
+        <button class="button button-secondary logout-button" data-event-onclick="logout">Logout</button>
       `;
     }
 
@@ -302,12 +330,15 @@ export class HeroHeader extends HeroComponent {
       }
 
       return `
-        <select class="session-select">
+        <label class="checkbox-label">
+          <input type="checkbox" class="show-hidden-toggle" id="show-hidden-toggle">
+          <span>Show hidden</span>
+        </label>
+        <select class="session-select" id="session-select">
           ${optionsHtml}
         </select>
-        <button class="logout-btn" onclick="this.closest('hero-header').logout()">
-          Logout
-        </button>
+        <button class="button button-secondary clear-button" id="clear-button" data-event-onclick="clearMessages">Clear</button>
+        <button class="button button-secondary logout-button" id="chat-logout-button" data-event-onclick="logout">Logout</button>
       `;
     }
 

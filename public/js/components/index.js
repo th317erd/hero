@@ -28,7 +28,7 @@ export { HeroInput } from './hero-input.js';
 export { HeroWebSocket } from './hero-websocket.js';
 
 // Modals
-export { HeroModal, HeroModalSession, HeroModalAgent, HeroModalAbility } from './hero-modal.js';
+export { HeroModal, HeroModalSession, HeroModalAgent, HeroModalAbility } from './hero-modal.js?v=4';
 
 // One-time initialization
 if (!window.__heroComponentsLoaded) {

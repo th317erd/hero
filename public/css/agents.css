@@ -53,7 +53,7 @@
   gap: 8px;
 }
 
-.ability-actions .btn {
+.ability-actions .button {
   padding: 4px 8px;
   font-size: 12px;
 }
@@ -124,7 +124,7 @@
   gap: 8px;
 }
 
-.agent-actions .btn {
+.agent-actions .button {
   padding: 4px 8px;
   font-size: 12px;
 }

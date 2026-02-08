@@ -1,6 +1,6 @@
 /* Hero - Button Styles */
 
-.btn {
+.button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -13,49 +13,49 @@
   transition: background 0.2s, transform 0.1s;
 }
 
-.btn:hover {
+.button:hover {
   transform: translateY(-1px);
 }
 
-.btn:active {
+.button:active {
   transform: translateY(0);
 }
 
-.btn:disabled {
+.button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
   transform: none;
 }
 
-.btn-primary {
+.button-primary {
   background: var(--accent);
   color: white;
 }
 
-.btn-primary:hover:not(:disabled) {
+.button-primary:hover:not(:disabled) {
   background: var(--accent-hover);
 }
 
-.btn-secondary {
+.button-secondary {
   background: var(--bg-tertiary);
   color: var(--text-primary);
 }
 
-.btn-secondary:hover:not(:disabled) {
+.button-secondary:hover:not(:disabled) {
   background: #1a4a7a;
 }
 
-.btn-icon {
+.button-icon {
   padding: 8px 12px;
   background: transparent;
   color: var(--text-primary);
   font-size: 18px;
 }
 
-.btn-icon:hover {
+.button-icon:hover {
   background: var(--bg-tertiary);
 }
 
-.btn-block {
+.button-block {
   width: 100%;
 }

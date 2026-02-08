@@ -12,7 +12,7 @@ import {
   MythixUIComponent,
   DynamicProperty,
   Utils,
-} from '/mythix-ui/mythix-ui-core/dist/index.js';
+} from '@cdn/mythix-ui-core@1';
 
 // ============================================================================
 // Global State (Tier 1)
@@ -97,6 +97,18 @@ export class HeroComponent extends MythixUIComponent {
   createShadowDOM() {
     // Light DOM by default - no shadow root
     // Override in subclass with super.createShadowDOM() to use Shadow DOM
+  }
+
+  /**
+   * Render HTML content to the component.
+   * Uses mythixUI.setHTML() to set innerHTML and process data-event-* attributes.
+   * @param {string} html - HTML string to render
+   */
+  render(html) {
+    if (typeof html === 'string') {
+      // Use Mythix UI's setHTML to set innerHTML AND process event bindings
+      globalThis.mythixUI.setHTML(this, html);
+    }
   }
 
   /**

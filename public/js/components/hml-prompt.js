@@ -396,7 +396,7 @@ class HmlPrompt extends HTMLElement {
         }
 
         /* Submit button for types that need explicit submit */
-        .submit-btn {
+        .submit-button {
           background: #3b82f6;
           color: white;
           border: none;
@@ -407,7 +407,7 @@ class HmlPrompt extends HTMLElement {
           font-size: 0.9em;
         }
 
-        .submit-btn:hover {
+        .submit-button:hover {
           background: #2563eb;
         }
 
@@ -587,12 +587,12 @@ class HmlPrompt extends HTMLElement {
       <span class="container">
         <span class="question-inline">${question}</span>
         <input type="color" class="input-color" value="${defVal}" title="Pick a color">
-        <button class="submit-btn">OK</button>
+        <button class="submit-button">OK</button>
       </span>
     `;
 
     let input  = this.shadowRoot.querySelector('.input-color');
-    let submit = this.shadowRoot.querySelector('.submit-btn');
+    let submit = this.shadowRoot.querySelector('.submit-button');
 
     submit._handlingClick = false;
     submit.addEventListener('click', (e) => {
@@ -616,12 +616,12 @@ class HmlPrompt extends HTMLElement {
           <input type="checkbox" class="input-checkbox" ${checked}>
           <span class="question-inline">${question}</span>
         </label>
-        <button class="submit-btn">OK</button>
+        <button class="submit-button">OK</button>
       </span>
     `;
 
     let input  = this.shadowRoot.querySelector('.input-checkbox');
-    let submit = this.shadowRoot.querySelector('.submit-btn');
+    let submit = this.shadowRoot.querySelector('.submit-button');
 
     submit._handlingClick = false;
     submit.addEventListener('click', (e) => {
@@ -656,11 +656,11 @@ class HmlPrompt extends HTMLElement {
         <div class="checkbox-group">
           ${optionsHtml}
         </div>
-        <button class="submit-btn" style="margin-top: 8px;">OK</button>
+        <button class="submit-button" style="margin-top: 8px;">OK</button>
       </div>
     `;
 
-    let submit = this.shadowRoot.querySelector('.submit-btn');
+    let submit = this.shadowRoot.querySelector('.submit-button');
     submit._handlingClick = false;
     submit.addEventListener('click', (e) => {
       if (submit._handlingClick || e._hmlHandled) return;
@@ -698,11 +698,11 @@ class HmlPrompt extends HTMLElement {
         <div class="radio-group">
           ${optionsHtml}
         </div>
-        <button class="submit-btn" style="margin-top: 8px;">OK</button>
+        <button class="submit-button" style="margin-top: 8px;">OK</button>
       </div>
     `;
 
-    let submit = this.shadowRoot.querySelector('.submit-btn');
+    let submit = this.shadowRoot.querySelector('.submit-button');
     submit._handlingClick = false;
     submit.addEventListener('click', (e) => {
       if (submit._handlingClick || e._hmlHandled) return;
@@ -734,12 +734,12 @@ class HmlPrompt extends HTMLElement {
           <option value="">-- Select --</option>
           ${optionsHtml}
         </select>
-        <button class="submit-btn">OK</button>
+        <button class="submit-button">OK</button>
       </span>
     `;
 
     let select = this.shadowRoot.querySelector('.input-select');
-    let submit = this.shadowRoot.querySelector('.submit-btn');
+    let submit = this.shadowRoot.querySelector('.submit-button');
 
     submit._handlingClick = false;
     submit.addEventListener('click', (e) => {
@@ -769,13 +769,13 @@ class HmlPrompt extends HTMLElement {
           <span class="range-value">${defVal}</span>
           <input type="range" class="input-range" min="${minVal}" max="${maxVal}" step="${stepVal}" value="${defVal}">
         </span>
-        <button class="submit-btn">OK</button>
+        <button class="submit-button">OK</button>
       </span>
     `;
 
     let input      = this.shadowRoot.querySelector('.input-range');
     let valueLabel = this.shadowRoot.querySelector('.range-value');
-    let submit     = this.shadowRoot.querySelector('.submit-btn');
+    let submit     = this.shadowRoot.querySelector('.submit-button');
 
     input.addEventListener('input', () => {
       valueLabel.textContent = input.value;

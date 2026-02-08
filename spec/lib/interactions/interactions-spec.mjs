@@ -1026,7 +1026,7 @@ describe('End-to-End Interaction Flow', () => {
 
   it('should provide useful feedback to agent on error', async () => {
     let agentMessage = agentResponse({
-      interaction_id:  'err-1',
+      interaction_id:  'error-1',
       target_id:       '@system',
       target_property: 'nonexistent_function',
       payload:         {},

@@ -54,14 +54,23 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// API routes
+// API routes (serve at both /api and /hero/api for direct and proxied access)
 app.use('/api', routes);
+app.use('/hero/api', routes);
 
-// Static files
+// Static files (serve at both /path and /hero/path for direct and proxied access)
 app.use('/css', express.static(join(__dirname, '..', 'public', 'css')));
 app.use('/js', express.static(join(__dirname, '..', 'public', 'js')));
 app.use('/assets', express.static(join(__dirname, '..', 'public', 'assets')));
 app.use('/favicon.ico', express.static(join(__dirname, '..', 'public', 'favicon.ico')));
+app.use('/mythix-ui', express.static(join(__dirname, '..', 'node_modules')));
+
+// Also serve static files under /hero/ prefix for direct server access
+app.use('/hero/css', express.static(join(__dirname, '..', 'public', 'css')));
+app.use('/hero/js', express.static(join(__dirname, '..', 'public', 'js')));
+app.use('/hero/assets', express.static(join(__dirname, '..', 'public', 'assets')));
+app.use('/hero/favicon.ico', express.static(join(__dirname, '..', 'public', 'favicon.ico')));
+app.use('/hero/mythix-ui', express.static(join(__dirname, '..', 'node_modules')));
 
 // Login page - accessible without auth
 app.get('/login', optionalAuth, (req, res) => {
@@ -72,14 +81,19 @@ app.get('/login', optionalAuth, (req, res) => {
   res.type('html').send(indexHtml);
 });
 
+// Components test page (dev only)
+app.get('/components-test', (req, res) => {
+  res.sendFile(join(__dirname, '..', 'public', 'components-test.html'));
+});
+
 // All other routes require auth and serve the SPA
 app.get('*', requireAuth, (req, res) => {
   res.type('html').send(indexHtml);
 });
 
 // Error handling middleware
-app.use((err, req, res, next) => {
-  console.error('Server error:', err);
+app.use((error, req, res, next) => {
+  console.error('Server error:', error);
 
   if (req.path.startsWith('/api/'))
     return res.status(500).json({ error: 'Internal server error' });

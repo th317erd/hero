@@ -155,7 +155,7 @@ describe('Frame Context Builder', () => {
 
     it('should apply update frames correctly', () => {
       createFrame({
-        id: 'msg-1',
+        id: 'message-1',
         sessionId: 1,
         type: 'message',
         authorType: 'user',
@@ -166,7 +166,7 @@ describe('Frame Context Builder', () => {
         sessionId: 1,
         type: 'update',
         authorType: 'system',
-        targetIds: ['frame:msg-1'],
+        targetIds: ['frame:message-1'],
         payload: { content: 'Updated message' },
       }, db);
 
@@ -195,7 +195,7 @@ describe('Frame Context Builder', () => {
   describe('getFramesForDisplay', () => {
     it('should return frames and compiled state', () => {
       createFrame({
-        id: 'msg-1',
+        id: 'message-1',
         sessionId: 1,
         type: 'message',
         authorType: 'user',
@@ -206,7 +206,7 @@ describe('Frame Context Builder', () => {
         sessionId: 1,
         type: 'update',
         authorType: 'system',
-        targetIds: ['frame:msg-1'],
+        targetIds: ['frame:message-1'],
         payload: { content: 'Hello (edited)' },
       }, db);
 
@@ -214,7 +214,7 @@ describe('Frame Context Builder', () => {
 
       assert.equal(result.frames.length, 2);
       assert.equal(result.count, 2);
-      assert.deepEqual(result.compiled['msg-1'], { content: 'Hello (edited)' });
+      assert.deepEqual(result.compiled['message-1'], { content: 'Hello (edited)' });
     });
   });
 

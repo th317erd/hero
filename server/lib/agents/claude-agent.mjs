@@ -61,8 +61,8 @@ export class ClaudeAgent extends BaseAgent {
 
     // Calculate approximate token count for diagnostics
     let totalChars = 0;
-    for (let msg of conversationMessages) {
-      let content = (typeof msg.content === 'string') ? msg.content : JSON.stringify(msg.content);
+    for (let message of conversationMessages) {
+      let content = (typeof message.content === 'string') ? message.content : JSON.stringify(message.content);
       totalChars += content.length;
     }
     let estimatedTokens = Math.ceil(totalChars / 4);
@@ -166,11 +166,11 @@ export class ClaudeAgent extends BaseAgent {
     let totalChars     = 0;
     let messageSizes   = [];
 
-    for (let msg of messages) {
-      let content = (typeof msg.content === 'string') ? msg.content : JSON.stringify(msg.content);
+    for (let message of messages) {
+      let content = (typeof message.content === 'string') ? message.content : JSON.stringify(message.content);
       let chars   = content.length;
       totalChars += chars;
-      messageSizes.push({ role: msg.role, chars });
+      messageSizes.push({ role: message.role, chars });
     }
 
     // Rough token estimate: ~4 chars per token for English

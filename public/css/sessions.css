@@ -225,7 +225,7 @@
   flex-shrink: 0;
 }
 
-.session-archive-btn {
+.session-archive-button {
   padding: 6px 8px;
   font-size: 14px;
   background: transparent;
@@ -235,27 +235,27 @@
   transition: opacity 0.2s, color 0.2s;
 }
 
-.session-archive-btn:hover {
+.session-archive-button:hover {
   opacity: 1;
   color: var(--error);
 }
 
-.session-row.archived .session-archive-btn {
+.session-row.archived .session-archive-button {
   opacity: 0.8;
   color: var(--success);
 }
 
-.session-row.archived .session-archive-btn:hover {
+.session-row.archived .session-archive-button:hover {
   opacity: 1;
   color: var(--success);
 }
 
 /* Agent sessions get a different archive button style */
-.session-row.agent-session .session-archive-btn {
+.session-row.agent-session .session-archive-button {
   opacity: 0.6;
 }
 
-.session-row.agent-session .session-archive-btn:hover {
+.session-row.agent-session .session-archive-button:hover {
   opacity: 1;
 }
 

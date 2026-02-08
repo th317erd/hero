@@ -133,10 +133,10 @@ async function executeAssertion(assertion, context, callbacks = {}) {
   // Build the middleware chain
   let index = 0;
 
-  async function next(msg) {
+  async function next(message) {
     // End of pipeline, return final message
     if (index >= handlers.length)
-      return msg;
+      return message;
 
     let handler      = handlers[index++];
     let handlerName  = handler.name || `handler_${index}`;
@@ -146,15 +146,15 @@ async function executeAssertion(assertion, context, callbacks = {}) {
 
     // Notify handler invoked
     if (callbacks.onHandlerInvoke)
-      callbacks.onHandlerInvoke(handlerName, msg);
+      callbacks.onHandlerInvoke(handlerName, message);
 
     try {
       // Execute handler with next function
-      return await handler.execute(msg, pipelineContext, next);
+      return await handler.execute(message, pipelineContext, next);
     } catch (error) {
       // Handler error - log and continue to next
       console.error(`Handler "${handlerName}" error:`, error.message);
-      return next(msg);
+      return next(message);
     }
   }
 

@@ -58,7 +58,7 @@ async function testSSE() {
   console.log('\nTotal chunks received:', chunkCount);
 }
 
-testSSE().catch(err => {
-  console.error('Error:', err.message);
+testSSE().catch((error) => {
+  console.error('Error:', error.message);
   process.exit(1);
 });

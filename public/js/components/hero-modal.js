@@ -30,15 +30,15 @@ function escapeHtml(text) {
 export class HeroModal extends MythixUIModal {
   static tagName = 'hero-modal';
 
-  // Error state
-  #error = '';
+  // Error state (using underscore instead of # for inheritance compatibility)
+  _errorMessage = '';
 
   /**
    * Get current error message.
    * @returns {string}
    */
   get error() {
-    return this.#error;
+    return this._errorMessage;
   }
 
   /**
@@ -46,8 +46,8 @@ export class HeroModal extends MythixUIModal {
    * @param {string} message
    */
   set error(message) {
-    this.#error = message;
-    this.#updateError();
+    this._errorMessage = message;
+    this._updateError();
   }
 
   /**
@@ -67,54 +67,145 @@ export class HeroModal extends MythixUIModal {
   }
 
   /**
+   * Get the dialog element.
+   * Returns the dialog whether it's in the component or moved to body.
+   */
+  get $dialog() {
+    // First check if we have a reference
+    if (this._dialog)
+      return this._dialog;
+
+    // Look for dialog in component
+    let dialog = this.querySelector('dialog');
+    if (dialog)
+      return dialog;
+
+    // Look for our dialog in body (by modal name)
+    return document.querySelector(`body > dialog[data-modal-name="${this.modalName}"]`);
+  }
+
+  /**
    * Component mounted.
    */
   mounted() {
-    super.mounted();
-
     // Listen for show-modal events
     document.addEventListener('show-modal', (event) => {
       if (event.detail.modal === this.modalName) {
         this.openModal();
       }
     });
+  }
 
-    // Listen for close event to call onClose hook
-    this.$dialog.addEventListener('close', () => {
-      this.onClose();
-      // Hide component container when dialog closes
-      this.style.display = 'none';
-    });
-
-    // Attach form submit handler
-    let form = this.querySelector('form');
-    if (form) {
-      form.addEventListener('submit', (event) => this.handleSubmit(event));
-    }
+  /**
+   * Component unmounted - clean up dialog from body.
+   */
+  unmounted() {
+    let dialog = document.querySelector(`body > dialog[data-modal-name="${this.modalName}"]`);
+    if (dialog)
+      dialog.remove();
   }
 
   /**
    * Open the modal.
    */
   openModal() {
-    this.#error = '';
-    this.#updateError();
+    this._errorMessage = '';
 
     // Allow onOpen to cancel opening (returns false)
     if (this.onOpen() === false)
       return;
 
+    // Get or prepare the dialog
+    let dialog = this._prepareDialog();
+    if (!dialog)
+      return;
+
     // Show the component container
     this.style.display = '';
 
-    this.showModal();
+    // Ensure dialog is closed before opening as modal
+    if (dialog.open)
+      dialog.close();
+
+    // Open as modal
+    dialog.showModal();
 
     // Focus first input
     requestAnimationFrame(() => {
-      let firstInput = this.querySelector('input, select, textarea');
+      let firstInput = dialog.querySelector('input, select, textarea');
       if (firstInput)
         firstInput.focus();
     });
+  }
+
+  /**
+   * Prepare the dialog for display.
+   * Moves it to body if needed and binds event handlers.
+   */
+  _prepareDialog() {
+    // Check if dialog already in body
+    let dialog = document.querySelector(`body > dialog[data-modal-name="${this.modalName}"]`);
+    if (dialog) {
+      this._dialog = dialog;
+      // Ensure it's closed (in case it was left open non-modally)
+      if (dialog.open)
+        dialog.close();
+      return dialog;
+    }
+
+    // Find dialog in component
+    dialog = this.querySelector('dialog');
+    if (!dialog)
+      return null;
+
+    // Close if open (prevents "already open as non-modal" error)
+    if (dialog.open)
+      dialog.close();
+
+    // Mark the dialog with our modal name
+    dialog.setAttribute('data-modal-name', this.modalName);
+
+    // Move to body for proper rendering
+    document.body.appendChild(dialog);
+    this._dialog = dialog;
+
+    // Bind event handlers (only once)
+    this._bindDialogEvents(dialog);
+
+    return dialog;
+  }
+
+  /**
+   * Bind event handlers to the dialog.
+   */
+  _bindDialogEvents(dialog) {
+    let self = this;
+
+    // Bind form submit
+    let form = dialog.querySelector('form');
+    if (form) {
+      form.onsubmit = (event) => self.handleSubmit(event);
+    }
+
+    // Bind footer buttons (Cancel buttons) using onclick for reliability
+    let footer = dialog.querySelector('footer[slot="footer"], footer');
+    if (footer) {
+      let buttons = footer.querySelectorAll('button[type="button"]');
+      for (let button of buttons) {
+        button.onclick = () => dialog.close();
+      }
+    }
+
+    // Handle backdrop click to close
+    dialog.onclick = (event) => {
+      if (event.target === dialog)
+        dialog.close();
+    };
+
+    // Handle close event
+    dialog.onclose = () => {
+      self.onClose();
+    };
   }
 
   /**
@@ -139,11 +230,12 @@ export class HeroModal extends MythixUIModal {
   /**
    * Update error display.
    */
-  #updateError() {
-    let errorElement = this.querySelector('.error-message');
+  _updateError() {
+    let dialog = this.$dialog;
+    let errorElement = dialog?.querySelector('.error-message');
     if (errorElement) {
-      errorElement.textContent = this.#error;
-      errorElement.style.display = (this.#error) ? 'block' : 'none';
+      errorElement.textContent = this._errorMsg;
+      errorElement.style.display = (this._errorMsg) ? 'block' : 'none';
     }
   }
 
@@ -168,17 +260,17 @@ export class HeroModal extends MythixUIModal {
 
   /**
    * Build the template.
-   * Subclasses override getContent() to provide form content.
+   * Returns the dialog structure with content from getContent().
    */
   static get template() {
-    return null; // Template built dynamically in render()
+    return null; // Built dynamically in connectedCallback via innerHTML
   }
 
   /**
-   * Render the modal content.
-   * Called by subclasses after construction.
+   * Build and set the component's innerHTML.
+   * Called by subclasses in mounted().
    */
-  render() {
+  buildContent() {
     this.innerHTML = `
       <dialog autoclose>
         <header>
@@ -190,30 +282,6 @@ export class HeroModal extends MythixUIModal {
         </main>
       </dialog>
     `;
-
-    // Re-attach form handler after render
-    let form = this.querySelector('form');
-    if (form) {
-      form.addEventListener('submit', (event) => this.handleSubmit(event));
-    }
-
-    // Manually bind footer buttons (since we don't use shadow DOM with slots)
-    this.#bindFooterButtons();
-  }
-
-  /**
-   * Bind click handlers to footer buttons.
-   * Cancel/secondary buttons close the modal.
-   */
-  #bindFooterButtons() {
-    let footer = this.querySelector('footer[slot="footer"]');
-    if (!footer)
-      return;
-
-    let buttons = footer.querySelectorAll('button[type="button"]');
-    for (let button of buttons) {
-      button.addEventListener('click', () => this.close());
-    }
   }
 }
 
@@ -252,10 +320,10 @@ export class HeroModalSession extends HeroModal {
     }
 
     return `
-      <form>
+      <form autocomplete="off">
         <div class="form-group">
           <label for="session-name">Session Name</label>
-          <input type="text" id="session-name" name="name" required placeholder="e.g., project-x">
+          <input type="text" id="session-name" name="name" required placeholder="e.g., project-x" autocomplete="off">
         </div>
         <div class="form-group">
           <label for="session-agent">Agent</label>
@@ -304,7 +372,7 @@ export class HeroModalSession extends HeroModal {
   }
 
   mounted() {
-    this.render();
+    this.buildContent();
     super.mounted();
   }
 }
@@ -331,15 +399,15 @@ export class HeroModalAgent extends HeroModal {
     `).join('');
 
     return `
-      <form>
+      <form autocomplete="off">
         <div class="form-row">
           <div class="form-group form-group-half">
             <label for="agent-name">Agent Name</label>
-            <input type="text" id="agent-name" name="name" required placeholder="e.g., My Claude">
+            <input type="text" id="agent-name" name="name" required placeholder="e.g., My Claude" autocomplete="off">
           </div>
           <div class="form-group form-group-half">
             <label for="agent-type">Base Type</label>
-            <select id="agent-type" name="type" required onchange="this.closest('hero-modal-agent').filterModels()">
+            <select id="agent-type" name="type" required data-event-onchange="filterModels">
               <option value="claude">Claude (Anthropic)</option>
               <option value="openai">OpenAI</option>
             </select>
@@ -366,12 +434,12 @@ export class HeroModalAgent extends HeroModal {
           </div>
           <div class="form-group form-group-half">
             <label for="agent-api-url">API URL (optional)</label>
-            <input type="url" id="agent-api-url" name="apiUrl" placeholder="Custom endpoint...">
+            <input type="url" id="agent-api-url" name="apiUrl" placeholder="Custom endpoint..." autocomplete="off">
           </div>
         </div>
         <div class="form-group">
           <label for="agent-api-key">API Key</label>
-          <input type="password" id="agent-api-key" name="apiKey" required placeholder="sk-...">
+          <input type="password" id="agent-api-key" name="apiKey" required placeholder="sk-..." autocomplete="off">
         </div>
         <div class="form-group">
           <label>Default Abilities</label>
@@ -388,9 +456,9 @@ export class HeroModalAgent extends HeroModal {
   }
 
   filterModels() {
-    let type = this.querySelector('[name="type"]').value;
-    let claudeGroup = this.querySelector('#claude-models');
-    let openaiGroup = this.querySelector('#openai-models');
+    let type = this._dialog?.querySelector('[name="type"]')?.value;
+    let claudeGroup = this._dialog?.querySelector('#claude-models');
+    let openaiGroup = this._dialog?.querySelector('#openai-models');
 
     if (claudeGroup)
       claudeGroup.style.display = (type === 'claude') ? '' : 'none';
@@ -441,7 +509,7 @@ export class HeroModalAgent extends HeroModal {
   }
 
   mounted() {
-    this.render();
+    this.buildContent();
     super.mounted();
   }
 }
@@ -453,45 +521,45 @@ export class HeroModalAgent extends HeroModal {
 export class HeroModalAbility extends HeroModal {
   static tagName = 'hero-modal-ability';
 
-  #editId = null;
+  _editId = null;
 
   get modalName() { return 'ability'; }
-  get modalTitle() { return (this.#editId) ? 'Edit Ability' : 'New Ability'; }
+  get modalTitle() { return (this._editId) ? 'Edit Ability' : 'New Ability'; }
 
   /**
    * Open for editing.
    * @param {number} abilityId
    */
   openEdit(abilityId) {
-    this.#editId = abilityId;
+    this._editId = abilityId;
     this.openModal();
   }
 
   onOpen() {
-    this.#editId = null;
+    this._editId = null;
   }
 
   getContent() {
     return `
-      <form>
+      <form autocomplete="off">
         <div class="form-row">
           <div class="form-group form-group-half">
             <label for="ability-name">Name</label>
-            <input type="text" id="ability-name" name="name" required pattern="[a-z][a-z0-9_]*" placeholder="my_ability">
+            <input type="text" id="ability-name" name="name" required pattern="[a-z][a-z0-9_]*" placeholder="my_ability" autocomplete="off">
             <small class="form-hint">Lowercase letters, numbers, underscores only.</small>
           </div>
           <div class="form-group form-group-half">
             <label for="ability-category">Category</label>
-            <input type="text" id="ability-category" name="category" placeholder="custom">
+            <input type="text" id="ability-category" name="category" placeholder="custom" autocomplete="off">
           </div>
         </div>
         <div class="form-group">
           <label for="ability-description">Description</label>
-          <input type="text" id="ability-description" name="description" placeholder="Brief description of this ability">
+          <input type="text" id="ability-description" name="description" placeholder="Brief description of this ability" autocomplete="off">
         </div>
         <div class="form-group">
           <label for="ability-applies">When to Use</label>
-          <input type="text" id="ability-applies" name="applies" placeholder="e.g., when user asks about coding, for file operations, always">
+          <input type="text" id="ability-applies" name="applies" placeholder="e.g., when user asks about coding, for file operations, always" autocomplete="off">
           <small class="form-hint">Describe the context or trigger for this ability (helps the agent know when to apply it)</small>
         </div>
         <div class="form-group">
@@ -515,7 +583,7 @@ export class HeroModalAbility extends HeroModal {
         </div>
         <footer slot="footer">
           <button type="button" class="button button-secondary">Cancel</button>
-          <button type="submit" class="button button-primary">${(this.#editId) ? 'Save' : 'Create'}</button>
+          <button type="submit" class="button button-primary">${(this._editId) ? 'Save' : 'Create'}</button>
         </footer>
       </form>
     `;
@@ -543,8 +611,8 @@ export class HeroModalAbility extends HeroModal {
 
       let data = { name, category, description, applies, content, autoApprove, dangerLevel };
 
-      if (this.#editId) {
-        await updateAbility(this.#editId, data);
+      if (this._editId) {
+        await updateAbility(this._editId, data);
       } else {
         await createAbility(data);
       }
@@ -560,7 +628,7 @@ export class HeroModalAbility extends HeroModal {
   }
 
   mounted() {
-    this.render();
+    this.buildContent();
     super.mounted();
   }
 }

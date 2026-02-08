@@ -284,13 +284,13 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
   }
 
   // Add error handlers to detect issues
-  res.on('error', (err) => {
-    debug('Response error:', err.message);
+  res.on('error', (error) => {
+    debug('Response error:', error.message);
   });
 
   if (res.socket) {
-    res.socket.on('error', (err) => {
-      debug('Socket error:', err.message);
+    res.socket.on('error', (error) => {
+      debug('Socket error:', error.message);
     });
     res.socket.on('end', () => {
       debug('Socket end event');
@@ -594,8 +594,8 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
 
     // Calculate estimated tokens for display
     let totalChars = 0;
-    for (let msg of messages) {
-      let content = (typeof msg.content === 'string') ? msg.content : JSON.stringify(msg.content);
+    for (let message of messages) {
+      let content = (typeof message.content === 'string') ? message.content : JSON.stringify(message.content);
       totalChars += content.length;
     }
     // Add system prompt length if present
@@ -1208,8 +1208,8 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
         } else if (result.debounced) {
           debug('Compaction debounced');
         }
-      }).catch((err) => {
-        console.error('[Stream] Compaction check error:', err);
+      }).catch((error) => {
+        console.error('[Stream] Compaction check error:', error);
       });
     }
 

@@ -192,7 +192,7 @@ describe('Frames API (Function Simulation)', () => {
   describe('GET /sessions/:id/frames?compiled=true', () => {
     it('should return compiled frame state', () => {
       createFrame({
-        id: 'msg-1',
+        id: 'message-1',
         sessionId: 1,
         type: 'message',
         authorType: 'user',
@@ -203,14 +203,14 @@ describe('Frames API (Function Simulation)', () => {
         sessionId: 1,
         type: 'update',
         authorType: 'system',
-        targetIds: ['frame:msg-1'],
+        targetIds: ['frame:message-1'],
         payload: { role: 'user', content: 'Updated' },
       }, db);
 
       const frames = getFrames(1, {}, db);
       const compiled = compileFrames(frames);
 
-      assert.equal(compiled.get('msg-1').content, 'Updated');
+      assert.equal(compiled.get('message-1').content, 'Updated');
     });
   });
 

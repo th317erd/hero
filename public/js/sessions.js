@@ -103,7 +103,7 @@ function renderSessionsList() {
           <span class="session-agent">${escapeHtml(session.agent.name)}</span>
         </div>
         <div class="session-actions">
-          <button class="session-archive-btn" onclick="toggleSessionArchive(event, ${session.id}, ${isArchived})" title="${archiveTitle}">
+          <button class="session-archive-button" onclick="toggleSessionArchive(event, ${session.id}, ${isArchived})" title="${archiveTitle}">
             ${archiveIcon}
           </button>
         </div>

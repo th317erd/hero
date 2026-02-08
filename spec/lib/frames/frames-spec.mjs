@@ -574,7 +574,7 @@ describe('Frame Compilation', () => {
   describe('compileFrames', () => {
     it('should compile message frames into a map', () => {
       createFrame({
-        id: 'msg-1',
+        id: 'message-1',
         sessionId: 1,
         type: 'message',
         authorType: 'user',
@@ -582,7 +582,7 @@ describe('Frame Compilation', () => {
       }, db);
 
       createFrame({
-        id: 'msg-2',
+        id: 'message-2',
         sessionId: 1,
         type: 'message',
         authorType: 'agent',
@@ -593,13 +593,13 @@ describe('Frame Compilation', () => {
       const compiled = compileFrames(frames);
 
       assert.equal(compiled.size, 2);
-      assert.deepEqual(compiled.get('msg-1'), { role: 'user', content: 'Hello' });
-      assert.deepEqual(compiled.get('msg-2'), { role: 'assistant', content: 'Hi there!' });
+      assert.deepEqual(compiled.get('message-1'), { role: 'user', content: 'Hello' });
+      assert.deepEqual(compiled.get('message-2'), { role: 'assistant', content: 'Hi there!' });
     });
 
     it('should apply update frames to replace content', () => {
       createFrame({
-        id: 'msg-1',
+        id: 'message-1',
         sessionId: 1,
         type: 'message',
         authorType: 'user',
@@ -610,19 +610,19 @@ describe('Frame Compilation', () => {
         sessionId: 1,
         type: 'update',
         authorType: 'system',
-        targetIds: ['frame:msg-1'],
+        targetIds: ['frame:message-1'],
         payload: { role: 'user', content: 'Updated content' },
       }, db);
 
       const frames = getFrames(1, {}, db);
       const compiled = compileFrames(frames);
 
-      assert.deepEqual(compiled.get('msg-1'), { role: 'user', content: 'Updated content' });
+      assert.deepEqual(compiled.get('message-1'), { role: 'user', content: 'Updated content' });
     });
 
     it('should handle multiple updates to the same frame', () => {
       createFrame({
-        id: 'msg-1',
+        id: 'message-1',
         sessionId: 1,
         type: 'message',
         authorType: 'agent',
@@ -633,7 +633,7 @@ describe('Frame Compilation', () => {
         sessionId: 1,
         type: 'update',
         authorType: 'agent',
-        targetIds: ['frame:msg-1'],
+        targetIds: ['frame:message-1'],
         payload: { content: 'Second' },
       }, db);
 
@@ -641,14 +641,14 @@ describe('Frame Compilation', () => {
         sessionId: 1,
         type: 'update',
         authorType: 'agent',
-        targetIds: ['frame:msg-1'],
+        targetIds: ['frame:message-1'],
         payload: { content: 'Third' },
       }, db);
 
       const frames = getFrames(1, {}, db);
       const compiled = compileFrames(frames);
 
-      assert.deepEqual(compiled.get('msg-1'), { content: 'Third' });
+      assert.deepEqual(compiled.get('message-1'), { content: 'Third' });
     });
 
     it('should load from compact frame when present', () => {
@@ -677,7 +677,7 @@ describe('Frame Compilation', () => {
         authorType: 'system',
         payload: {
           snapshot: {
-            'summary-msg': { role: 'system', content: 'Summary of conversation' },
+            'summary-message': { role: 'system', content: 'Summary of conversation' },
           },
         },
       }, db);
@@ -699,7 +699,7 @@ describe('Frame Compilation', () => {
       assert.equal(compiled.has('old-2'), false);
 
       // Should have compact snapshot
-      assert.deepEqual(compiled.get('summary-msg'), { role: 'system', content: 'Summary of conversation' });
+      assert.deepEqual(compiled.get('summary-message'), { role: 'system', content: 'Summary of conversation' });
 
       // Should have new message
       assert.deepEqual(compiled.get('new-1'), { content: 'New message' });
@@ -725,7 +725,7 @@ describe('Frame Compilation', () => {
 
     it('should be idempotent', () => {
       createFrame({
-        id: 'msg-1',
+        id: 'message-1',
         sessionId: 1,
         type: 'message',
         authorType: 'user',
@@ -736,7 +736,7 @@ describe('Frame Compilation', () => {
         sessionId: 1,
         type: 'update',
         authorType: 'system',
-        targetIds: ['frame:msg-1'],
+        targetIds: ['frame:message-1'],
         payload: { content: 'Updated' },
       }, db);
 
@@ -746,13 +746,13 @@ describe('Frame Compilation', () => {
       const compiled2 = compileFrames(frames);
       const compiled3 = compileFrames(frames);
 
-      assert.deepEqual(compiled1.get('msg-1'), compiled2.get('msg-1'));
-      assert.deepEqual(compiled2.get('msg-1'), compiled3.get('msg-1'));
+      assert.deepEqual(compiled1.get('message-1'), compiled2.get('message-1'));
+      assert.deepEqual(compiled2.get('message-1'), compiled3.get('message-1'));
     });
 
     it('should handle request and result frames', () => {
       createFrame({
-        id: 'msg-1',
+        id: 'message-1',
         sessionId: 1,
         type: 'message',
         authorType: 'agent',
@@ -762,7 +762,7 @@ describe('Frame Compilation', () => {
       createFrame({
         id: 'req-1',
         sessionId: 1,
-        parentId: 'msg-1',
+        parentId: 'message-1',
         type: 'request',
         authorType: 'agent',
         targetIds: ['system:websearch'],
@@ -783,7 +783,7 @@ describe('Frame Compilation', () => {
       const compiled = compileFrames(frames);
 
       assert.equal(compiled.size, 3);
-      assert.deepEqual(compiled.get('msg-1'), { content: 'Let me search for that' });
+      assert.deepEqual(compiled.get('message-1'), { content: 'Let me search for that' });
       assert.deepEqual(compiled.get('req-1'), { action: 'websearch', query: 'test query' });
       assert.deepEqual(compiled.get('res-1'), { results: ['result1', 'result2'] });
     });

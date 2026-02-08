@@ -180,7 +180,7 @@
   caret-shape: block;
 }
 
-.input-container .btn {
+.input-container .button {
   height: 42px;
 }
 
@@ -675,7 +675,7 @@
    Scroll to Bottom Button
    ============================================================================ */
 
-.scroll-to-bottom-btn {
+.scroll-to-bottom-button {
   position: absolute;
   bottom: 80px;
   left: 50%;
@@ -695,24 +695,24 @@
   z-index: 50;
 }
 
-.scroll-to-bottom-btn:hover {
+.scroll-to-bottom-button:hover {
   background: var(--bg-tertiary);
   border-color: var(--accent);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
-.scroll-to-bottom-btn:active {
+.scroll-to-bottom-button:active {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
-.scroll-to-bottom-btn .chevron-down {
+.scroll-to-bottom-button .chevron-down {
   font-size: 20px;
   color: var(--text-secondary);
   line-height: 0;
   margin-top: 2px;
 }
 
-.scroll-to-bottom-btn:hover .chevron-down {
+.scroll-to-bottom-button:hover .chevron-down {
   color: var(--accent);
 }
 

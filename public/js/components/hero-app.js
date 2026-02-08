@@ -97,6 +97,13 @@ export class HeroApp extends HeroComponent {
     });
     this.#unsubscribers.push(unsubUser);
 
+    // Listen for custom events from child components (event hub pattern)
+    this.addEventListener('hero:logout', () => this.logout());
+    this.addEventListener('hero:navigate', (event) => this.navigate(event.detail.path));
+    this.addEventListener('hero:show-modal', (event) => this.#handleShowModal(event.detail));
+    this.addEventListener('hero:clear-messages', () => this.#handleClearMessages());
+    this.addEventListener('hero:toggle-hidden', (event) => this.#handleToggleHidden(event.detail));
+
     // Initial route
     this.handleRoute();
   }
@@ -280,6 +287,32 @@ export class HeroApp extends HeroComponent {
   #disconnectWebSocket() {
     this.setGlobal('wsConnected', false);
     this.dispatchEvent(new CustomEvent('ws:disconnect', { bubbles: true }));
+  }
+
+  /**
+   * Handle show-modal event.
+   * @param {object} detail - { modal: 'new-session' | 'new-agent' | 'abilities' | 'agents' }
+   */
+  #handleShowModal(detail) {
+    // Dispatch to legacy app.js modal handlers
+    document.dispatchEvent(new CustomEvent('show-modal', { detail }));
+  }
+
+  /**
+   * Handle clear-messages event.
+   */
+  #handleClearMessages() {
+    // Dispatch to legacy app.js
+    document.dispatchEvent(new CustomEvent('clear-messages'));
+  }
+
+  /**
+   * Handle toggle-hidden event.
+   * @param {object} detail - { show: boolean }
+   */
+  #handleToggleHidden(detail) {
+    // Dispatch to legacy app.js
+    document.dispatchEvent(new CustomEvent('toggle-hidden', { detail }));
   }
 
   /**

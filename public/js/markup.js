@@ -320,7 +320,7 @@ function processLinkElements(container) {
     let label = el.textContent.trim() || href;
 
     // Determine link type
-    let isInternal = href.startsWith('#msg-') || href.startsWith('#');
+    let isInternal = href.startsWith('#message-') || href.startsWith('#');
     let icon       = (isInternal) ? '↓' : '🔗';
     let linkClass  = (isInternal) ? 'hml-link-internal' : 'hml-link-external';
 
@@ -538,8 +538,8 @@ function copyToClipboard(text, button) {
       label.textContent = originalText;
       button.classList.remove('copied');
     }, 2000);
-  }).catch((err) => {
-    console.error('Failed to copy:', err);
+  }).catch((error) => {
+    console.error('Failed to copy:', error);
   });
 }
 

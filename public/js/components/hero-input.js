@@ -53,7 +53,7 @@ export class HeroInput extends HeroComponent {
   set value(val) {
     if (this.textarea) {
       this.textarea.value = val;
-      this.#autoResize();
+      this.autoResize();
     }
   }
 
@@ -130,7 +130,7 @@ export class HeroInput extends HeroComponent {
 
     // Check for commands
     if (content.startsWith('/')) {
-      this.dispatchEvent(new CustomEvent('command', {
+      this.dispatchEvent(new CustomEvent('hero:command', {
         detail: { command: content },
         bubbles: true,
       }));
@@ -158,7 +158,7 @@ export class HeroInput extends HeroComponent {
 
     this.#messageQueue.push({ id: queueId, content });
 
-    this.dispatchEvent(new CustomEvent('queued', {
+    this.dispatchEvent(new CustomEvent('hero:message-queued', {
       detail: { content, queueId },
       bubbles: true,
     }));
@@ -172,7 +172,7 @@ export class HeroInput extends HeroComponent {
     this.loading = true;
 
     try {
-      this.dispatchEvent(new CustomEvent('send', {
+      this.dispatchEvent(new CustomEvent('hero:send-message', {
         detail: {
           content,
           streaming: this.#streamingMode,
@@ -192,14 +192,14 @@ export class HeroInput extends HeroComponent {
     while (this.#messageQueue.length > 0 && !this.#isLoading) {
       let queued = this.#messageQueue.shift();
 
-      this.dispatchEvent(new CustomEvent('queue-process', {
+      this.dispatchEvent(new CustomEvent('hero:queue-process', {
         detail: { content: queued.content, queueId: queued.id },
         bubbles: true,
       }));
 
       // Wait for message to complete (parent should call done())
       await new Promise((resolve) => {
-        this.addEventListener('queue-complete', resolve, { once: true });
+        this.addEventListener('hero:queue-complete', resolve, { once: true });
       });
     }
   }
@@ -208,14 +208,14 @@ export class HeroInput extends HeroComponent {
    * Signal queue item complete.
    */
   queueComplete() {
-    this.dispatchEvent(new CustomEvent('queue-complete'));
+    this.dispatchEvent(new CustomEvent('hero:queue-complete'));
   }
 
   /**
    * Handle keydown events.
    * @param {KeyboardEvent} e
    */
-  #handleKeydown(e) {
+  handleKeydown(e) {
     // Enter without Shift sends message
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -233,7 +233,7 @@ export class HeroInput extends HeroComponent {
   /**
    * Auto-resize textarea based on content.
    */
-  #autoResize() {
+  autoResize() {
     let textarea = this.textarea;
     if (!textarea) return;
 
@@ -242,12 +242,19 @@ export class HeroInput extends HeroComponent {
   }
 
   /**
+   * Handle clear button click.
+   */
+  handleClear() {
+    this.dispatchEvent(new CustomEvent('hero:clear', { bubbles: true }));
+  }
+
+  /**
    * Update send button state.
    */
   #updateButtonState() {
-    let btn = this.querySelector('.send-btn');
-    if (btn) {
-      btn.disabled = this.#isLoading || !this.currentSession;
+    let button = this.querySelector('.send-button');
+    if (button) {
+      button.disabled = this.#isLoading || !this.currentSession;
     }
   }
 
@@ -257,40 +264,23 @@ export class HeroInput extends HeroComponent {
   render() {
     let disabled = !this.currentSession;
 
-    this.innerHTML = `
+    HeroComponent.prototype.render.call(this, `
       <div class="input-container">
         <textarea
           class="message-input"
           placeholder="${disabled ? 'Select a session to start...' : 'Type a message...'}"
+          data-event-onkeydown="handleKeydown"
+          data-event-oninput="autoResize"
           ${disabled ? 'disabled' : ''}
         ></textarea>
-        <button class="send-btn" ${disabled || this.#isLoading ? 'disabled' : ''}>
+        <button class="send-button" data-event-onclick="handleSend" ${disabled || this.#isLoading ? 'disabled' : ''}>
           Send
         </button>
-        <button class="clear-btn">
+        <button class="clear-button" data-event-onclick="handleClear">
           Clear
         </button>
       </div>
-    `;
-
-    // Attach event listeners
-    let textarea = this.textarea;
-    if (textarea) {
-      textarea.addEventListener('keydown', (e) => this.#handleKeydown(e));
-      textarea.addEventListener('input', () => this.#autoResize());
-    }
-
-    let sendBtn = this.querySelector('.send-btn');
-    if (sendBtn) {
-      sendBtn.addEventListener('click', () => this.handleSend());
-    }
-
-    let clearBtn = this.querySelector('.clear-btn');
-    if (clearBtn) {
-      clearBtn.addEventListener('click', () => {
-        this.dispatchEvent(new CustomEvent('clear', { bubbles: true }));
-      });
-    }
+    `);
   }
 }
 

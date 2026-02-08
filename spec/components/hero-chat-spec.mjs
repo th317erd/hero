@@ -369,19 +369,19 @@ describe('Chat Session State', () => {
 describe('Message ID Generation', () => {
   it('should generate unique message element ID', () => {
     let messageId = 123;
-    let elementId = `msg-${messageId}`;
-    assert.strictEqual(elementId, 'msg-123');
+    let elementId = `message-${messageId}`;
+    assert.strictEqual(elementId, 'message-123');
   });
 
   it('should handle empty message ID', () => {
     let messageId = '';
-    let elementId = (messageId) ? `msg-${messageId}` : '';
+    let elementId = (messageId) ? `message-${messageId}` : '';
     assert.strictEqual(elementId, '');
   });
 
   it('should handle null message ID', () => {
     let messageId = null;
-    let elementId = (messageId) ? `msg-${messageId}` : '';
+    let elementId = (messageId) ? `message-${messageId}` : '';
     assert.strictEqual(elementId, '');
   });
 });

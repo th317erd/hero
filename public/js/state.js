@@ -49,8 +49,8 @@ const elements = {
   sessionsList:    document.getElementById('sessions-list'),
   sessionSearch:   document.getElementById('session-search'),
   toggleArchived:  document.getElementById('toggle-archived'),
-  newSessionBtn:   document.getElementById('new-session-btn'),
-  logoutBtn:       document.getElementById('logout-btn'),
+  newSessionButton:   document.getElementById('new-session-button'),
+  logoutButton:       document.getElementById('logout-button'),
 
   // Chat
   sessionTitle:       document.getElementById('session-title'),
@@ -58,10 +58,10 @@ const elements = {
   messagesContainer:  document.getElementById('chat'),  // hero-chat component
   heroChat:           document.getElementById('chat'),  // hero-chat component reference
   messageInput:       document.getElementById('message-input'),
-  sendBtn:            document.getElementById('send-btn'),
-  clearBtn:           document.getElementById('clear-btn'),
-  backBtn:            document.getElementById('back-btn'),
-  chatLogoutBtn:      document.getElementById('chat-logout-btn'),
+  sendButton:            document.getElementById('send-button'),
+  clearButton:           document.getElementById('clear-button'),
+  backButton:            document.getElementById('back-button'),
+  chatLogoutButton:      document.getElementById('chat-logout-button'),
   showHiddenToggle:   document.getElementById('show-hidden-toggle'),
   scrollToBottomBtn:  document.getElementById('scroll-to-bottom'),
   chatMain:           document.querySelector('.chat-main'),
@@ -81,12 +81,12 @@ const elements = {
   agentAbilitiesList:   document.getElementById('agent-abilities-list'),
 
   // Abilities
-  abilitiesBtn:         document.getElementById('abilities-btn'),
+  abilitiesButton:         document.getElementById('abilities-button'),
   abilitiesModal:       document.getElementById('abilities-modal'),
   closeAbilitiesModal:  document.getElementById('close-abilities-modal'),
   systemAbilitiesList:  document.getElementById('system-abilities-list'),
   userAbilitiesList:    document.getElementById('user-abilities-list'),
-  newAbilityBtn:        document.getElementById('new-ability-btn'),
+  newAbilityButton:        document.getElementById('new-ability-button'),
 
   // Edit Ability Modal
   editAbilityModal:     document.getElementById('edit-ability-modal'),
@@ -101,7 +101,7 @@ const elements = {
   toggleOperations:     document.getElementById('toggle-operations'),
 
   // Agents
-  agentsBtn:            document.getElementById('agents-btn'),
+  agentsButton:            document.getElementById('agents-button'),
   agentsModal:          document.getElementById('agents-modal'),
   closeAgentsModal:     document.getElementById('close-agents-modal'),
   addAgentFromList:     document.getElementById('add-agent-from-list'),

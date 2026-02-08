@@ -302,9 +302,9 @@ export class HeroChat extends HeroComponent {
    * Update scroll button visibility.
    */
   #updateScrollButton() {
-    let btn = this.querySelector('.scroll-to-bottom');
-    if (btn) {
-      btn.style.display = this.isNearBottom() ? 'none' : 'flex';
+    let button = this.querySelector('.scroll-to-bottom');
+    if (button) {
+      button.style.display = this.isNearBottom() ? 'none' : 'flex';
     }
   }
 
@@ -376,7 +376,7 @@ export class HeroChat extends HeroComponent {
         ${messagesHtml}
         ${streamingHtml}
       </div>
-      <button class="scroll-to-bottom" style="display: none" onclick="this.closest('hero-chat').forceScrollToBottom()">
+      <button class="scroll-to-bottom" style="display: none" data-event-onclick="forceScrollToBottom">
         ↓
       </button>
     `);
@@ -415,7 +415,7 @@ export class HeroChat extends HeroComponent {
     return `
       <div class="message ${roleClass}${queuedClass}${hiddenClass}${errorClass}"
            data-message-id="${messageId}"
-           id="${(messageId) ? `msg-${messageId}` : ''}">
+           id="${(messageId) ? `message-${messageId}` : ''}">
         <div class="message-header">${roleLabel} ${queuedBadge}${typeBadge}</div>
         <div class="message-bubble">
           ${contentHtml}
