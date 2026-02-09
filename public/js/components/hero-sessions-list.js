@@ -1,13 +1,12 @@
 'use strict';
 
 /**
- * Hero Sidebar - Session List Component
+ * Hero Sessions List Component
  *
  * Displays:
  * - List of chat sessions
  * - Search/filter functionality
  * - Archive/restore actions
- * - New session button
  */
 
 import {
@@ -68,11 +67,11 @@ function formatCost(cost) {
 }
 
 // ============================================================================
-// HeroSidebar Component
+// HeroSessionsList Component
 // ============================================================================
 
-export class HeroSidebar extends HeroComponent {
-  static tagName = 'hero-sidebar';
+export class HeroSessionsList extends HeroComponent {
+  static tagName = 'hero-sessions-list';
 
   // Local state
   #searchQuery = '';
@@ -260,7 +259,7 @@ export class HeroSidebar extends HeroComponent {
                value="${escapeHtml(this.#searchQuery)}"
                autocomplete="off">
         <button class="toggle-archived ${(showHidden) ? 'active' : ''}"
-                title="${toggleTitle}">
+                title="${escapeHtml(toggleTitle)}">
           ${toggleIcon}
         </button>
       </div>
@@ -298,19 +297,7 @@ export class HeroSidebar extends HeroComponent {
       }
     }
 
-    // Archive buttons
-    let archiveBtns = this.querySelectorAll('.session-archive-button');
-    for (let btn of archiveBtns) {
-      let row = btn.closest('.session-row');
-      let sessionId = row?.dataset.sessionId;
-      let isArchived = row?.classList.contains('archived');
-      if (sessionId) {
-        btn.onclick = (e) => {
-          e.stopPropagation();
-          this.toggleArchive(parseInt(sessionId, 10), isArchived);
-        };
-      }
-    }
+    // Archive buttons - using data-event-onclick, no manual binding needed
 
     // Empty state buttons
     let newSessionBtn = this.querySelector('.new-session-button');
@@ -356,14 +343,16 @@ export class HeroSidebar extends HeroComponent {
         <div class="session-info">
           <div class="session-title">${escapeHtml(session.name)}${statusBadge}</div>
           <div class="session-preview">${(preview) ? escapeHtml(preview) : '<span class="no-preview">No messages yet</span>'}</div>
-          <div class="session-message-count">${msgLabel}</div>
+          <div class="session-message-count">${escapeHtml(msgLabel)}</div>
         </div>
         <div class="session-meta">
-          <span class="session-date">${dateStr}</span>
+          <span class="session-date">${escapeHtml(dateStr)}</span>
           <span class="session-agent">${escapeHtml(agentName)}</span>
         </div>
         <div class="session-actions">
-          <button class="session-archive-button" title="${archiveTitle}">
+          <button class="session-archive-button"
+                  data-event-onclick="event.stopPropagation(); toggleArchive(${session.id}, ${isArchived})"
+                  title="${escapeHtml(archiveTitle)}">
             ${archiveIcon}
           </button>
         </div>
@@ -416,5 +405,5 @@ export class HeroSidebar extends HeroComponent {
 
 // Register the component
 if (typeof customElements !== 'undefined') {
-  customElements.define(HeroSidebar.tagName, HeroSidebar);
+  customElements.define(HeroSessionsList.tagName, HeroSessionsList);
 }

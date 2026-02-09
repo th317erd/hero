@@ -18,7 +18,7 @@ export { HeroApp, parseRoute } from './hero-app.js';
 
 // Layout components
 export { HeroHeader } from './hero-header.js';
-export { HeroSidebar } from './hero-sidebar.js';
+export { HeroSessionsList } from './hero-sessions-list.js';
 export { HeroStatusBar } from './hero-status-bar.js';
 export { HeroMainControls } from './hero-main-controls.js';
 
@@ -62,7 +62,7 @@ if (!window.__heroComponentsLoaded) {
   console.log('[Hero] Components registered:', [
     'hero-app',
     'hero-header',
-    'hero-sidebar',
+    'hero-sessions-list',
     'hero-status-bar',
     'hero-main-controls',
     'hero-chat',
