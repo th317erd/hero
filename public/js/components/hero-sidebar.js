@@ -248,8 +248,8 @@ export class HeroSidebar extends HeroComponent {
 
     let sessions = this.visibleSessions;
     let showHidden = GlobalState.showHiddenSessions.valueOf();
-    let eyeIcon = (showHidden) ? '👁' : '👁‍🗨';
-    let eyeTitle = (showHidden) ? 'Hide archived sessions' : 'Show archived sessions';
+    let toggleIcon = (showHidden) ? '🐵' : '🙈';
+    let toggleTitle = (showHidden) ? 'Hide archived sessions' : 'Show archived sessions';
 
     let html = `
       <div class="sidebar-header">
@@ -261,8 +261,8 @@ export class HeroSidebar extends HeroComponent {
                data-event-oninput="setSearchQuery(event.target.value)">
         <button class="toggle-archived ${(showHidden) ? 'active' : ''}"
                 data-event-onclick="toggleHidden"
-                title="${eyeTitle}">
-          ${eyeIcon}
+                title="${toggleTitle}">
+          ${toggleIcon}
         </button>
       </div>
       <div class="sessions-list">
