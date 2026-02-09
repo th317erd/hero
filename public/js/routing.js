@@ -8,7 +8,7 @@
  * Wait for custom elements to be defined.
  */
 async function waitForComponents() {
-  let components = ['hero-header', 'hero-sidebar', 'hero-input'];
+  let components = ['hero-header', 'hero-sessions-list', 'hero-input'];
   await Promise.all(components.map((name) => customElements.whenDefined(name)));
 }
 
