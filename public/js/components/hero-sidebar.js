@@ -243,6 +243,7 @@ export class HeroSidebar extends HeroComponent {
 
     if (emptyState) {
       HeroComponent.prototype.render.call(this, this.#renderEmptyState(emptyState));
+      this.#bindEvents();
       return;
     }
 
@@ -257,10 +258,8 @@ export class HeroSidebar extends HeroComponent {
                class="session-search"
                placeholder="Search sessions..."
                value="${escapeHtml(this.#searchQuery)}"
-               autocomplete="off"
-               data-event-oninput="setSearchQuery(event.target.value)">
+               autocomplete="off">
         <button class="toggle-archived ${(showHidden) ? 'active' : ''}"
-                data-event-onclick="toggleHidden"
                 title="${toggleTitle}">
           ${toggleIcon}
         </button>
@@ -271,6 +270,58 @@ export class HeroSidebar extends HeroComponent {
     `;
 
     HeroComponent.prototype.render.call(this, html);
+    this.#bindEvents();
+  }
+
+  /**
+   * Bind event listeners after render.
+   */
+  #bindEvents() {
+    // Search input
+    let searchInput = this.querySelector('.session-search');
+    if (searchInput) {
+      searchInput.oninput = (e) => this.setSearchQuery(e.target.value);
+    }
+
+    // Toggle archived button
+    let toggleBtn = this.querySelector('.toggle-archived');
+    if (toggleBtn) {
+      toggleBtn.onclick = () => this.toggleHidden();
+    }
+
+    // Session rows - navigate on click
+    let sessionInfos = this.querySelectorAll('.session-info');
+    for (let info of sessionInfos) {
+      let sessionId = info.closest('.session-row')?.dataset.sessionId;
+      if (sessionId) {
+        info.onclick = () => this.navigateToSession(parseInt(sessionId, 10));
+      }
+    }
+
+    // Archive buttons
+    let archiveBtns = this.querySelectorAll('.session-archive-button');
+    for (let btn of archiveBtns) {
+      let row = btn.closest('.session-row');
+      let sessionId = row?.dataset.sessionId;
+      let isArchived = row?.classList.contains('archived');
+      if (sessionId) {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          this.toggleArchive(parseInt(sessionId, 10), isArchived);
+        };
+      }
+    }
+
+    // Empty state buttons
+    let newSessionBtn = this.querySelector('.new-session-button');
+    if (newSessionBtn) {
+      newSessionBtn.onclick = () => this.showNewSessionModal();
+    }
+
+    let addAgentLink = this.querySelector('.no-agents-link');
+    if (addAgentLink) {
+      addAgentLink.onclick = () => this.showNewAgentModal();
+    }
   }
 
   /**
@@ -302,7 +353,7 @@ export class HeroSidebar extends HeroComponent {
 
     return `
       <div class="session-row ${statusClass} ${childClass}" data-session-id="${session.id}" ${depthStyle}>
-        <div class="session-info" data-event-onclick="navigateToSession(${session.id})">
+        <div class="session-info">
           <div class="session-title">${escapeHtml(session.name)}${statusBadge}</div>
           <div class="session-preview">${(preview) ? escapeHtml(preview) : '<span class="no-preview">No messages yet</span>'}</div>
           <div class="session-message-count">${msgLabel}</div>
@@ -312,9 +363,7 @@ export class HeroSidebar extends HeroComponent {
           <span class="session-agent">${escapeHtml(agentName)}</span>
         </div>
         <div class="session-actions">
-          <button class="session-archive-button"
-                  data-event-onclick="event.stopPropagation(); toggleArchive(${session.id}, ${isArchived})"
-                  title="${archiveTitle}">
+          <button class="session-archive-button" title="${archiveTitle}">
             ${archiveIcon}
           </button>
         </div>
@@ -333,7 +382,7 @@ export class HeroSidebar extends HeroComponent {
         return `
           <div class="no-sessions">
             <p>No agents configured yet.</p>
-            <p><span class="no-agents-link" data-event-onclick="showNewAgentModal">Add an Agent</span> to get started.</p>
+            <p><span class="no-agents-link">Add an Agent</span> to get started.</p>
           </div>
         `;
       case 'no-sessions':
@@ -341,7 +390,7 @@ export class HeroSidebar extends HeroComponent {
           <div class="no-sessions">
             <p>No sessions yet.</p>
             <p>Click "New Session" to start chatting with an AI agent.</p>
-            <button class="new-session-button" data-event-onclick="showNewSessionModal">
+            <button class="new-session-button">
               New Session
             </button>
           </div>
@@ -353,7 +402,7 @@ export class HeroSidebar extends HeroComponent {
                    class="session-search"
                    placeholder="Search sessions..."
                    value="${escapeHtml(this.#searchQuery)}"
-                   data-event-oninput="setSearchQuery(event.target.value)">
+                   autocomplete="off">
           </div>
           <div class="no-sessions">
             <p>No sessions match your search.</p>
