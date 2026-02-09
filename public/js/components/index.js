@@ -19,6 +19,8 @@ export { HeroApp, parseRoute } from './hero-app.js';
 // Layout components
 export { HeroHeader } from './hero-header.js';
 export { HeroSidebar } from './hero-sidebar.js';
+export { HeroStatusBar } from './hero-status-bar.js';
+export { HeroMainControls } from './hero-main-controls.js';
 
 // Chat components
 export { HeroChat } from './hero-chat.js';
@@ -28,7 +30,15 @@ export { HeroInput } from './hero-input.js';
 export { HeroWebSocket } from './hero-websocket.js';
 
 // Modals
-export { HeroModal, HeroModalSession, HeroModalAgent, HeroModalAbility } from './hero-modal.js?v=4';
+export {
+  HeroModal,
+  HeroModalSession,
+  HeroModalAgent,
+  HeroModalAbility,
+  HeroModalAbilities,
+  HeroModalAgents,
+  HeroModalAgentConfig,
+} from './hero-modal.js?v=5';
 
 // One-time initialization
 if (!window.__heroComponentsLoaded) {
@@ -39,6 +49,8 @@ if (!window.__heroComponentsLoaded) {
     'hero-app',
     'hero-header',
     'hero-sidebar',
+    'hero-status-bar',
+    'hero-main-controls',
     'hero-chat',
     'hero-input',
     'hero-websocket',
@@ -46,5 +58,8 @@ if (!window.__heroComponentsLoaded) {
     'hero-modal-session',
     'hero-modal-agent',
     'hero-modal-ability',
+    'hero-modal-abilities',
+    'hero-modal-agents',
+    'hero-modal-agent-config',
   ].join(', '));
 }

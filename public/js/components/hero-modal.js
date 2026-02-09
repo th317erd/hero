@@ -634,6 +634,385 @@ export class HeroModalAbility extends HeroModal {
 }
 
 // ============================================================================
+// HeroModalAbilities - Abilities List Modal
+// ============================================================================
+
+export class HeroModalAbilities extends HeroModal {
+  static tagName = 'hero-modal-abilities';
+
+  _activeTab = 'system';
+
+  get modalName() { return 'abilities'; }
+  get modalTitle() { return 'Abilities'; }
+
+  onOpen() {
+    // Rebuild content to refresh lists
+    this.buildContent();
+    this._prepareDialog();
+    this._bindTabEvents();
+    return true;
+  }
+
+  _bindTabEvents() {
+    let dialog = this.$dialog;
+    if (!dialog) return;
+
+    // Tab buttons
+    let tabButtons = dialog.querySelectorAll('.tab-button');
+    for (let button of tabButtons) {
+      button.onclick = () => this._switchTab(button.dataset.tab);
+    }
+
+    // New ability button
+    let newBtn = dialog.querySelector('.new-ability-button');
+    if (newBtn) {
+      newBtn.onclick = () => {
+        this.close();
+        document.dispatchEvent(new CustomEvent('show-modal', {
+          detail: { modal: 'ability' },
+        }));
+      };
+    }
+
+    // Edit buttons
+    let editBtns = dialog.querySelectorAll('.edit-ability-btn');
+    for (let btn of editBtns) {
+      btn.onclick = () => this._editAbility(parseInt(btn.dataset.id, 10));
+    }
+
+    // Delete buttons
+    let deleteBtns = dialog.querySelectorAll('.delete-ability-btn');
+    for (let btn of deleteBtns) {
+      btn.onclick = () => this._deleteAbility(parseInt(btn.dataset.id, 10));
+    }
+  }
+
+  _switchTab(tab) {
+    this._activeTab = tab;
+    let dialog = this.$dialog;
+    if (!dialog) return;
+
+    // Update tab buttons
+    let tabButtons = dialog.querySelectorAll('.tab-button');
+    for (let button of tabButtons) {
+      button.classList.toggle('active', button.dataset.tab === tab);
+    }
+
+    // Update tab content
+    let systemTab = dialog.querySelector('#abilities-tab-system');
+    let userTab = dialog.querySelector('#abilities-tab-user');
+    if (systemTab) systemTab.classList.toggle('active', tab === 'system');
+    if (userTab) userTab.classList.toggle('active', tab === 'user');
+  }
+
+  async _editAbility(id) {
+    this.close();
+    // Find and open ability modal with edit ID
+    let abilityModal = document.querySelector('hero-modal-ability');
+    if (abilityModal) {
+      abilityModal._editId = id;
+      // Load ability data into form
+      let abilities = GlobalState.abilities.valueOf() || { system: [], user: [] };
+      let ability = abilities.user?.find((a) => a.id === id);
+      if (ability) {
+        abilityModal.openModal();
+        // Fill form after dialog opens
+        requestAnimationFrame(() => {
+          let dialog = abilityModal.$dialog;
+          if (dialog) {
+            let form = dialog.querySelector('form');
+            if (form) {
+              form.querySelector('[name="name"]').value = ability.name || '';
+              form.querySelector('[name="category"]').value = ability.category || '';
+              form.querySelector('[name="description"]').value = ability.description || '';
+              form.querySelector('[name="applies"]').value = ability.applies || '';
+              form.querySelector('[name="content"]').value = ability.content || '';
+              form.querySelector('[name="autoApprove"]').checked = ability.autoApprove || false;
+              form.querySelector('[name="dangerLevel"]').value = ability.dangerLevel || 'safe';
+            }
+          }
+        });
+      }
+    }
+  }
+
+  async _deleteAbility(id) {
+    if (!confirm('Are you sure you want to delete this ability?')) return;
+
+    try {
+      let { deleteAbility, fetchAbilities } = await import('../api.js');
+      await deleteAbility(id);
+      let abilities = await fetchAbilities();
+      this.setGlobal('abilities', abilities);
+      // Refresh dialog content
+      this.buildContent();
+      this._prepareDialog();
+      this._bindTabEvents();
+    } catch (error) {
+      alert('Failed to delete ability: ' + error.message);
+    }
+  }
+
+  getContent() {
+    let abilities = GlobalState.abilities.valueOf() || { system: [], user: [] };
+    let systemAbilities = abilities.system || [];
+    let userAbilities = abilities.user || [];
+
+    let systemList = (systemAbilities.length === 0)
+      ? '<p class="empty-state">No system abilities loaded.</p>'
+      : systemAbilities.map((a) => `
+          <div class="ability-item">
+            <div class="ability-info">
+              <strong>${escapeHtml(a.name)}</strong>
+              <span class="ability-category">${escapeHtml(a.category || 'system')}</span>
+            </div>
+            <p class="ability-description">${escapeHtml(a.description || '')}</p>
+          </div>
+        `).join('');
+
+    let userList = (userAbilities.length === 0)
+      ? '<p class="empty-state">No custom abilities yet. Click "New Ability" to create one.</p>'
+      : userAbilities.map((a) => `
+          <div class="ability-item">
+            <div class="ability-info">
+              <strong>${escapeHtml(a.name)}</strong>
+              <span class="ability-category">${escapeHtml(a.category || 'custom')}</span>
+              <div class="ability-actions">
+                <button type="button" class="button button-sm edit-ability-btn" data-id="${a.id}">Edit</button>
+                <button type="button" class="button button-sm button-danger delete-ability-btn" data-id="${a.id}">Delete</button>
+              </div>
+            </div>
+            <p class="ability-description">${escapeHtml(a.description || '')}</p>
+          </div>
+        `).join('');
+
+    return `
+      <div class="modal-header-tabs">
+        <div class="modal-tabs">
+          <button type="button" class="tab-button active" data-tab="system">System</button>
+          <button type="button" class="tab-button" data-tab="user">My Abilities</button>
+        </div>
+      </div>
+      <div id="abilities-tab-system" class="tab-content active">
+        <div class="abilities-list">${systemList}</div>
+      </div>
+      <div id="abilities-tab-user" class="tab-content">
+        <div class="abilities-actions">
+          <button type="button" class="button button-primary new-ability-button">New Ability</button>
+        </div>
+        <div class="abilities-list">${userList}</div>
+      </div>
+      <footer slot="footer">
+        <button type="button" class="button button-secondary">Close</button>
+      </footer>
+    `;
+  }
+
+  mounted() {
+    this.buildContent();
+    super.mounted();
+  }
+}
+
+// ============================================================================
+// HeroModalAgents - Agents List Modal
+// ============================================================================
+
+export class HeroModalAgents extends HeroModal {
+  static tagName = 'hero-modal-agents';
+
+  get modalName() { return 'agents'; }
+  get modalTitle() { return 'Agents'; }
+
+  onOpen() {
+    // Rebuild content to refresh list
+    this.buildContent();
+    this._prepareDialog();
+    this._bindAgentEvents();
+    return true;
+  }
+
+  _bindAgentEvents() {
+    let dialog = this.$dialog;
+    if (!dialog) return;
+
+    // Add agent button
+    let addBtn = dialog.querySelector('.add-agent-button');
+    if (addBtn) {
+      addBtn.onclick = () => {
+        this.close();
+        document.dispatchEvent(new CustomEvent('show-modal', {
+          detail: { modal: 'new-agent' },
+        }));
+      };
+    }
+
+    // Config buttons
+    let configBtns = dialog.querySelectorAll('.config-agent-btn');
+    for (let btn of configBtns) {
+      btn.onclick = () => this._openConfig(parseInt(btn.dataset.id, 10));
+    }
+
+    // Delete buttons
+    let deleteBtns = dialog.querySelectorAll('.delete-agent-btn');
+    for (let btn of deleteBtns) {
+      btn.onclick = () => this._deleteAgent(parseInt(btn.dataset.id, 10));
+    }
+  }
+
+  _openConfig(agentId) {
+    this.close();
+    // Find agent config modal and open with agent ID
+    let configModal = document.querySelector('hero-modal-agent-config');
+    if (configModal) {
+      configModal._agentId = agentId;
+      configModal.openModal();
+    }
+  }
+
+  async _deleteAgent(id) {
+    if (!confirm('Are you sure you want to delete this agent?')) return;
+
+    try {
+      let { deleteAgent, fetchAgents } = await import('../api.js');
+      await deleteAgent(id);
+      let agents = await fetchAgents();
+      this.setGlobal('agents', agents);
+      // Refresh dialog content
+      this.buildContent();
+      this._prepareDialog();
+      this._bindAgentEvents();
+    } catch (error) {
+      alert('Failed to delete agent: ' + error.message);
+    }
+  }
+
+  getContent() {
+    let agents = GlobalState.agents.valueOf() || [];
+
+    let agentsList = (agents.length === 0)
+      ? '<p class="empty-state">No agents configured. Click "Add Agent" to create one.</p>'
+      : agents.map((a) => `
+          <div class="agent-item">
+            <div class="agent-info">
+              <strong>${escapeHtml(a.name)}</strong>
+              <span class="agent-type">${escapeHtml(a.type)}</span>
+              ${a.model ? `<span class="agent-model">${escapeHtml(a.model)}</span>` : ''}
+            </div>
+            <div class="agent-actions">
+              <button type="button" class="button button-sm config-agent-btn" data-id="${a.id}">Config</button>
+              <button type="button" class="button button-sm button-danger delete-agent-btn" data-id="${a.id}">Delete</button>
+            </div>
+          </div>
+        `).join('');
+
+    return `
+      <div class="agents-content">
+        <div class="agents-actions">
+          <button type="button" class="button button-primary add-agent-button">Add Agent</button>
+        </div>
+        <div class="agents-list">${agentsList}</div>
+      </div>
+      <footer slot="footer">
+        <button type="button" class="button button-secondary">Close</button>
+      </footer>
+    `;
+  }
+
+  mounted() {
+    this.buildContent();
+    super.mounted();
+  }
+}
+
+// ============================================================================
+// HeroModalAgentConfig - Agent Configuration Modal
+// ============================================================================
+
+export class HeroModalAgentConfig extends HeroModal {
+  static tagName = 'hero-modal-agent-config';
+
+  _agentId = null;
+
+  get modalName() { return 'agent-config'; }
+  get modalTitle() { return 'Agent Configuration'; }
+
+  onOpen() {
+    if (!this._agentId) return false;
+    this.buildContent();
+    this._prepareDialog();
+    this._loadAgentConfig();
+    return true;
+  }
+
+  _loadAgentConfig() {
+    let agents = GlobalState.agents.valueOf() || [];
+    let agent = agents.find((a) => a.id === this._agentId);
+    if (!agent) return;
+
+    let dialog = this.$dialog;
+    if (!dialog) return;
+
+    let configJson = dialog.querySelector('[name="config"]');
+    if (configJson) {
+      configJson.value = JSON.stringify(agent.config || {}, null, 2);
+    }
+  }
+
+  getContent() {
+    return `
+      <form autocomplete="off">
+        <p class="config-description">
+          This JSON is merged into every API call for this agent.
+          Common fields: model, maxTokens, temperature, etc.
+        </p>
+        <div class="form-group">
+          <label for="agent-config-json">Configuration (JSON)</label>
+          <textarea id="agent-config-json" name="config" rows="15" class="config-editor" autocomplete="off"
+            placeholder='{ "model": "claude-sonnet-4-20250514", "maxTokens": 4096 }'></textarea>
+        </div>
+        <footer slot="footer">
+          <button type="button" class="button button-secondary">Cancel</button>
+          <button type="submit" class="button button-primary">Save</button>
+        </footer>
+      </form>
+    `;
+  }
+
+  async handleSubmit(event) {
+    event.preventDefault();
+
+    let form = event.target;
+    let configStr = form.querySelector('[name="config"]').value.trim();
+
+    let config;
+    try {
+      config = configStr ? JSON.parse(configStr) : {};
+    } catch (e) {
+      this.error = 'Invalid JSON: ' + e.message;
+      return;
+    }
+
+    try {
+      let { updateAgentConfig, fetchAgents } = await import('../api.js');
+      await updateAgentConfig(this._agentId, config);
+
+      let agents = await fetchAgents();
+      this.setGlobal('agents', agents);
+
+      this.close();
+    } catch (error) {
+      this.error = error.message;
+    }
+  }
+
+  mounted() {
+    this.buildContent();
+    super.mounted();
+  }
+}
+
+// ============================================================================
 // Register Components
 // ============================================================================
 
@@ -642,4 +1021,7 @@ if (typeof customElements !== 'undefined') {
   customElements.define(HeroModalSession.tagName, HeroModalSession);
   customElements.define(HeroModalAgent.tagName, HeroModalAgent);
   customElements.define(HeroModalAbility.tagName, HeroModalAbility);
+  customElements.define(HeroModalAbilities.tagName, HeroModalAbilities);
+  customElements.define(HeroModalAgents.tagName, HeroModalAgents);
+  customElements.define(HeroModalAgentConfig.tagName, HeroModalAgentConfig);
 }

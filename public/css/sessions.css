@@ -271,10 +271,49 @@
   text-decoration: underline;
 }
 
+/* Floating Action Button - New Session (mobile only) */
+.fab-new-session {
+  display: none;  /* Hidden on desktop */
+  position: fixed;
+  bottom: 52px;  /* Above status bar (32px) + spacing */
+  right: 20px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: white;
+  font-size: 32px;
+  font-weight: 300;
+  line-height: 1;
+  border: none;
+  box-shadow: var(--shadow-lg);
+  cursor: pointer;
+  z-index: 850;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.fab-new-session:hover {
+  transform: scale(1.05);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.5);
+}
+
+.fab-new-session:active {
+  transform: scale(0.95);
+}
+
 /* Responsive */
 @media (max-width: 640px) {
+  /* Show FAB on mobile */
+  .fab-new-session {
+    display: flex;
+  }
+
+  /* Add padding at bottom for status bar + FAB */
   .sessions-main {
     padding: 16px;
+    padding-bottom: 120px;  /* Room for FAB + status bar */
   }
 
   .sessions-header {

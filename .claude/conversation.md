@@ -1,5 +1,36 @@
 # Hero Client Migration - Phase 1 Complete
 
+## Latest: Mobile UI Enhancements
+
+Added mobile-friendly UI with responsive design:
+
+### New Components
+- `<hero-status-bar>` - Fixed bottom bar showing connection status and spend tracking
+
+### Mobile Features (≤640px)
+- Hamburger menu replaces header action buttons
+- Centered logo/title in header
+- Mobile dropdown menu (Agents, Abilities, New Session, Logout)
+- FAB "+" button for New Session (sessions view)
+
+### Spend Display
+- 3-digit padding format: `$000.00`
+- Service/Session show "N/A" when not in session (grayed out)
+
+### Files Added
+- `public/js/components/hero-status-bar.js`
+- `public/css/status-bar.css`
+
+### Files Modified
+- `hero-header.js` - Added hamburger menu and mobile dropdown
+- `hero-sidebar.js` - Added FAB button
+- `layout.css` - Mobile responsive styles
+- `sessions.css` - FAB button styles
+- `base.css` - Status bar spacing
+- `index.html` - Added `<hero-status-bar>`
+
+---
+
 ## Summary
 
 Successfully migrated key UI components to Mythix-UI web components.

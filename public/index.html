@@ -6,7 +6,7 @@
   <title>Hero</title>
   <base href="/hero/">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
-  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/styles.css?v=3">
   <link rel="stylesheet" href="css/buttons.css">
   <link rel="stylesheet" href="css/markdown.css">
   <link rel="stylesheet" href="css/abilities.css">
@@ -27,10 +27,16 @@
     <!-- WebSocket handler -->
     <hero-websocket></hero-websocket>
 
+    <!-- Status bar (bottom) -->
+    <hero-status-bar id="status-bar"></hero-status-bar>
+
     <!-- Modal components -->
     <hero-modal-session id="new-session-component" style="display: none;"></hero-modal-session>
     <hero-modal-agent id="new-agent-component" style="display: none;"></hero-modal-agent>
     <hero-modal-ability id="ability-component" style="display: none;"></hero-modal-ability>
+    <hero-modal-abilities id="abilities-component" style="display: none;"></hero-modal-abilities>
+    <hero-modal-agents id="agents-component" style="display: none;"></hero-modal-agents>
+    <hero-modal-agent-config id="agent-config-component" style="display: none;"></hero-modal-agent-config>
 
     <!-- Login View -->
     <div id="login-view" class="view" data-view="login" style="display: none;">
@@ -74,243 +80,6 @@
       </footer>
     </div>
 
-    <!-- New Session Modal -->
-    <div id="new-session-modal" class="modal-overlay" style="display: none;">
-      <div class="modal">
-        <h3>New Session</h3>
-        <form id="new-session-form" autocomplete="off">
-          <div class="form-group">
-            <label for="session-name">Session Name</label>
-            <input type="text" id="session-name" name="name" required placeholder="e.g., project-x" autocomplete="off">
-          </div>
-          <div class="form-group">
-            <label for="agent-select">Agent</label>
-            <select id="agent-select" name="agentId" required>
-              <option value="">Select an agent...</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label for="system-prompt">System Prompt (optional)</label>
-            <textarea id="system-prompt" name="systemPrompt" rows="3" placeholder="Instructions for the AI agent..."></textarea>
-          </div>
-          <div id="new-session-error" class="error-message"></div>
-          <div class="modal-actions">
-            <button type="button" id="cancel-new-session" class="button button-secondary">Cancel</button>
-            <button type="submit" class="button button-primary">Create</button>
-          </div>
-        </form>
-      </div>
-    </div>
-
-    <!-- New Agent Modal -->
-    <div id="new-agent-modal" class="modal-overlay" style="display: none;">
-      <div class="modal">
-        <h3>Add Agent</h3>
-        <form id="new-agent-form" autocomplete="off">
-          <div class="form-row">
-            <div class="form-group form-group-half">
-              <label for="agent-name">Agent Name</label>
-              <input type="text" id="agent-name" name="name" required placeholder="e.g., My Claude" autocomplete="off">
-            </div>
-            <div class="form-group form-group-half">
-              <label for="agent-type">Base Type</label>
-              <select id="agent-type" name="type" required>
-                <option value="claude">Claude (Anthropic)</option>
-                <option value="openai">OpenAI</option>
-              </select>
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group form-group-half">
-              <label for="agent-model">Model</label>
-              <select id="agent-model" name="model">
-                <option value="">Default</option>
-                <optgroup label="Claude" id="claude-models">
-                  <option value="claude-sonnet-4-20250514">Claude Sonnet 4</option>
-                  <option value="claude-opus-4-20250514">Claude Opus 4</option>
-                  <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
-                  <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku</option>
-                </optgroup>
-                <optgroup label="OpenAI" id="openai-models">
-                  <option value="gpt-4o">GPT-4o</option>
-                  <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                  <option value="gpt-4">GPT-4</option>
-                  <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
-                </optgroup>
-              </select>
-            </div>
-            <div class="form-group form-group-half">
-              <label for="agent-api-url">API URL (optional)</label>
-              <input type="url" id="agent-api-url" name="apiUrl" placeholder="Custom endpoint..." autocomplete="off">
-            </div>
-          </div>
-          <div class="form-group">
-            <label for="agent-api-key">API Key</label>
-            <input type="password" id="agent-api-key" name="apiKey" required placeholder="sk-..." autocomplete="off">
-          </div>
-          <div class="form-group">
-            <label>Default Abilities</label>
-            <div id="agent-abilities-list" class="checkbox-list"></div>
-          </div>
-          <div id="new-agent-error" class="error-message"></div>
-          <div class="modal-actions">
-            <button type="button" id="cancel-new-agent" class="button button-secondary">Cancel</button>
-            <button type="submit" class="button button-primary">Add Agent</button>
-          </div>
-        </form>
-      </div>
-    </div>
-
-    <!-- Abilities Modal -->
-    <div id="abilities-modal" class="modal-overlay" style="display: none;">
-      <div class="modal modal-lg">
-        <div class="modal-header-tabs">
-          <h3>Abilities</h3>
-          <div class="modal-tabs">
-            <button type="button" class="tab-button active" data-tab="system">System</button>
-            <button type="button" class="tab-button" data-tab="user">My Abilities</button>
-          </div>
-          <button type="button" id="close-abilities-modal" class="button button-icon">&times;</button>
-        </div>
-        <div id="abilities-tab-system" class="tab-content active">
-          <div class="tab-spacer"></div>
-          <div id="system-abilities-list" class="abilities-list"></div>
-        </div>
-        <div id="abilities-tab-user" class="tab-content">
-          <div class="abilities-actions">
-            <button type="button" id="new-ability-button" class="button button-primary">New Ability</button>
-          </div>
-          <div id="user-abilities-list" class="abilities-list"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Edit Ability Modal -->
-    <div id="edit-ability-modal" class="modal-overlay" style="display: none;">
-      <div class="modal modal-lg">
-        <h3 id="edit-ability-title">New Ability</h3>
-        <form id="edit-ability-form" autocomplete="off">
-          <div class="form-group">
-            <label for="ability-name">Name</label>
-            <input type="text" id="ability-name" name="name" required placeholder="e.g., my_custom_ability" autocomplete="off">
-            <small class="form-hint">Use lowercase letters, numbers, and underscores only.</small>
-          </div>
-          <div class="form-group">
-            <label for="ability-description">Description (optional)</label>
-            <input type="text" id="ability-description" name="description" placeholder="Brief description of this ability" autocomplete="off">
-          </div>
-          <div class="form-group">
-            <label for="edit-ability-applies">When to Use</label>
-            <input type="text" id="edit-ability-applies" name="applies" placeholder="e.g., when user asks about coding, for file operations, always" autocomplete="off">
-            <small class="form-hint">Describe the context or trigger for this ability (helps the agent know when to apply it)</small>
-          </div>
-          <div class="form-group">
-            <label for="ability-content">Content (Markdown)</label>
-            <textarea id="ability-content" name="content" required rows="12" placeholder="Instructions for the AI agent..."></textarea>
-          </div>
-          <div id="edit-ability-error" class="error-message"></div>
-          <div class="modal-actions">
-            <button type="button" id="cancel-edit-ability" class="button button-secondary">Cancel</button>
-            <button type="submit" class="button button-primary">Save</button>
-          </div>
-        </form>
-      </div>
-    </div>
-
-    <!-- Agents List Modal -->
-    <div id="agents-modal" class="modal-overlay" style="display: none;">
-      <div class="modal modal-lg">
-        <div class="modal-header-tabs">
-          <h3>Agents</h3>
-          <button type="button" id="close-agents-modal" class="button button-icon">&times;</button>
-        </div>
-        <div class="agents-content">
-          <div class="agents-actions">
-            <button type="button" id="add-agent-from-list" class="button button-primary">Add Agent</button>
-          </div>
-          <div id="agents-list" class="agents-list"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Agent Config Modal -->
-    <div id="agent-config-modal" class="modal-overlay" style="display: none;">
-      <div class="modal modal-lg">
-        <h3>Agent Configuration</h3>
-        <p class="config-description">
-          This JSON is merged into every API call for this agent.
-          Common fields: model, maxTokens, temperature, etc.
-        </p>
-        <form id="agent-config-form" autocomplete="off">
-          <input type="hidden" id="agent-config-id">
-          <div class="form-group">
-            <label for="agent-config-json">Configuration (JSON)</label>
-            <textarea id="agent-config-json" name="config" rows="15" class="config-editor" autocomplete="off"
-              placeholder='{ "model": "claude-sonnet-4-20250514", "maxTokens": 4096 }'></textarea>
-          </div>
-          <div id="agent-config-error" class="error-message"></div>
-          <div class="modal-actions">
-            <button type="button" id="cancel-agent-config" class="button button-secondary">Cancel</button>
-            <button type="submit" class="button button-primary">Save</button>
-          </div>
-        </form>
-      </div>
-    </div>
-
-    <!-- Ability Modal (Create/Edit) -->
-    <div id="ability-modal" class="modal-overlay" style="display: none;">
-      <div class="modal modal-lg">
-        <h3 id="ability-modal-title">Create Ability</h3>
-        <form id="ability-form" autocomplete="off">
-          <input type="hidden" id="ability-edit-id">
-          <div class="form-row">
-            <div class="form-group form-group-half">
-              <label for="ability-name">Name</label>
-              <input type="text" id="ability-name" name="name" required pattern="[a-z][a-z0-9_]*" placeholder="my_ability" autocomplete="off">
-              <small class="form-hint">Lowercase letters, numbers, underscores only.</small>
-            </div>
-            <div class="form-group form-group-half">
-              <label for="ability-category">Category</label>
-              <input type="text" id="ability-category" name="category" placeholder="custom" autocomplete="off">
-            </div>
-          </div>
-          <div class="form-group">
-            <label for="ability-description">Description</label>
-            <input type="text" id="ability-description" name="description" placeholder="Brief description of this ability" autocomplete="off">
-          </div>
-          <div class="form-group">
-            <label for="ability-applies">When to Use</label>
-            <input type="text" id="ability-applies" name="applies" placeholder="e.g., when user asks about coding, for file operations, always" autocomplete="off">
-            <small class="form-hint">Describe the context or trigger for this ability (helps the agent know when to apply it)</small>
-          </div>
-          <div class="form-group">
-            <label for="ability-content">Content (Markdown)</label>
-            <textarea id="ability-content" name="content" required rows="12" placeholder="Instructions for the AI agent..."></textarea>
-            <small class="skill-template-hint">Template variables: {{DATE}}, {{TIME}}, {{USER_NAME}}, {{SESSION_NAME}}</small>
-          </div>
-          <div class="form-group">
-            <label>Permissions</label>
-            <div class="checkbox-list">
-              <label class="checkbox-item">
-                <input type="checkbox" id="ability-auto-approve" name="autoApprove">
-                <span>Auto-approve (skip confirmation)</span>
-              </label>
-            </div>
-            <select id="ability-danger-level" name="dangerLevel" class="form-select" style="margin-top: 8px;">
-              <option value="safe">Safe - Low risk</option>
-              <option value="moderate">Moderate - Some risk</option>
-              <option value="dangerous">Dangerous - High risk</option>
-            </select>
-          </div>
-          <div id="ability-modal-error" class="error-message"></div>
-          <div class="modal-actions">
-            <button type="button" id="cancel-ability-modal" class="button button-secondary">Cancel</button>
-            <button type="submit" class="button button-primary">Save</button>
-          </div>
-        </form>
-      </div>
-    </div>
-
     <!-- Running Operations Panel -->
     <div id="operations-panel" class="operations-panel" style="display: none;">
       <div class="operations-header">
@@ -324,7 +93,7 @@
   <!-- Component imports (ES modules) -->
   <script type="module">
     // Hero components (includes Mythix-UI dependency)
-    import './js/components/index.js?v=3';
+    import './js/components/index.js?v=4';
   </script>
 
   <script src="https://cdn.jsdelivr.net/npm/markdown-it@14.1.0/dist/markdown-it.min.js"></script>

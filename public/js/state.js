@@ -66,68 +66,10 @@ const elements = {
   scrollToBottomBtn:  document.getElementById('scroll-to-bottom'),
   chatMain:           document.querySelector('.chat-main'),
 
-  // New Session Modal
-  newSessionModal:  document.getElementById('new-session-modal'),
-  newSessionForm:   document.getElementById('new-session-form'),
-  agentSelect:      document.getElementById('agent-select'),
-  newSessionError:  document.getElementById('new-session-error'),
-  cancelNewSession: document.getElementById('cancel-new-session'),
-
-  // New Agent Modal
-  newAgentModal:        document.getElementById('new-agent-modal'),
-  newAgentForm:         document.getElementById('new-agent-form'),
-  newAgentError:        document.getElementById('new-agent-error'),
-  cancelNewAgent:       document.getElementById('cancel-new-agent'),
-  agentAbilitiesList:   document.getElementById('agent-abilities-list'),
-
-  // Abilities
-  abilitiesButton:         document.getElementById('abilities-button'),
-  abilitiesModal:       document.getElementById('abilities-modal'),
-  closeAbilitiesModal:  document.getElementById('close-abilities-modal'),
-  systemAbilitiesList:  document.getElementById('system-abilities-list'),
-  userAbilitiesList:    document.getElementById('user-abilities-list'),
-  newAbilityButton:        document.getElementById('new-ability-button'),
-
-  // Edit Ability Modal
-  editAbilityModal:     document.getElementById('edit-ability-modal'),
-  editAbilityTitle:     document.getElementById('edit-ability-title'),
-  editAbilityForm:      document.getElementById('edit-ability-form'),
-  editAbilityError:     document.getElementById('edit-ability-error'),
-  cancelEditAbility:    document.getElementById('cancel-edit-ability'),
-
   // Operations Panel
   operationsPanel:      document.getElementById('operations-panel'),
   operationsList:       document.getElementById('operations-list'),
   toggleOperations:     document.getElementById('toggle-operations'),
-
-  // Agents
-  agentsButton:            document.getElementById('agents-button'),
-  agentsModal:          document.getElementById('agents-modal'),
-  closeAgentsModal:     document.getElementById('close-agents-modal'),
-  addAgentFromList:     document.getElementById('add-agent-from-list'),
-  agentsList:           document.getElementById('agents-list'),
-
-  // Agent Config Modal
-  agentConfigModal:     document.getElementById('agent-config-modal'),
-  agentConfigForm:      document.getElementById('agent-config-form'),
-  agentConfigId:        document.getElementById('agent-config-id'),
-  agentConfigJson:      document.getElementById('agent-config-json'),
-  agentConfigError:     document.getElementById('agent-config-error'),
-  cancelAgentConfig:    document.getElementById('cancel-agent-config'),
-
-  // Ability Modal
-  abilityModal:         document.getElementById('ability-modal'),
-  abilityModalTitle:    document.getElementById('ability-modal-title'),
-  abilityForm:          document.getElementById('ability-form'),
-  abilityEditId:        document.getElementById('ability-edit-id'),
-  abilityName:          document.getElementById('ability-name'),
-  abilityCategory:      document.getElementById('ability-category'),
-  abilityDescription:   document.getElementById('ability-description'),
-  abilityContent:       document.getElementById('ability-content'),
-  abilityAutoApprove:   document.getElementById('ability-auto-approve'),
-  abilityDangerLevel:   document.getElementById('ability-danger-level'),
-  abilityModalError:    document.getElementById('ability-modal-error'),
-  cancelAbilityModal:   document.getElementById('cancel-ability-modal'),
 };
 
 // Read base path from <base> tag (set by server from package.json config)

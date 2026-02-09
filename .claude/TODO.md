@@ -285,6 +285,18 @@ Immutable log = no deletes. Ever.
 [ ] Debug "Show hidden messages" checkbox - debug logging added, needs user testing to verify behavior
 [ ] Add token scalar setting for adjusting cost calculation ratio (mentioned in update_usage requirements)
 
+## Recently Completed (2026-02-08)
+[x] Mythix-UI Component Refactoring - Phase 2 complete
+    - Created `hero-main-controls.js` - consolidates header action buttons (horizontal/vertical layouts)
+    - Created `HeroModalAbilities` - abilities list with System/User tabs
+    - Created `HeroModalAgents` - agents list with edit/delete
+    - Created `HeroModalAgentConfig` - JSON configuration editor for agents
+    - Updated `hero-header.js` to use `<hero-main-controls>` component
+    - Removed ~235 lines of old modal HTML from index.html
+    - Cleaned up state.js (~62 lines of modal element references removed)
+    - Cleaned up app.js (~350 lines of modal functions removed)
+    - Fixed event naming: `show-modal` for consistency across components
+
 ## Recently Completed (2026-02-07)
 [x] Nginx config: Added /mythix-ui/ location block for mythix-ecosystem libraries
 [x] Client-side cleanup: Moved cost utilities (formatTokenCount, calculateCost, formatCost) to utils.js

@@ -253,6 +253,7 @@ export class HeroSidebar extends HeroComponent {
                class="session-search"
                placeholder="Search sessions..."
                value="${escapeHtml(this.#searchQuery)}"
+               autocomplete="off"
                data-event-oninput="setSearchQuery(event.target.value)">
         <div class="sidebar-actions">
           <button class="toggle-archived" data-event-onclick="toggleHidden">
@@ -272,6 +273,9 @@ export class HeroSidebar extends HeroComponent {
           Logout
         </button>
       </div>
+      <button class="fab-new-session" data-event-onclick="showNewSessionModal" title="New Session">
+        +
+      </button>
     `;
 
     HeroComponent.prototype.render.call(this, html);

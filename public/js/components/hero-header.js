@@ -5,9 +5,9 @@
  *
  * Displays:
  * - Session title (in chat view)
- * - Usage/cost display
- * - Session dropdown (in chat view)
- * - Action buttons (back, logout, abilities, agents)
+ * - Logo and title (in sessions view)
+ * - Navigation controls via hero-main-controls
+ * - Mobile hamburger menu
  */
 
 import {
@@ -26,10 +26,6 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-function formatCost(cost) {
-  return '$' + (cost || 0).toFixed(2);
-}
-
 // ============================================================================
 // HeroHeader Component
 // ============================================================================
@@ -39,8 +35,7 @@ export class HeroHeader extends HeroComponent {
 
   // Component state
   #view = 'sessions';
-  #serviceSpend = { cost: 0 };
-  #sessionSpend = { cost: 0 };
+  #mobileMenuOpen = false;
   #unsubscribers = [];
 
   /**
@@ -86,14 +81,17 @@ export class HeroHeader extends HeroComponent {
     // Subscribe to state changes
     this.#unsubscribers.push(
       this.subscribeGlobal('currentSession', () => this.render()),
-      this.subscribeGlobal('sessions', () => this.render()),
-      this.subscribeGlobal('globalSpend', () => this.#updateCostDisplay()),
-      this.subscribeGlobal('wsConnected', () => this.render())
+      this.subscribeGlobal('sessions', () => this.render())
     );
 
     // Listen for view changes from hero-app
     document.addEventListener('viewchange', (e) => {
       this.view = e.detail.view;
+    });
+
+    // Listen for menu actions from hero-main-controls to close mobile menu
+    this.addEventListener('hero:menu-action', () => {
+      this.closeMobileMenu();
     });
 
     this.render();
@@ -110,37 +108,6 @@ export class HeroHeader extends HeroComponent {
   }
 
   /**
-   * Set service and session spend.
-   * @param {object} service
-   * @param {object} session
-   */
-  setSpend(service, session) {
-    this.#serviceSpend = service || { cost: 0 };
-    this.#sessionSpend = session || { cost: 0 };
-    this.#updateCostDisplay();
-  }
-
-  /**
-   * Update cost display elements.
-   */
-  #updateCostDisplay() {
-    let globalEl  = this.querySelector('.global-cost');
-    let serviceEl = this.querySelector('.service-cost');
-    let sessionEl = this.querySelector('.session-cost');
-
-    if (globalEl) {
-      let spend = GlobalState.globalSpend.valueOf();
-      globalEl.textContent = formatCost(spend.cost);
-    }
-    if (serviceEl) {
-      serviceEl.textContent = formatCost(this.#serviceSpend.cost);
-    }
-    if (sessionEl) {
-      sessionEl.textContent = formatCost(this.#sessionSpend.cost);
-    }
-  }
-
-  /**
    * Navigate back to sessions.
    */
   goBack() {
@@ -151,71 +118,32 @@ export class HeroHeader extends HeroComponent {
   }
 
   /**
-   * Logout user.
+   * Toggle mobile menu.
    */
-  logout() {
-    this.dispatchEvent(new CustomEvent('hero:logout', { bubbles: true }));
+  toggleMobileMenu() {
+    this.#mobileMenuOpen = !this.#mobileMenuOpen;
+    let menu = this.querySelector('.mobile-menu');
+    if (menu) {
+      menu.classList.toggle('open', this.#mobileMenuOpen);
+    }
+    let hamburger = this.querySelector('.hamburger-button');
+    if (hamburger) {
+      hamburger.classList.toggle('active', this.#mobileMenuOpen);
+    }
   }
 
   /**
-   * Show abilities modal.
+   * Close mobile menu.
    */
-  showAbilities() {
-    this.dispatchEvent(new CustomEvent('hero:show-modal', {
-      detail: { modal: 'abilities' },
-      bubbles: true,
-    }));
-  }
-
-  /**
-   * Show agents modal.
-   */
-  showAgents() {
-    this.dispatchEvent(new CustomEvent('hero:show-modal', {
-      detail: { modal: 'agents' },
-      bubbles: true,
-    }));
-  }
-
-  /**
-   * Show new session modal.
-   */
-  newSession() {
-    this.dispatchEvent(new CustomEvent('hero:show-modal', {
-      detail: { modal: 'new-session' },
-      bubbles: true,
-    }));
-  }
-
-  /**
-   * Clear messages in current session.
-   */
-  clearMessages() {
-    this.dispatchEvent(new CustomEvent('hero:clear-messages', { bubbles: true }));
-  }
-
-  /**
-   * Toggle show hidden messages.
-   * @param {Event} e
-   */
-  #handleShowHiddenToggle(e) {
-    this.dispatchEvent(new CustomEvent('hero:toggle-hidden', {
-      detail: { show: e.target.checked },
-      bubbles: true,
-    }));
-  }
-
-  /**
-   * Handle session select change.
-   * @param {Event} e
-   */
-  #handleSessionChange(e) {
-    let sessionId = parseInt(e.target.value, 10);
-    if (sessionId) {
-      this.dispatchEvent(new CustomEvent('hero:navigate', {
-        detail: { path: `/sessions/${sessionId}` },
-        bubbles: true,
-      }));
+  closeMobileMenu() {
+    this.#mobileMenuOpen = false;
+    let menu = this.querySelector('.mobile-menu');
+    if (menu) {
+      menu.classList.remove('open');
+    }
+    let hamburger = this.querySelector('.hamburger-button');
+    if (hamburger) {
+      hamburger.classList.remove('active');
     }
   }
 
@@ -228,121 +156,37 @@ export class HeroHeader extends HeroComponent {
       return;
     }
 
-    let globalSpend  = GlobalState.globalSpend.valueOf();
-    let sessions     = GlobalState.sessions.valueOf() || [];
-    let wsConnected  = GlobalState.wsConnected.valueOf();
-
-    let usageHtml = this.#renderUsage(globalSpend);
-    let actionsHtml = this.#renderActions();
+    let context = (this.#view === 'chat') ? 'chat' : 'sessions';
 
     HeroComponent.prototype.render.call(this, `
       <header class="header">
         <div class="header-left">
-          ${this.#view === 'chat' ? `
+          ${(this.#view === 'chat') ? `
             <button class="button button-icon back-button" data-event-onclick="goBack" title="Back to sessions">&larr;</button>
             <h1 class="header-title" id="session-title">${escapeHtml(this.title)}</h1>
           ` : `
             <img src="assets/images/hero-cape.svg?v=1" alt="Hero" class="logo">
             <h1 class="header-title">Hero</h1>
           `}
-          ${wsConnected ? '' : '<span class="ws-status disconnected">⚠ Disconnected</span>'}
         </div>
-        ${usageHtml}
-        <div class="header-actions">
-          ${actionsHtml}
+        <div class="header-actions desktop-actions">
+          <hero-main-controls layout="horizontal" context="${context}"></hero-main-controls>
+        </div>
+        <button class="button button-icon hamburger-button" data-event-onclick="toggleMobileMenu" title="Menu">
+          <span class="hamburger-icon"></span>
+        </button>
+        <div class="mobile-menu">
+          <hero-main-controls layout="vertical" context="${context}"></hero-main-controls>
         </div>
       </header>
     `);
 
-    // Attach change handlers
-    let sessionSelect = this.querySelector('.session-select');
-    if (sessionSelect) {
-      sessionSelect.addEventListener('change', (e) => this.#handleSessionChange(e));
-    }
-
-    let showHiddenToggle = this.querySelector('.show-hidden-toggle');
-    if (showHiddenToggle) {
-      showHiddenToggle.addEventListener('change', (e) => this.#handleShowHiddenToggle(e));
-    }
-  }
-
-  /**
-   * Render usage display.
-   * @param {object} globalSpend
-   * @returns {string}
-   */
-  #renderUsage(globalSpend) {
-    if (this.#view === 'sessions') {
-      return `
-        <div class="header-usage">
-          <div class="usage-item" title="Total usage across all agents">
-            <span class="usage-label">Global Spend:</span>
-            <span class="usage-cost global-cost">${formatCost(globalSpend.cost)}</span>
-          </div>
-        </div>
-      `;
-    }
-
-    if (this.#view === 'chat') {
-      return `
-        <div class="header-usage">
-          <div class="usage-item" title="Total usage across all agents">
-            <span class="usage-label">Global Spend:</span>
-            <span class="usage-cost global-cost">${formatCost(globalSpend.cost)}</span>
-          </div>
-          <div class="usage-item usage-service" title="Usage for this API key/service">
-            <span class="usage-label">Service Spend:</span>
-            <span class="usage-cost service-cost">${formatCost(this.#serviceSpend.cost)}</span>
-          </div>
-          <div class="usage-item usage-session" title="Usage in this session">
-            <span class="usage-label">Session Spend:</span>
-            <span class="usage-cost session-cost">${formatCost(this.#sessionSpend.cost)}</span>
-          </div>
-        </div>
-      `;
-    }
-
-    return '';
-  }
-
-  /**
-   * Render action buttons.
-   * @returns {string}
-   */
-  #renderActions() {
-    if (this.#view === 'sessions') {
-      return `
-        <button class="button button-secondary agents-button" data-event-onclick="showAgents">Agents</button>
-        <button class="button button-secondary abilities-button" data-event-onclick="showAbilities">Abilities</button>
-        <button class="button button-primary new-session-button" data-event-onclick="newSession">New Session</button>
-        <button class="button button-secondary logout-button" data-event-onclick="logout">Logout</button>
-      `;
-    }
-
-    if (this.#view === 'chat') {
-      let sessions = GlobalState.sessions.valueOf() || [];
-      let currentId = this.currentSession?.id;
-
-      let optionsHtml = '<option value="">Switch session...</option>';
-      for (let session of sessions) {
-        let selected = (session.id === currentId) ? 'selected' : '';
-        optionsHtml += `<option value="${session.id}" ${selected}>${escapeHtml(session.name)}</option>`;
+    // Close mobile menu when clicking outside
+    document.addEventListener('click', (e) => {
+      if (this.#mobileMenuOpen && !this.contains(e.target)) {
+        this.closeMobileMenu();
       }
-
-      return `
-        <label class="checkbox-label">
-          <input type="checkbox" class="show-hidden-toggle" id="show-hidden-toggle">
-          <span>Show hidden</span>
-        </label>
-        <select class="session-select" id="session-select">
-          ${optionsHtml}
-        </select>
-        <button class="button button-secondary clear-button" id="clear-button" data-event-onclick="clearMessages">Clear</button>
-        <button class="button button-secondary logout-button" id="chat-logout-button" data-event-onclick="logout">Logout</button>
-      `;
-    }
-
-    return '';
+    }, { once: true });
   }
 }
 
