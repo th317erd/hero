@@ -247,6 +247,10 @@ export class HeroSidebar extends HeroComponent {
     }
 
     let sessions = this.visibleSessions;
+    let showHidden = GlobalState.showHiddenSessions.valueOf();
+    let eyeIcon = (showHidden) ? '👁' : '👁‍🗨';
+    let eyeTitle = (showHidden) ? 'Hide archived sessions' : 'Show archived sessions';
+
     let html = `
       <div class="sidebar-header">
         <input type="text"
@@ -255,27 +259,15 @@ export class HeroSidebar extends HeroComponent {
                value="${escapeHtml(this.#searchQuery)}"
                autocomplete="off"
                data-event-oninput="setSearchQuery(event.target.value)">
-        <div class="sidebar-actions">
-          <button class="toggle-archived" data-event-onclick="toggleHidden">
-            ${GlobalState.showHiddenSessions.valueOf() ? 'Hide' : 'Show'} archived
-          </button>
-        </div>
+        <button class="toggle-archived ${(showHidden) ? 'active' : ''}"
+                data-event-onclick="toggleHidden"
+                title="${eyeTitle}">
+          ${eyeIcon}
+        </button>
       </div>
       <div class="sessions-list">
         ${sessions.map((s) => this.#renderSession(s)).join('')}
       </div>
-      <div class="sidebar-footer">
-        <span class="global-cost">${formatCost(GlobalState.globalSpend.valueOf().cost || 0)}</span>
-        <button class="new-session-button" data-event-onclick="showNewSessionModal">
-          New Session
-        </button>
-        <button class="logout-button" data-event-onclick="logout">
-          Logout
-        </button>
-      </div>
-      <button class="fab-new-session" data-event-onclick="showNewSessionModal" title="New Session">
-        +
-      </button>
     `;
 
     HeroComponent.prototype.render.call(this, html);
