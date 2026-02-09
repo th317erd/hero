@@ -108,11 +108,15 @@ export class HeroModal extends MythixUIModal {
   /**
    * Open the modal.
    */
-  openModal() {
+  async openModal() {
     this._errorMessage = '';
 
     // Allow onOpen to cancel opening (returns false)
-    if (this.onOpen() === false)
+    let onOpenResult = this.onOpen();
+    if (onOpenResult instanceof Promise) {
+      onOpenResult = await onOpenResult;
+    }
+    if (onOpenResult === false)
       return;
 
     // Get or prepare the dialog
@@ -645,7 +649,15 @@ export class HeroModalAbilities extends HeroModal {
   get modalName() { return 'abilities'; }
   get modalTitle() { return 'Abilities'; }
 
-  onOpen() {
+  async onOpen() {
+    // Fetch fresh abilities list using global function
+    try {
+      let abilities = await window.fetchAbilities();
+      this.setGlobal('abilities', abilities);
+    } catch (error) {
+      console.error('Failed to fetch abilities:', error);
+    }
+
     // Rebuild content to refresh lists
     this.buildContent();
     this._prepareDialog();
@@ -824,7 +836,15 @@ export class HeroModalAgents extends HeroModal {
   get modalName() { return 'agents'; }
   get modalTitle() { return 'Agents'; }
 
-  onOpen() {
+  async onOpen() {
+    // Fetch fresh agents list using global function
+    try {
+      let agents = await window.fetchAgents();
+      this.setGlobal('agents', agents);
+    } catch (error) {
+      console.error('Failed to fetch agents:', error);
+    }
+
     // Rebuild content to refresh list
     this.buildContent();
     this._prepareDialog();
