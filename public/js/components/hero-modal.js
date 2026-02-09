@@ -650,9 +650,9 @@ export class HeroModalAbilities extends HeroModal {
   get modalTitle() { return 'Abilities'; }
 
   async onOpen() {
-    // Fetch fresh abilities list using global function
+    // Fetch fresh abilities list
     try {
-      let abilities = await window.fetchAbilities();
+      let abilities = await API.abilities.list();
       this.setGlobal('abilities', abilities);
     } catch (error) {
       console.error('Failed to fetch abilities:', error);
@@ -837,9 +837,9 @@ export class HeroModalAgents extends HeroModal {
   get modalTitle() { return 'Agents'; }
 
   async onOpen() {
-    // Fetch fresh agents list using global function
+    // Fetch fresh agents list
     try {
-      let agents = await window.fetchAgents();
+      let agents = await API.agents.list();
       this.setGlobal('agents', agents);
     } catch (error) {
       console.error('Failed to fetch agents:', error);

@@ -17,12 +17,42 @@
   {
     "imports": {
       "@cdn/mythix-ui-core@1": "/mythix-ui/mythix-ui-core/dist/index.js?v=3",
-      "@cdn/mythix-ui-modal@1": "/mythix-ui/mythix-ui-modal/dist/mythix-ui-modal.js?v=3"
+      "@cdn/mythix-ui-modal@1": "/mythix-ui/mythix-ui-modal/dist/mythix-ui-modal.js?v=3",
+      "@cdn/mythix-ui-for-each@1": "/mythix-ui/mythix-ui-for-each/dist/mythix-ui-for-each.js"
     }
   }
   </script>
+
+  <!-- Mythix UI URL Resolver for component lazy loading -->
+  <script>
+    const mythixUI = (globalThis.mythixUI = (globalThis.mythixUI || {}));
+
+    // Disable strict mode to allow complex template expressions (requires unsafe-eval CSP)
+    mythixUI.strictMode = false;
+
+    // Resolver for <mythix-require> component loading
+    mythixUI.urlResolver = ({ src, path, fileName }) => {
+      // Handle @cdn/hero-* pattern for hero components
+      let heroMatch = src.match(/^@cdn\/(hero-[\w-]+)(@[\d.]+)?$/);
+      if (heroMatch) {
+        return `/hero/js/components/${heroMatch[1]}/${heroMatch[1]}.html`;
+      }
+
+      // Handle @cdn/mythix-* pattern for mythix-ui components
+      let mythixMatch = src.match(/^@cdn\/(mythix-[\w-]+)(@[\d.]+)?$/);
+      if (mythixMatch) {
+        return `/mythix-ui/${mythixMatch[1]}/dist/${mythixMatch[1]}.html`;
+      }
+
+      return src;
+    };
+  </script>
 </head>
 <body>
+  <!-- Lazy-loaded components via mythix-require -->
+  <mythix-require src="@cdn/mythix-ui-for-each@1"></mythix-require>
+  <mythix-require src="@cdn/hero-sessions-list@1"></mythix-require>
+
   <hero-app id="app">
     <!-- WebSocket handler -->
     <hero-websocket></hero-websocket>

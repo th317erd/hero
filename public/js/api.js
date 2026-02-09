@@ -4,6 +4,9 @@
 // API Functions
 // ============================================================================
 
+/**
+ * Base API request function.
+ */
 async function api(method, path, body) {
   let options = {
     method:      method,
@@ -24,6 +27,113 @@ async function api(method, path, body) {
 
   return data;
 }
+
+// ============================================================================
+// API Namespace
+// ============================================================================
+
+/**
+ * Organized API namespace for cleaner code.
+ *
+ * Usage:
+ *   await API.sessions.list()
+ *   await API.sessions.archive(sessionId)
+ *   await API.agents.list()
+ */
+const API = {
+  // --------------------------------------------------------------------------
+  // Auth
+  // --------------------------------------------------------------------------
+  auth: {
+    login:  (username, password) => api('POST', '/login', { username, password }),
+    logout: () => api('POST', '/logout'),
+    me:     () => api('GET', '/me'),
+  },
+
+  // --------------------------------------------------------------------------
+  // Sessions
+  // --------------------------------------------------------------------------
+  sessions: {
+    list: async (options = {}) => {
+      let params = new URLSearchParams();
+      if (options.showHidden) params.append('showHidden', '1');
+      if (options.search) params.append('search', options.search);
+      let queryString = params.toString();
+      let path = (queryString) ? `/sessions?${queryString}` : '/sessions';
+      let data = await api('GET', path);
+      return data.sessions;
+    },
+
+    get:     (id) => api('GET', `/sessions/${id}`),
+    create:  (name, agentId, systemPrompt) => api('POST', '/sessions', { name, agentId, systemPrompt }),
+    update:  (id, updates) => api('PUT', `/sessions/${id}`, updates),
+    delete:  (id) => api('DELETE', `/sessions/${id}`),
+    archive: (id) => api('POST', `/sessions/${id}/archive`),
+    unarchive: (id) => api('POST', `/sessions/${id}/unarchive`),
+    setStatus: (id, status) => api('PUT', `/sessions/${id}/status`, { status }),
+  },
+
+  // --------------------------------------------------------------------------
+  // Messages
+  // --------------------------------------------------------------------------
+  messages: {
+    list:   (sessionId) => api('GET', `/sessions/${sessionId}/messages`),
+    send:   (sessionId, content) => api('POST', `/sessions/${sessionId}/messages`, { content }),
+    clear:  (sessionId) => api('DELETE', `/sessions/${sessionId}/messages`),
+    // stream is handled separately due to its complexity
+  },
+
+  // --------------------------------------------------------------------------
+  // Agents
+  // --------------------------------------------------------------------------
+  agents: {
+    list: async () => {
+      let data = await api('GET', '/agents');
+      return data.agents;
+    },
+    get:       (id) => api('GET', `/agents/${id}`),
+    create:    (name, type, apiKey, apiUrl, defaultAbilities, config) =>
+      api('POST', '/agents', { name, type, apiKey, apiUrl, defaultAbilities, config }),
+    update:    (id, updates) => api('PUT', `/agents/${id}`, updates),
+    delete:    (id) => api('DELETE', `/agents/${id}`),
+    getConfig: async (id) => {
+      let data = await api('GET', `/agents/${id}/config`);
+      return data.config;
+    },
+    updateConfig: (id, config) => api('PUT', `/agents/${id}/config`, { config }),
+  },
+
+  // --------------------------------------------------------------------------
+  // Abilities
+  // --------------------------------------------------------------------------
+  abilities: {
+    list: async () => {
+      let data = await api('GET', '/abilities');
+      let system = data.abilities.filter((a) => a.source === 'system' || a.source === 'builtin');
+      let user = data.abilities.filter((a) => a.source === 'user');
+      return { system, user, all: data.abilities };
+    },
+    get:    (id) => api('GET', `/abilities/${id}`),
+    create: (name, description, applies, content) =>
+      api('POST', '/abilities', { name, description, applies, content, type: 'process' }),
+    update: (id, name, description, applies, content) =>
+      api('PUT', `/abilities/${id}`, { name, description, applies, content }),
+    delete: (id) => api('DELETE', `/abilities/${id}`),
+  },
+
+  // --------------------------------------------------------------------------
+  // Usage / Billing
+  // --------------------------------------------------------------------------
+  usage: {
+    global:     () => api('GET', '/usage'),
+    session:    (sessionId) => api('GET', `/usage/session/${sessionId}`),
+    charge:     (data) => api('POST', '/usage/charge', data),
+    correction: (data) => api('POST', '/usage/correction', data),
+  },
+};
+
+// Make API available globally
+window.API = API;
 
 async function login(username, password) {
   return await api('POST', '/login', { username, password });
@@ -391,3 +501,47 @@ async function recordCharge(data) {
 async function createUsageCorrection(data) {
   return await api('POST', '/usage/correction', data);
 }
+
+// ============================================================================
+// Session Archive Functions (new)
+// ============================================================================
+
+async function archiveSession(id) {
+  return await api('POST', `/sessions/${id}/archive`);
+}
+
+async function unarchiveSession(id) {
+  return await api('POST', `/sessions/${id}/unarchive`);
+}
+
+// ============================================================================
+// Backward Compatibility - Global Window Exports
+// ============================================================================
+// These exports maintain compatibility with existing code that uses window.functionName
+// New code should use API.namespace.method() instead
+
+window.archiveSession     = archiveSession;
+window.unarchiveSession   = unarchiveSession;
+window.fetchSessions      = fetchSessions;
+window.fetchSession       = fetchSession;
+window.createSession      = createSession;
+window.sendMessage        = sendMessage;
+window.sendMessageStream  = sendMessageStream;
+window.clearMessages      = clearMessages;
+window.fetchAgents        = fetchAgents;
+window.createAgent        = createAgent;
+window.fetchAbilities     = fetchAbilities;
+window.fetchAbility       = fetchAbility;
+window.createAbility      = createAbility;
+window.updateAbility      = updateAbility;
+window.deleteAbility      = deleteAbility;
+window.fetchAgentConfig   = fetchAgentConfig;
+window.updateAgentConfig  = updateAgentConfig;
+window.deleteAgent        = deleteAgent;
+window.fetchUsage         = fetchUsage;
+window.fetchSessionUsage  = fetchSessionUsage;
+window.recordCharge       = recordCharge;
+window.createUsageCorrection = createUsageCorrection;
+window.login              = login;
+window.logout             = logout;
+window.fetchMe            = fetchMe;

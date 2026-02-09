@@ -18,7 +18,7 @@ export { HeroApp, parseRoute } from './hero-app.js';
 
 // Layout components
 export { HeroHeader } from './hero-header.js';
-export { HeroSessionsList } from './hero-sessions-list.js';
+// HeroSessionsList is now loaded via <mythix-require src="@cdn/hero-sessions-list@1">
 export { HeroStatusBar } from './hero-status-bar.js';
 export { HeroMainControls } from './hero-main-controls.js';
 
@@ -62,7 +62,7 @@ if (!window.__heroComponentsLoaded) {
   console.log('[Hero] Components registered:', [
     'hero-app',
     'hero-header',
-    'hero-sessions-list',
+    'hero-sessions-list (lazy)',
     'hero-status-bar',
     'hero-main-controls',
     'hero-chat',
