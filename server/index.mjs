@@ -86,6 +86,11 @@ app.get('/components-test', (req, res) => {
   res.sendFile(join(__dirname, '..', 'public', 'components-test.html'));
 });
 
+// Component demo page (dev only)
+app.get('/demo', (req, res) => {
+  res.sendFile(join(__dirname, '..', 'public', 'demo.html'));
+});
+
 // All other routes require auth and serve the SPA
 app.get('*', requireAuth, (req, res) => {
   res.type('html').send(indexHtml);

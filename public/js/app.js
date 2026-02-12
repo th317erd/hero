@@ -96,6 +96,11 @@ async function loadSession(sessionId) {
     state.currentSession = session;
     state.messages       = session.messages || [];
 
+    // Update GlobalState for components (hero-header uses this for title)
+    if (typeof setGlobal === 'function') {
+      setGlobal('currentSession', session);
+    }
+
     // Load session usage (global, service, and session spend)
     await loadSessionUsage(sessionId);
 
@@ -106,7 +111,10 @@ async function loadSession(sessionId) {
       updateCostDisplay();
     }
 
-    elements.sessionTitle.textContent = session.name;
+    // Legacy: update session title element if it exists
+    if (elements.sessionTitle) {
+      elements.sessionTitle.textContent = session.name;
+    }
 
     // Update session dropdown
     await updateSessionSelect();
@@ -114,8 +122,12 @@ async function loadSession(sessionId) {
     renderMessages();
     scrollToBottom();
 
-    // Focus input
-    elements.messageInput.focus();
+    // Focus input (use hero-input component if available)
+    if (elements.heroInput && typeof elements.heroInput.focus === 'function') {
+      elements.heroInput.focus();
+    } else if (elements.messageInput) {
+      elements.messageInput.focus();
+    }
   } catch (error) {
     console.error('Failed to load session:', error);
     navigate('/');
@@ -123,6 +135,10 @@ async function loadSession(sessionId) {
 }
 
 async function updateSessionSelect() {
+  // Legacy dropdown - skip if element doesn't exist (using components)
+  if (!elements.sessionSelect)
+    return;
+
   if (state.sessions.length === 0)
     state.sessions = await fetchSessions();
 

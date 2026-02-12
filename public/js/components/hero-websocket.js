@@ -291,7 +291,7 @@ export class HeroWebSocket extends HeroComponent {
    */
   async #handleGlobalUpdate(message) {
     try {
-      let { fetchSessions, fetchAgents, fetchAbilities } = await import('../api.js');
+      let { fetchSessions, fetchAgents, fetchAbilities } = window;
 
       switch (message.type) {
         case 'sessions_updated':

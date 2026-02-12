@@ -16,7 +16,8 @@
     "change-password": "node server/cli/change-password.mjs",
     "update-user-encryption": "node server/cli/update-user-encryption.mjs",
     "test": "node --test 'spec/**/*-spec.mjs'",
-    "test:interactions": "node --test spec/lib/interactions/interactions-spec.mjs"
+    "test:interactions": "node --test spec/lib/interactions/interactions-spec.mjs",
+    "agent-info": "node scripts/agent-info.mjs"
   },
   "keywords": [
     "ai",

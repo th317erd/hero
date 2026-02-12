@@ -114,10 +114,14 @@ const API = {
       return { system, user, all: data.abilities };
     },
     get:    (id) => api('GET', `/abilities/${id}`),
-    create: (name, description, applies, content) =>
-      api('POST', '/abilities', { name, description, applies, content, type: 'process' }),
-    update: (id, name, description, applies, content) =>
-      api('PUT', `/abilities/${id}`, { name, description, applies, content }),
+    create: (data) => {
+      let { name, category, description, applies, content } = data;
+      return api('POST', '/abilities', { name, category, description, applies, content, type: 'process' });
+    },
+    update: (id, data) => {
+      let { name, category, description, applies, content } = data;
+      return api('PUT', `/abilities/${id}`, { name, category, description, applies, content });
+    },
     delete: (id) => api('DELETE', `/abilities/${id}`),
   },
 
@@ -461,12 +465,14 @@ async function fetchAbility(id) {
   return await api('GET', `/abilities/${id}`);
 }
 
-async function createAbility(name, description, applies, content) {
-  return await api('POST', '/abilities', { name, description, applies, content, type: 'process' });
+async function createAbility(data) {
+  let { name, category, description, applies, content } = data;
+  return await api('POST', '/abilities', { name, category, description, applies, content, type: 'process' });
 }
 
-async function updateAbility(id, name, description, applies, content) {
-  return await api('PUT', `/abilities/${id}`, { name, description, applies, content });
+async function updateAbility(id, data) {
+  let { name, category, description, applies, content } = data;
+  return await api('PUT', `/abilities/${id}`, { name, category, description, applies, content });
 }
 
 async function deleteAbility(id) {
@@ -515,7 +521,11 @@ async function unarchiveSession(id) {
 }
 
 // ============================================================================
-// Backward Compatibility - Global Window Exports
+// ES Module Exports
+// ============================================================================
+
+// ============================================================================
+// Global Window Exports
 // ============================================================================
 // These exports maintain compatibility with existing code that uses window.functionName
 // New code should use API.namespace.method() instead

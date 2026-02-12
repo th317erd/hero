@@ -1,0 +1,136 @@
+<!-- Hero Input Component -->
+<!-- Message input textarea with send/clear buttons -->
+
+<!-- Document-scope styles -->
+<style data-for="hero-input">
+  hero-input {
+    display: block;
+  }
+</style>
+
+<!-- Shadow DOM template -->
+<template data-for="hero-input">
+  <style>
+    :host {
+      display: block;
+    }
+
+    .input-container {
+      display: flex;
+      align-items: flex-end;
+      gap: 12px;
+      padding: 12px;
+      border-top: 1px solid var(--border-color, #2d2d2d);
+      background: var(--bg-secondary, #1a1a2e);
+    }
+
+    textarea {
+      flex: 1;
+      resize: none;
+      min-height: 42px;
+      max-height: 150px;
+      padding: 10px 14px;
+      background: var(--bg-tertiary, #2a2a3e);
+      border: 1px solid var(--border-color, #2d2d2d);
+      border-radius: var(--radius-sm, 4px);
+      color: var(--text-primary, #e0e0e0);
+      font-family: inherit;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    textarea:focus {
+      outline: none;
+      border-color: var(--accent, #f472b6);
+    }
+
+    textarea:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    textarea::placeholder {
+      color: var(--text-muted, #6b7280);
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 42px;
+      padding: 0 16px;
+      border: none;
+      border-radius: var(--radius-sm, 4px);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+    }
+
+    .button:hover:not(:disabled) {
+      transform: translateY(-1px);
+    }
+
+    .button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .send-button {
+      background: var(--accent, #f472b6);
+      color: white;
+    }
+
+    .send-button:hover:not(:disabled) {
+      background: var(--accent-hover, #ec4899);
+    }
+
+    .clear-button {
+      background: var(--bg-tertiary, #2a2a3e);
+      color: var(--text-primary, #e0e0e0);
+    }
+
+    .clear-button:hover:not(:disabled) {
+      background: var(--error, #f87171);
+      color: white;
+    }
+
+    /* Mobile */
+    @media (max-width: 640px) {
+      .input-container {
+        gap: 8px;
+        padding: 8px;
+      }
+
+      textarea {
+        min-height: 38px;
+        padding: 8px 12px;
+        font-size: 16px; /* Prevent zoom on iOS */
+      }
+
+      .button {
+        height: 38px;
+        padding: 0 12px;
+        font-size: 13px;
+      }
+    }
+  </style>
+
+  <div class="input-container">
+    <textarea
+      class="message-input"
+      placeholder="@@placeholder@@"
+      data-event-onkeydown="handleKeydown"
+      data-event-oninput="autoResize"
+    ></textarea>
+    <button class="button send-button" data-event-onclick="handleSend">
+      Send
+    </button>
+    <button class="button clear-button" data-event-onclick="handleClear">
+      Clear
+    </button>
+  </div>
+</template>
+
+<script type="module" src="./hero-input.js"></script>

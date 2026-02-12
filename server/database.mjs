@@ -417,6 +417,44 @@ function getMigrations() {
         DROP TABLE IF EXISTS messages;
       `,
     },
+    {
+      name: '016_remove_ability_permissions',
+      sql:  `
+        -- Remove permission columns from abilities table
+        -- Permissions (auto_approve, danger_level) will only apply to functions/commands, not abilities
+        ALTER TABLE abilities DROP COLUMN auto_approve;
+        ALTER TABLE abilities DROP COLUMN auto_approve_policy;
+        ALTER TABLE abilities DROP COLUMN danger_level;
+      `,
+    },
+    {
+      name: '017_fix_token_charges_fk',
+      sql:  `
+        -- Fix token_charges table: remove FK reference to deleted messages table
+        -- SQLite doesn't support ALTER TABLE DROP CONSTRAINT, so recreate the table
+
+        CREATE TABLE token_charges_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          agent_id INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+          session_id INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
+          message_id INTEGER,
+          input_tokens INTEGER DEFAULT 0,
+          output_tokens INTEGER DEFAULT 0,
+          cost_cents INTEGER DEFAULT 0,
+          charge_type TEXT DEFAULT 'usage',
+          description TEXT,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+        INSERT INTO token_charges_new SELECT * FROM token_charges;
+        DROP TABLE token_charges;
+        ALTER TABLE token_charges_new RENAME TO token_charges;
+
+        CREATE INDEX idx_token_charges_agent_id ON token_charges(agent_id);
+        CREATE INDEX idx_token_charges_session_id ON token_charges(session_id);
+        CREATE INDEX idx_token_charges_created_at ON token_charges(created_at);
+      `,
+    },
   ];
 }
 

@@ -18,7 +18,11 @@
     "imports": {
       "@cdn/mythix-ui-core@1": "/mythix-ui/mythix-ui-core/dist/index.js?v=3",
       "@cdn/mythix-ui-modal@1": "/mythix-ui/mythix-ui-modal/dist/mythix-ui-modal.js?v=3",
-      "@cdn/mythix-ui-for-each@1": "/mythix-ui/mythix-ui-for-each/dist/mythix-ui-for-each.js"
+      "@cdn/mythix-ui-for-each@1": "/mythix-ui/mythix-ui-for-each/dist/mythix-ui-for-each.js",
+      "@hero/api": "/hero/js/api.js",
+      "@hero/base": "/hero/js/components/hero-base.js",
+      "@hero/state": "/hero/js/state.js",
+      "@hero/utils": "/hero/js/utils.js"
     }
   }
   </script>
@@ -38,6 +42,12 @@
         return `/hero/js/components/${heroMatch[1]}/${heroMatch[1]}.html`;
       }
 
+      // Handle @cdn/hml-* pattern for HML components
+      let hmlMatch = src.match(/^@cdn\/(hml-[\w-]+)(@[\d.]+)?$/);
+      if (hmlMatch) {
+        return `/hero/js/components/${hmlMatch[1]}/${hmlMatch[1]}.html`;
+      }
+
       // Handle @cdn/mythix-* pattern for mythix-ui components
       let mythixMatch = src.match(/^@cdn\/(mythix-[\w-]+)(@[\d.]+)?$/);
       if (mythixMatch) {
@@ -49,9 +59,17 @@
   </script>
 </head>
 <body>
-  <!-- Lazy-loaded components via mythix-require -->
+  <!-- Shadow DOM components loaded via mythix-require (need HTML templates) -->
   <mythix-require src="@cdn/mythix-ui-for-each@1"></mythix-require>
+  <mythix-require src="@cdn/mythix-ui-modal@1"></mythix-require>
+  <mythix-require src="@cdn/hero-modal@1" cache="no-store"></mythix-require>
+  <mythix-require src="@cdn/hero-header@1"></mythix-require>
+  <mythix-require src="@cdn/hero-status-bar@1"></mythix-require>
+  <mythix-require src="@cdn/hero-main-controls@1"></mythix-require>
   <mythix-require src="@cdn/hero-sessions-list@1"></mythix-require>
+  <mythix-require src="@cdn/hero-chat@1"></mythix-require>
+  <mythix-require src="@cdn/hero-input@1"></mythix-require>
+  <mythix-require src="@cdn/hml-prompt@1"></mythix-require>
 
   <hero-app id="app">
     <!-- WebSocket handler -->
@@ -61,12 +79,12 @@
     <hero-status-bar id="status-bar"></hero-status-bar>
 
     <!-- Modal components -->
-    <hero-modal-session id="new-session-component" style="display: none;"></hero-modal-session>
-    <hero-modal-agent id="new-agent-component" style="display: none;"></hero-modal-agent>
-    <hero-modal-ability id="ability-component" style="display: none;"></hero-modal-ability>
+    <hero-modal-create-session id="new-session-component" style="display: none;"></hero-modal-create-session>
+    <hero-modal-create-agent id="new-agent-component" style="display: none;"></hero-modal-create-agent>
+    <hero-modal-configure-ability id="ability-component" style="display: none;"></hero-modal-configure-ability>
     <hero-modal-abilities id="abilities-component" style="display: none;"></hero-modal-abilities>
     <hero-modal-agents id="agents-component" style="display: none;"></hero-modal-agents>
-    <hero-modal-agent-config id="agent-config-component" style="display: none;"></hero-modal-agent-config>
+    <hero-modal-agent-settings id="agent-config-component" style="display: none;"></hero-modal-agent-settings>
 
     <!-- Login View -->
     <div id="login-view" class="view" data-view="login" style="display: none;">
@@ -127,12 +145,11 @@
   </script>
 
   <script src="https://cdn.jsdelivr.net/npm/markdown-it@14.1.0/dist/markdown-it.min.js"></script>
-  <script src="js/components/hml-prompt.js?v=9"></script>
   <script src="js/markup.js?v=3"></script>
   <script src="js/state.js?v=5"></script>
   <script src="js/utils.js?v=2"></script>
   <script src="js/debug.js?v=2"></script>
-  <script src="js/api.js?v=7"></script>
+  <script src="js/api.js?v=8"></script>
   <script src="js/routing.js?v=3"></script>
   <script src="js/sessions.js?v=2"></script>
   <script src="js/approvals.js?v=1"></script>

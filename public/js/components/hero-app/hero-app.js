@@ -14,7 +14,7 @@ import {
   HeroComponent,
   GlobalState,
   DynamicProperty,
-} from './hero-base.js';
+} from '../hero-base.js';
 
 // ============================================================================
 // Route Parsing
@@ -64,6 +64,13 @@ export class HeroApp extends HeroComponent {
   #basePath = '';
   #unsubscribers = [];
 
+  // Note: hero-app uses Light DOM - children are directly in the element, not slotted.
+  // The template in hero-app.html is for reference/documentation only.
+
+  // ---------------------------------------------------------------------------
+  // Accessors
+  // ---------------------------------------------------------------------------
+
   /**
    * Get the base path from <base> tag.
    * @returns {string}
@@ -80,6 +87,10 @@ export class HeroApp extends HeroComponent {
     return this.#currentView;
   }
 
+  // ---------------------------------------------------------------------------
+  // Lifecycle
+  // ---------------------------------------------------------------------------
+
   /**
    * Component mounted - initialize routing and auth.
    */
@@ -89,20 +100,21 @@ export class HeroApp extends HeroComponent {
     this.#basePath = baseHref.replace(/\/$/, '');
 
     // Listen for popstate (back/forward navigation)
-    window.addEventListener('popstate', this.#handlePopState);
+    window.addEventListener('popstate', this._handlePopState);
 
     // Subscribe to user changes for auth state
     let unsubUser = this.subscribeGlobal('user', ({ value }) => {
-      this.#onUserChange(value);
+      this._onUserChange(value);
     });
     this.#unsubscribers.push(unsubUser);
 
     // Listen for custom events from child components (event hub pattern)
     this.addEventListener('hero:logout', () => this.logout());
     this.addEventListener('hero:navigate', (event) => this.navigate(event.detail.path));
-    this.addEventListener('hero:show-modal', (event) => this.#handleShowModal(event.detail));
-    this.addEventListener('hero:clear-messages', () => this.#handleClearMessages());
-    this.addEventListener('hero:toggle-hidden', (event) => this.#handleToggleHidden(event.detail));
+    this.addEventListener('hero:show-modal', (event) => this._handleShowModal(event.detail));
+    this.addEventListener('show-modal', (event) => this._handleShowModal(event.detail));
+    this.addEventListener('hero:clear-messages', () => this._handleClearMessages());
+    this.addEventListener('hero:toggle-hidden', (event) => this._handleToggleHidden(event.detail));
 
     // Initial route
     this.handleRoute();
@@ -112,7 +124,7 @@ export class HeroApp extends HeroComponent {
    * Component unmounted - cleanup.
    */
   unmounted() {
-    window.removeEventListener('popstate', this.#handlePopState);
+    window.removeEventListener('popstate', this._handlePopState);
 
     // Cleanup subscriptions
     for (let unsub of this.#unsubscribers) {
@@ -121,10 +133,14 @@ export class HeroApp extends HeroComponent {
     this.#unsubscribers = [];
   }
 
+  // ---------------------------------------------------------------------------
+  // Event Handlers
+  // ---------------------------------------------------------------------------
+
   /**
    * Handle popstate events.
    */
-  #handlePopState = () => {
+  _handlePopState = () => {
     this.handleRoute();
   };
 
@@ -132,12 +148,42 @@ export class HeroApp extends HeroComponent {
    * Handle user state changes.
    * @param {object|null} user
    */
-  #onUserChange(user) {
+  _onUserChange(user) {
     if (!user && this.#currentView !== 'login') {
       // User logged out, redirect to login
       this.navigate('/login');
     }
   }
+
+  /**
+   * Handle show-modal event.
+   * @param {object} detail - { modal: 'new-session' | 'new-agent' | 'abilities' | 'agents' }
+   */
+  _handleShowModal(detail) {
+    // Dispatch to legacy app.js modal handlers
+    document.dispatchEvent(new CustomEvent('show-modal', { detail }));
+  }
+
+  /**
+   * Handle clear-messages event.
+   */
+  _handleClearMessages() {
+    // Dispatch to legacy app.js
+    document.dispatchEvent(new CustomEvent('clear-messages'));
+  }
+
+  /**
+   * Handle toggle-hidden event.
+   * @param {object} detail - { show: boolean }
+   */
+  _handleToggleHidden(detail) {
+    // Dispatch to legacy app.js
+    document.dispatchEvent(new CustomEvent('toggle-hidden', { detail }));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Public Methods
+  // ---------------------------------------------------------------------------
 
   /**
    * Navigate to a path.
@@ -156,46 +202,72 @@ export class HeroApp extends HeroComponent {
 
     // Check auth for protected routes
     if (route.view !== 'login') {
-      let isAuthenticated = await this.#checkAuth();
+      let isAuthenticated = await this._checkAuth();
 
       if (!isAuthenticated) {
-        this.#showView('login');
+        this._showView('login');
         return;
       }
     }
 
     switch (route.view) {
       case 'login':
-        this.#disconnectWebSocket();
-        this.#showView('login');
+        this._disconnectWebSocket();
+        this._showView('login');
         break;
 
       case 'sessions':
-        await this.#loadInitialData();
-        this.#showView('sessions');
+        await this._loadInitialData();
+        this._showView('sessions');
         break;
 
       case 'chat':
-        await this.#loadSession(route.sessionId);
-        this.#showView('chat');
+        await this._loadSession(route.sessionId);
+        this._showView('chat');
         break;
 
       default:
-        this.#showView('sessions');
+        this._showView('sessions');
     }
   }
+
+  /**
+   * Logout the user.
+   */
+  async logout() {
+    try {
+      let { logout: apiLogout } = window;
+      await apiLogout();
+    } catch (e) {
+      // Logout API failure is non-fatal
+    }
+
+    // Clear state
+    this.setGlobal('user', null);
+    this.setGlobal('sessions', []);
+    this.setGlobal('agents', []);
+    this.setGlobal('abilities', { system: [], user: [] });
+    this.setGlobal('currentSession', null);
+
+    this._disconnectWebSocket();
+    this.navigate('/login');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private Methods
+  // ---------------------------------------------------------------------------
 
   /**
    * Check if user is authenticated.
    * @returns {Promise<boolean>}
    */
-  async #checkAuth() {
+  async _checkAuth() {
     try {
       // Import fetchMe from api.js
-      let { fetchMe } = await import('../api.js');
+      let { fetchMe } = window;
       let user = await fetchMe();
       this.setGlobal('user', user);
-      this.#connectWebSocket();
+      this._connectWebSocket();
       return true;
     } catch (error) {
       this.setGlobal('user', null);
@@ -206,9 +278,9 @@ export class HeroApp extends HeroComponent {
   /**
    * Load initial data (sessions, agents, abilities).
    */
-  async #loadInitialData() {
+  async _loadInitialData() {
     try {
-      let { fetchSessions, fetchAgents, fetchAbilities, fetchUsage } = await import('../api.js');
+      let { fetchSessions, fetchAgents, fetchAbilities, fetchUsage } = window;
 
       // Load in parallel
       let [sessions, agents, abilities, usage] = await Promise.all([
@@ -231,9 +303,9 @@ export class HeroApp extends HeroComponent {
    * Load a specific session.
    * @param {number} sessionId
    */
-  async #loadSession(sessionId) {
+  async _loadSession(sessionId) {
     try {
-      let { fetchSession, fetchSessionUsage } = await import('../api.js');
+      let { fetchSession, fetchSessionUsage } = window;
 
       let session = await fetchSession(sessionId);
       this.setGlobal('currentSession', session);
@@ -255,7 +327,7 @@ export class HeroApp extends HeroComponent {
    * Show a view and hide others.
    * @param {string} viewName
    */
-  #showView(viewName) {
+  _showView(viewName) {
     this.#currentView = viewName;
 
     // Dispatch event for view changes
@@ -264,10 +336,11 @@ export class HeroApp extends HeroComponent {
       bubbles: true,
     }));
 
-    // Update view visibility via child components or DOM
+    // Update view visibility via slotted children (light DOM)
     let views = this.querySelectorAll('[data-view]');
     for (let view of views) {
       let isActive = view.dataset.view === viewName;
+      view.classList.toggle('active', isActive);
       view.style.display = isActive ? '' : 'none';
     }
   }
@@ -275,7 +348,7 @@ export class HeroApp extends HeroComponent {
   /**
    * Connect WebSocket.
    */
-  #connectWebSocket() {
+  _connectWebSocket() {
     // WebSocket connection will be handled by hero-websocket component
     this.setGlobal('wsConnected', true);
     this.dispatchEvent(new CustomEvent('ws:connect', { bubbles: true }));
@@ -284,61 +357,11 @@ export class HeroApp extends HeroComponent {
   /**
    * Disconnect WebSocket.
    */
-  #disconnectWebSocket() {
+  _disconnectWebSocket() {
     this.setGlobal('wsConnected', false);
     this.dispatchEvent(new CustomEvent('ws:disconnect', { bubbles: true }));
-  }
-
-  /**
-   * Handle show-modal event.
-   * @param {object} detail - { modal: 'new-session' | 'new-agent' | 'abilities' | 'agents' }
-   */
-  #handleShowModal(detail) {
-    // Dispatch to legacy app.js modal handlers
-    document.dispatchEvent(new CustomEvent('show-modal', { detail }));
-  }
-
-  /**
-   * Handle clear-messages event.
-   */
-  #handleClearMessages() {
-    // Dispatch to legacy app.js
-    document.dispatchEvent(new CustomEvent('clear-messages'));
-  }
-
-  /**
-   * Handle toggle-hidden event.
-   * @param {object} detail - { show: boolean }
-   */
-  #handleToggleHidden(detail) {
-    // Dispatch to legacy app.js
-    document.dispatchEvent(new CustomEvent('toggle-hidden', { detail }));
-  }
-
-  /**
-   * Logout the user.
-   */
-  async logout() {
-    try {
-      let { logout: apiLogout } = await import('../api.js');
-      await apiLogout();
-    } catch (e) {
-      // Logout API failure is non-fatal
-    }
-
-    // Clear state
-    this.setGlobal('user', null);
-    this.setGlobal('sessions', []);
-    this.setGlobal('agents', []);
-    this.setGlobal('abilities', { system: [], user: [] });
-    this.setGlobal('currentSession', null);
-
-    this.#disconnectWebSocket();
-    this.navigate('/login');
   }
 }
 
 // Register the component
-if (typeof customElements !== 'undefined') {
-  customElements.define(HeroApp.tagName, HeroApp);
-}
+HeroApp.register();

@@ -49,7 +49,7 @@ router.get('/', (req, res) => {
  * Create a new user ability (process or function).
  */
 router.post('/', async (req, res) => {
-  let { name, type, description, content, category, tags, inputSchema, permissions, applies } = req.body;
+  let { name, type, description, content, category, tags, inputSchema, applies } = req.body;
 
   // Validate required fields
   if (!name || !type) {
@@ -94,9 +94,8 @@ router.post('/', async (req, res) => {
     let result = db.prepare(`
       INSERT INTO abilities (
         user_id, name, type, source, description, category, tags,
-        encrypted_content, input_schema,
-        auto_approve, auto_approve_policy, danger_level, applies
-      ) VALUES (?, ?, ?, 'user', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        encrypted_content, input_schema, applies
+      ) VALUES (?, ?, ?, 'user', ?, ?, ?, ?, ?, ?)
     `).run(
       req.user.id,
       name,
@@ -106,9 +105,6 @@ router.post('/', async (req, res) => {
       (tags) ? JSON.stringify(tags) : null,
       encryptedContent,
       (inputSchema) ? JSON.stringify(inputSchema) : null,
-      (permissions?.autoApprove) ? 1 : 0,
-      permissions?.autoApprovePolicy || 'ask',
-      permissions?.dangerLevel || 'safe',
       applies || null
     );
 
@@ -137,8 +133,7 @@ router.get('/:id', (req, res) => {
 
   let row = db.prepare(`
     SELECT id, name, type, source, description, category, tags,
-           encrypted_content, input_schema,
-           auto_approve, auto_approve_policy, danger_level, applies,
+           encrypted_content, input_schema, applies,
            created_at, updated_at
     FROM abilities
     WHERE id = ? AND user_id = ?
@@ -161,14 +156,9 @@ router.get('/:id', (req, res) => {
       tags:        (row.tags) ? JSON.parse(row.tags) : [],
       content:     content,
       inputSchema: (row.input_schema) ? JSON.parse(row.input_schema) : null,
-      permissions: {
-        autoApprove:       row.auto_approve === 1,
-        autoApprovePolicy: row.auto_approve_policy,
-        dangerLevel:       row.danger_level,
-      },
-      applies:   row.applies || null,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
+      applies:     row.applies || null,
+      createdAt:   row.created_at,
+      updatedAt:   row.updated_at,
     });
   } catch (error) {
     console.error('Failed to get ability:', error);
@@ -285,68 +275,6 @@ router.delete('/:id', (req, res) => {
   loadUserAbilities(req.user.id, dataKey);
 
   return res.json({ success: true });
-});
-
-/**
- * PUT /api/abilities/:id/permissions
- * Update ability permission settings.
- */
-router.put('/:id/permissions', (req, res) => {
-  let { autoApprove, autoApprovePolicy, dangerLevel } = req.body;
-  let db = getDatabase();
-
-  // Check ownership
-  let existing = db.prepare(`
-    SELECT id FROM abilities WHERE id = ? AND user_id = ?
-  `).get(req.params.id, req.user.id);
-
-  if (!existing) {
-    return res.status(404).json({ error: 'Ability not found' });
-  }
-
-  try {
-    let fields = [];
-    let values = [];
-
-    if (autoApprove !== undefined) {
-      fields.push('auto_approve = ?');
-      values.push((autoApprove) ? 1 : 0);
-    }
-
-    if (autoApprovePolicy !== undefined) {
-      if (!['always', 'session', 'never', 'ask'].includes(autoApprovePolicy)) {
-        return res.status(400).json({ error: 'Invalid auto-approve policy' });
-      }
-      fields.push('auto_approve_policy = ?');
-      values.push(autoApprovePolicy);
-    }
-
-    if (dangerLevel !== undefined) {
-      if (!['safe', 'moderate', 'dangerous'].includes(dangerLevel)) {
-        return res.status(400).json({ error: 'Invalid danger level' });
-      }
-      fields.push('danger_level = ?');
-      values.push(dangerLevel);
-    }
-
-    if (fields.length > 0) {
-      fields.push('updated_at = CURRENT_TIMESTAMP');
-      values.push(req.params.id, req.user.id);
-
-      db.prepare(`
-        UPDATE abilities SET ${fields.join(', ')} WHERE id = ? AND user_id = ?
-      `).run(...values);
-    }
-
-    // Reload user abilities
-    let dataKey = getDataKey(req);
-    loadUserAbilities(req.user.id, dataKey);
-
-    return res.json({ success: true });
-  } catch (error) {
-    console.error('Failed to update permissions:', error);
-    return res.status(500).json({ error: 'Failed to update permissions' });
-  }
 });
 
 /**

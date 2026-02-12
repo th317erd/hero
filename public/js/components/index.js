@@ -3,8 +3,12 @@
 /**
  * Hero Components Entry Point
  *
- * Imports and registers all Hero web components.
- * Include this module to enable component-based UI.
+ * Components are loaded in two ways:
+ * 1. JS import (here) - for Light DOM components and services
+ * 2. mythix-require (in index.html) - for Shadow DOM components with templates
+ *
+ * Shadow DOM components MUST be loaded via mythix-require so their
+ * HTML templates are available when the shadow root is created.
  */
 
 // Core infrastructure
@@ -13,32 +17,44 @@ export { GlobalState, HeroComponent, DynamicProperty, Utils } from './hero-base.
 // Expose GlobalState globally for legacy scripts
 import { GlobalState as GS, DynamicProperty as DP } from './hero-base.js';
 
-// Application shell
-export { HeroApp, parseRoute } from './hero-app.js';
+// Application shell (Light DOM - no template needed)
+export { HeroApp, parseRoute } from './hero-app/hero-app.js';
 
-// Layout components
-export { HeroHeader } from './hero-header.js';
-// HeroSessionsList is now loaded via <mythix-require src="@cdn/hero-sessions-list@1">
-export { HeroStatusBar } from './hero-status-bar.js';
-export { HeroMainControls } from './hero-main-controls.js';
-
-// Chat components
-export { HeroChat } from './hero-chat.js';
-export { HeroInput } from './hero-input.js';
-
-// Services
+// Services (no visual component)
 export { HeroWebSocket } from './hero-websocket.js';
 
-// Modals
-export {
-  HeroModal,
-  HeroModalSession,
-  HeroModalAgent,
-  HeroModalAbility,
-  HeroModalAbilities,
-  HeroModalAgents,
-  HeroModalAgentConfig,
-} from './hero-modal.js?v=5';
+// Base modal class (exports GlobalState, escapeHtml, MODAL_STYLES)
+export { HeroModal, GlobalState as ModalGlobalState, escapeHtml, MODAL_STYLES } from './hero-modal/hero-modal.js';
+
+// Step modal base class
+export { HeroStepModal, STEP_MODAL_STYLES } from './hero-step-modal/hero-step-modal.js';
+
+// Step component for declarative multi-step modals
+export { HeroStep } from './hero-step/hero-step.js';
+
+// Modal components - new naming convention
+export { HeroModalCreateSession } from './hero-modal-create-session/hero-modal-create-session.js';
+export { HeroModalCreateAgent } from './hero-modal-create-agent/hero-modal-create-agent.js';
+export { HeroModalConfigureAbility } from './hero-modal-configure-ability/hero-modal-configure-ability.js';
+export { HeroModalAbilities } from './hero-modal-abilities/hero-modal-abilities.js';
+export { HeroModalAgents } from './hero-modal-agents/hero-modal-agents.js';
+export { HeroModalAgentSettings } from './hero-modal-agent-settings/hero-modal-agent-settings.js';
+
+// Legacy aliases for backward compatibility
+export { HeroModalCreateSession as HeroModalSession } from './hero-modal-create-session/hero-modal-create-session.js';
+export { HeroModalCreateAgent as HeroModalAgent } from './hero-modal-create-agent/hero-modal-create-agent.js';
+export { HeroModalConfigureAbility as HeroModalAbility } from './hero-modal-configure-ability/hero-modal-configure-ability.js';
+export { HeroModalAgentSettings as HeroModalAgentConfig } from './hero-modal-agent-settings/hero-modal-agent-settings.js';
+
+// NOTE: The following Shadow DOM components are loaded via mythix-require in index.html:
+// - hero-modal (and variants)
+// - hero-header
+// - hero-status-bar
+// - hero-main-controls
+// - hero-sessions-list
+// - hero-chat
+// - hero-input
+// - hml-prompt
 
 // One-time initialization
 if (!window.__heroComponentsLoaded) {
@@ -59,21 +75,6 @@ if (!window.__heroComponentsLoaded) {
     }
   };
 
-  console.log('[Hero] Components registered:', [
-    'hero-app',
-    'hero-header',
-    'hero-sessions-list (lazy)',
-    'hero-status-bar',
-    'hero-main-controls',
-    'hero-chat',
-    'hero-input',
-    'hero-websocket',
-    'hero-modal',
-    'hero-modal-session',
-    'hero-modal-agent',
-    'hero-modal-ability',
-    'hero-modal-abilities',
-    'hero-modal-agents',
-    'hero-modal-agent-config',
-  ].join(', '));
+  console.log('[Hero] JS-loaded components: hero-app, hero-websocket, hero-modal-*');
+  console.log('[Hero] Mythix-loaded components: hero-header, hero-status-bar, hero-main-controls, hero-sessions-list, hero-chat, hero-input, hml-prompt');
 }

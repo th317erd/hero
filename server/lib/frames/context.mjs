@@ -75,9 +75,12 @@ export function loadFramesForContext(sessionId, options = {}, db = null) {
     }
 
     // Determine role from author type or payload
+    // Note: Claude API only accepts 'user' and 'assistant' roles,
+    // not 'system' (system prompts go in the `system` parameter)
     let role;
     if (content.role) {
-      role = content.role;
+      // Map 'system' role to 'user' for API compatibility
+      role = (content.role === 'system') ? 'user' : content.role;
     } else if (frame.authorType === AuthorType.USER) {
       role = 'user';
     } else if (frame.authorType === AuthorType.AGENT) {
