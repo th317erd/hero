@@ -21,8 +21,8 @@
 async function processMessageStream(content) {
   debug('App', 'processMessageStream called', { contentLength: content.length });
 
-  state.isLoading           = true;
-  elements.sendBtn.disabled = true;
+  state.isLoading = true;
+  if (elements.sendBtn) elements.sendBtn.disabled = true;
 
   let now = new Date().toISOString();
 
@@ -330,9 +330,16 @@ async function processMessageStream(content) {
   }
 
   debug('App', 'processMessageStream complete');
-  state.isLoading           = false;
-  elements.sendBtn.disabled = false;
-  elements.messageInput.focus();
+  state.isLoading = false;
+  if (elements.sendBtn) elements.sendBtn.disabled = false;
+
+  // Focus input - use hero-input component if available, fallback to legacy element
+  let heroInputEl = document.querySelector('hero-input');
+  if (heroInputEl && typeof heroInputEl.focus === 'function') {
+    heroInputEl.focus();
+  } else if (elements.messageInput) {
+    elements.messageInput.focus();
+  }
 
   // Process any queued messages
   await processMessageQueue();

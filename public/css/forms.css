@@ -110,3 +110,13 @@ select {
   padding: 2px 6px;
   border-radius: var(--radius-sm);
 }
+
+.checkbox-select-all {
+  background: var(--bg-secondary);
+}
+
+.checkbox-divider {
+  border: none;
+  border-top: 1px solid var(--border-color);
+  margin: 6px 0;
+}

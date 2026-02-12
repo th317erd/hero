@@ -491,8 +491,8 @@ function queueMessage(content) {
 }
 
 async function processMessage(content) {
-  state.isLoading           = true;
-  elements.sendBtn.disabled = true;
+  state.isLoading = true;
+  if (elements.sendBtn) elements.sendBtn.disabled = true;
 
   // Add user message optimistically (if not already in messages from queue)
   let existingQueued = state.messages.find((m) => m.queued && m.content === content);
@@ -531,9 +531,16 @@ async function processMessage(content) {
     scrollToBottom();
   }
 
-  state.isLoading           = false;
-  elements.sendBtn.disabled = false;
-  elements.messageInput.focus();
+  state.isLoading = false;
+  if (elements.sendBtn) elements.sendBtn.disabled = false;
+
+  // Focus input - use hero-input component if available, fallback to legacy element
+  let heroInputEl = document.querySelector('hero-input');
+  if (heroInputEl && typeof heroInputEl.focus === 'function') {
+    heroInputEl.focus();
+  } else if (elements.messageInput) {
+    elements.messageInput.focus();
+  }
 
   // Process any queued messages
   await processMessageQueue();
