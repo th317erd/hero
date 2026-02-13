@@ -191,9 +191,5 @@ export class HeroModalAbilities extends HeroModal {
   }
 }
 
-// Register component
-if (typeof customElements !== 'undefined') {
-  if (!customElements.get('hero-modal-abilities')) {
-    customElements.define('hero-modal-abilities', HeroModalAbilities);
-  }
-}
+// Register component using Mythix UI pattern
+HeroModalAbilities.register();

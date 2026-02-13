@@ -250,9 +250,5 @@ export class HeroModalConfigureAbility extends HeroStepModal {
   }
 }
 
-// Register component
-if (typeof customElements !== 'undefined') {
-  if (!customElements.get('hero-modal-configure-ability')) {
-    customElements.define('hero-modal-configure-ability', HeroModalConfigureAbility);
-  }
-}
+// Register component using Mythix UI pattern
+HeroModalConfigureAbility.register();

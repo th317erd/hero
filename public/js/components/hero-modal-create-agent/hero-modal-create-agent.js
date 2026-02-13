@@ -170,9 +170,5 @@ export class HeroModalCreateAgent extends HeroModal {
   }
 }
 
-// Register component
-if (typeof customElements !== 'undefined') {
-  if (!customElements.get('hero-modal-create-agent')) {
-    customElements.define('hero-modal-create-agent', HeroModalCreateAgent);
-  }
-}
+// Register component using Mythix UI pattern
+HeroModalCreateAgent.register();

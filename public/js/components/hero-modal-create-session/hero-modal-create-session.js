@@ -99,9 +99,5 @@ export class HeroModalCreateSession extends HeroModal {
   }
 }
 
-// Register component
-if (typeof customElements !== 'undefined') {
-  if (!customElements.get('hero-modal-create-session')) {
-    customElements.define('hero-modal-create-session', HeroModalCreateSession);
-  }
-}
+// Register component using Mythix UI pattern
+HeroModalCreateSession.register();

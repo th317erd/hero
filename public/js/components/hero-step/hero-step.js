@@ -41,8 +41,8 @@ export class HeroStep extends HTMLElement {
 }
 
 // Register component
-if (typeof customElements !== 'undefined') {
-  if (!customElements.get('hero-step')) {
-    customElements.define('hero-step', HeroStep);
-  }
+// Note: HeroStep extends HTMLElement directly (not MythixUIComponent)
+// so we use customElements.define instead of .register()
+if (typeof customElements !== 'undefined' && !customElements.get('hero-step')) {
+  customElements.define('hero-step', HeroStep);
 }
