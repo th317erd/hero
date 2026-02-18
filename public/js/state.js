@@ -4,13 +4,19 @@
 // State
 // ============================================================================
 
-const state = {
+// Keys that are automatically synced between state.* and GlobalState
+const SYNCED_KEYS = new Set([
+  'user', 'sessions', 'agents', 'abilities',
+  'currentSession', 'globalSpend', 'serviceSpend', 'sessionSpend',
+]);
+
+const _state = {
   user:                 null,
   sessions:             [],
   agents:               [],
   abilities:            { system: [], user: [] },
   currentSession:       null,
-  messages:             [],
+  // NOTE: state.messages removed - use sessionStore.getSession(id) instead
   isLoading:            false,
   runningOperations:    [],
   editingAbilityId:     null,
@@ -31,6 +37,25 @@ const state = {
   sessionSpend:         { cost: 0 },  // Spend for current session
 };
 
+// Proxy wrapper: when a synced key is written, auto-forward to GlobalState
+const state = new Proxy(_state, {
+  set(target, key, value) {
+    target[key] = value;
+
+    // Forward synced keys to GlobalState (if loaded)
+    if (SYNCED_KEYS.has(key) && !window.__stateSyncing && typeof window.setGlobal === 'function') {
+      window.__stateSyncing = true;
+      try {
+        window.setGlobal(key, value);
+      } finally {
+        window.__stateSyncing = false;
+      }
+    }
+
+    return true;
+  },
+});
+
 // ============================================================================
 // DOM Elements
 // ============================================================================
@@ -45,26 +70,13 @@ const elements = {
   loginForm:   document.getElementById('login-form'),
   loginError:  document.getElementById('login-error'),
 
-  // Sessions
-  sessionsList:    document.getElementById('sessions-list'),
-  sessionSearch:   document.getElementById('session-search'),
-  toggleArchived:  document.getElementById('toggle-archived'),
-  newSessionButton:   document.getElementById('new-session-button'),
-  logoutButton:       document.getElementById('logout-button'),
+  // Sessions (hero-sessions-list component handles its own DOM)
+  sessionsList: document.getElementById('sessions-list'),
 
   // Chat
-  sessionTitle:       document.getElementById('session-title'),
-  sessionSelect:      document.getElementById('session-select'),
-  messagesContainer:  document.getElementById('chat'),  // hero-chat component
-  heroChat:           document.getElementById('chat'),  // hero-chat component reference
-  messageInput:       document.getElementById('message-input'),
-  sendButton:            document.getElementById('send-button'),
-  clearButton:           document.getElementById('clear-button'),
-  backButton:            document.getElementById('back-button'),
-  chatLogoutButton:      document.getElementById('chat-logout-button'),
-  showHiddenToggle:   document.getElementById('show-hidden-toggle'),
-  scrollToBottomBtn:  document.getElementById('scroll-to-bottom'),
-  chatMain:           document.querySelector('.chat-main'),
+  messagesContainer: document.getElementById('chat'),  // hero-chat component
+  heroChat:          document.getElementById('chat'),  // hero-chat component reference
+  chatMain:          document.querySelector('.chat-main'),
 
   // Operations Panel
   operationsPanel:      document.getElementById('operations-panel'),
@@ -74,3 +86,7 @@ const elements = {
 
 // Read base path from <base> tag (set by server from package.json config)
 const BASE_PATH = document.querySelector('base')?.getAttribute('href')?.replace(/\/$/, '') || '';
+
+// Expose state globally for ES modules (hero-app, session-frames-provider, etc.)
+window.state = state;
+window.elements = elements;

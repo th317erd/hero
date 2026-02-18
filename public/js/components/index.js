@@ -23,6 +23,9 @@ export { HeroApp, parseRoute } from './hero-app/hero-app.js';
 // Services (no visual component)
 export { HeroWebSocket } from './hero-websocket.js';
 
+// Provider components (no shadow DOM - structural/scoping)
+export { SessionFramesProvider } from './session-frames-provider/session-frames-provider.js';
+
 // Base modal class (exports GlobalState, escapeHtml, MODAL_STYLES)
 export { HeroModal, GlobalState as ModalGlobalState, escapeHtml, MODAL_STYLES } from './hero-modal/hero-modal.js';
 
@@ -55,6 +58,7 @@ export { HeroModalAgentSettings as HeroModalAgentConfig } from './hero-modal-age
 // - hero-chat
 // - hero-input
 // - hml-prompt
+// - session-frames-provider
 
 // One-time initialization
 if (!window.__heroComponentsLoaded) {
@@ -62,14 +66,31 @@ if (!window.__heroComponentsLoaded) {
   window.GlobalState = GS;
   window.DynamicProperty = DP;
 
+  // Keys synced bidirectionally between state.* and GlobalState
+  const SYNCED_KEYS = new Set([
+    'user', 'sessions', 'agents', 'abilities',
+    'currentSession', 'globalSpend', 'serviceSpend', 'sessionSpend',
+  ]);
+
   /**
    * Helper to set GlobalState values from legacy scripts.
+   * Also reverse-syncs to window.state for synced keys.
    * @param {string} key - GlobalState key (e.g., 'sessions')
    * @param {*} value - New value
    */
   window.setGlobal = (key, value) => {
     if (GS[key]) {
       GS[key][DP.set](value);
+
+      // Reverse-sync synced keys to window.state
+      if (SYNCED_KEYS.has(key) && !window.__stateSyncing && window.state) {
+        window.__stateSyncing = true;
+        try {
+          window.state[key] = value;
+        } finally {
+          window.__stateSyncing = false;
+        }
+      }
     } else {
       console.warn(`GlobalState.${key} does not exist`);
     }

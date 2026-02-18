@@ -310,10 +310,18 @@ export class HeroApp extends HeroComponent {
       let session = await fetchSession(sessionId);
       this.setGlobal('currentSession', session);
 
+      // Initialize SessionStore with session messages
+      if (window.sessionStore) {
+        let sessionMessages = window.sessionStore.getSession(session.id);
+        sessionMessages.init(session.messages || []);
+      }
+
       // Also load session usage
       try {
         let usage = await fetchSessionUsage(sessionId);
         this.setGlobal('globalSpend', { cost: usage.global?.cost || 0, inputTokens: 0, outputTokens: 0 });
+        this.setGlobal('serviceSpend', { cost: usage.service?.cost || 0 });
+        this.setGlobal('sessionSpend', { cost: usage.session?.cost || 0 });
       } catch (e) {
         // Usage load failure is non-fatal
       }

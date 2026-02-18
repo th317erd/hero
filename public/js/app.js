@@ -1,6 +1,20 @@
 'use strict';
 
 // ============================================================================
+// SessionStore Helpers
+// ============================================================================
+
+/**
+ * Get the SessionMessages instance for the current session.
+ * Returns null if no session is active.
+ * @returns {SessionMessages|null}
+ */
+function getCurrentSessionMessages() {
+  if (!state.currentSession?.id) return null;
+  return sessionStore.getSession(state.currentSession.id);
+}
+
+// ============================================================================
 // System Message Helper
 // ============================================================================
 
@@ -10,10 +24,13 @@
  * @param {string} text - Message text to display
  */
 function showSystemMessage(text) {
-  state.messages.push({
-    role:    'assistant',
-    content: [{ type: 'text', text }],
-  });
+  const session = getCurrentSessionMessages();
+  if (session) {
+    session.add({
+      role:    'assistant',
+      content: [{ type: 'text', text }],
+    });
+  }
   renderMessages();
   forceScrollToBottom();
 }
@@ -72,6 +89,7 @@ async function loadSessionUsage(sessionId) {
     state.globalSpend = { cost: usage.global?.cost || 0 };
     state.serviceSpend = { cost: usage.service?.cost || 0 };
     state.sessionSpend = { cost: usage.session?.cost || 0 };
+
     updateCostDisplay();
   } catch (error) {
     console.error('Failed to fetch session usage:', error);
@@ -94,62 +112,25 @@ async function loadSession(sessionId) {
   try {
     let session    = await fetchSession(sessionId);
     state.currentSession = session;
-    state.messages       = session.messages || [];
 
-    // Update GlobalState for components (hero-header uses this for title)
-    if (typeof setGlobal === 'function') {
-      setGlobal('currentSession', session);
-    }
+    // Initialize session messages in SessionStore
+    const sessionMessages = sessionStore.getSession(session.id);
+    sessionMessages.init(session.messages || []);
 
     // Load session usage (global, service, and session spend)
     await loadSessionUsage(sessionId);
 
-    // Legacy: also check session.cost for backwards compatibility
-    if (!state.sessionSpend.cost && session.cost) {
-      let legacyCost = calculateCost(session.cost.inputTokens || 0, session.cost.outputTokens || 0);
-      state.sessionSpend.cost += legacyCost;
-      updateCostDisplay();
-    }
-
-    // Legacy: update session title element if it exists
-    if (elements.sessionTitle) {
-      elements.sessionTitle.textContent = session.name;
-    }
-
-    // Update session dropdown
-    await updateSessionSelect();
-
     renderMessages();
     scrollToBottom();
 
-    // Focus input (use hero-input component if available)
-    if (elements.heroInput && typeof elements.heroInput.focus === 'function') {
-      elements.heroInput.focus();
-    } else if (elements.messageInput) {
-      elements.messageInput.focus();
-    }
+    // Focus input via hero-input component
+    let heroInputEl = document.querySelector('hero-input');
+    if (heroInputEl && typeof heroInputEl.focus === 'function')
+      heroInputEl.focus();
   } catch (error) {
     console.error('Failed to load session:', error);
     navigate('/');
   }
-}
-
-async function updateSessionSelect() {
-  // Legacy dropdown - skip if element doesn't exist (using components)
-  if (!elements.sessionSelect)
-    return;
-
-  if (state.sessions.length === 0)
-    state.sessions = await fetchSessions();
-
-  let options = '<option value="">Switch session...</option>';
-
-  for (let session of state.sessions) {
-    let selected = (state.currentSession && session.id === state.currentSession.id) ? 'selected' : '';
-    options += `<option value="${session.id}" ${selected}>${escapeHtml(session.name)}</option>`;
-  }
-
-  elements.sessionSelect.innerHTML = options;
 }
 
 // ============================================================================
@@ -181,66 +162,29 @@ function renderMessagesImpl() {
     renderMaxWaitTimer = null;
   }
 
-  // Use hero-chat component if available
-  if (elements.heroChat && typeof elements.heroChat.setMessages === 'function') {
-    // Set the show hidden state
-    if (state.showHiddenMessages !== elements.heroChat._showHiddenState) {
-      elements.heroChat._showHiddenState = state.showHiddenMessages;
-      if (state.showHiddenMessages) {
-        elements.heroChat.toggleHiddenMessages();
-      }
-    }
+  // Get messages from SessionStore
+  const session = getCurrentSessionMessages();
+  const allMessages = session ? session.getAll({ includeHidden: true }) : [];
 
-    // Update messages via component
-    elements.heroChat.setMessages(state.messages);
-
-    // Set streaming state
-    elements.heroChat.setStreaming(state.streamingMessage);
-
-    // Attach event handlers for user prompt elements
-    state.messages.forEach((message) => {
-      if (message.id) {
-        let messageElement = document.getElementById(`message-${message.id}`);
-        if (messageElement) {
-          attachUserPromptHandlers(messageElement, message.id);
-        }
-      }
-    });
-
+  // Update hero-chat component
+  if (!elements.heroChat || typeof elements.heroChat.setMessages !== 'function')
     return;
-  }
 
-  // Fallback: legacy DOM rendering
-  // Preserve streaming message element if it exists (not in state.messages yet)
-  let streamingEl = document.getElementById('streaming-message');
-  if (streamingEl) {
-    streamingEl.remove();  // Detach from DOM temporarily
-  }
+  // Sync show-hidden state
+  elements.heroChat.setShowHiddenMessages(state.showHiddenMessages);
 
-  // Filter messages based on showHiddenMessages toggle
-  let visibleMessages = state.showHiddenMessages
-    ? state.messages  // Show all messages including hidden ones
-    : state.messages.filter((message) => !message.hidden);
-
-  let html = visibleMessages.map((message) => renderMessage(message)).join('');
-  elements.messagesContainer.innerHTML = html;
-
-  // Re-attach streaming message element if it was preserved
-  if (streamingEl) {
-    elements.messagesContainer.appendChild(streamingEl);
-  }
+  // Update messages and streaming state
+  elements.heroChat.setMessages(allMessages);
+  elements.heroChat.setStreaming(state.streamingMessage);
 
   // Attach event handlers for user prompt elements
-  visibleMessages.forEach((message) => {
+  allMessages.forEach((message) => {
     if (message.id) {
       let messageElement = document.getElementById(`message-${message.id}`);
-      if (messageElement) {
+      if (messageElement)
         attachUserPromptHandlers(messageElement, message.id);
-      }
     }
   });
-
-  scrollToBottom();
 }
 
 /**
@@ -267,121 +211,6 @@ function renderMessages() {
   renderDebounceTimer = setTimeout(() => {
     renderMessagesImpl();
   }, RENDER_DEBOUNCE_MS);
-}
-
-function renderMessage(message) {
-  let roleClass   = (message.role === 'user') ? 'message-user' : 'message-assistant';
-  let agentName   = state.currentSession?.agent?.name || 'Assistant';
-  let roleLabel   = (message.role === 'user') ? 'You' : agentName;
-  let messageId   = message.id || '';
-  let queuedClass = (message.queued) ? ' message-queued' : '';
-  let queuedBadge = (message.queued) ? '<span class="queued-badge">Queued</span>' : '';
-  let hiddenClass = (message.hidden) ? ' message-hidden' : '';
-  let errorClass  = (message.type === 'error') ? ' message-error' : '';
-  let typeBadge   = '';
-
-  // Add type badge for hidden messages
-  if (message.hidden && message.type) {
-    let typeLabels = {
-      system:      'System',
-      interaction: 'Interaction',
-      feedback:    'Feedback',
-    };
-    let label = typeLabels[message.type] || message.type;
-    typeBadge = `<span class="type-badge type-${message.type}">${label}</span>`;
-  }
-
-  let contentHtml = '';
-
-  // Handle error messages specially
-  if (message.type === 'error') {
-    let errorText = (typeof message.content === 'string') ? message.content : 'An error occurred';
-    contentHtml = `
-      <div class="streaming-error">
-        <span class="error-icon">⚠</span>
-        <span class="error-text">${escapeHtml(errorText)}</span>
-      </div>
-    `;
-  } else if (typeof message.content === 'string') {
-    contentHtml = `<div class="message-content">${renderMarkup(message.content)}</div>`;
-  } else if (Array.isArray(message.content)) {
-    for (let block of message.content) {
-      if (block.type === 'text') {
-        contentHtml += `<div class="message-content">${renderMarkup(block.text)}</div>`;
-      } else if (block.type === 'tool_use') {
-        contentHtml += renderToolUse(block);
-      } else if (block.type === 'tool_result') {
-        contentHtml += renderToolResult(block);
-      }
-    }
-  }
-
-  // Add assertion blocks for this message
-  let assertionsHtml = (messageId) ? renderAssertionsForMessage(messageId) : '';
-
-  // Calculate token estimate from content
-  let tokenEstimate = 0;
-  if (typeof message.content === 'string') {
-    tokenEstimate = Math.ceil(message.content.length / 4);
-  } else if (Array.isArray(message.content)) {
-    for (let block of message.content) {
-      if (block.type === 'text') {
-        tokenEstimate += Math.ceil(block.text.length / 4);
-      }
-    }
-  }
-
-  // Format timestamp with token count
-  let timestampHtml = '';
-  if (message.createdAt) {
-    let timeStr  = formatRelativeDate(message.createdAt);
-    let tokenStr = formatTokenCount(tokenEstimate);
-    timestampHtml = `<div class="message-timestamp">${timeStr} · ~${tokenStr} tokens</div>`;
-  } else if (tokenEstimate > 0) {
-    let tokenStr = formatTokenCount(tokenEstimate);
-    timestampHtml = `<div class="message-timestamp">~${tokenStr} tokens</div>`;
-  }
-
-  return `
-    <div class="message ${roleClass}${queuedClass}${hiddenClass}${errorClass}" data-message-id="${messageId}">
-      <div class="message-header">${roleLabel} ${queuedBadge}${typeBadge}</div>
-      <div class="message-bubble">
-        ${contentHtml}
-        ${assertionsHtml}
-      </div>
-      ${timestampHtml}
-    </div>
-  `;
-}
-
-function renderToolUse(block) {
-  return `
-    <div class="tool-call">
-      <div class="tool-call-header">
-        <span class="tool-call-icon">&#9881;</span>
-        <span>Tool: ${escapeHtml(block.name)}</span>
-      </div>
-      <div class="tool-call-body">
-        <div class="tool-call-section">
-          <div class="tool-call-label">Input</div>
-          <div class="tool-call-content">${escapeHtml(JSON.stringify(block.input, null, 2))}</div>
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-function renderToolResult(block) {
-  return `
-    <div class="tool-call">
-      <div class="tool-call-body">
-        <div class="tool-call-section">
-          <div class="tool-call-label">Result</div>
-          <div class="tool-call-content">${escapeHtml(block.content)}</div>
-        </div>
-      </div>
-    </div>
-  `;
 }
 
 function renderAssertionBlock(assertion) {
@@ -505,6 +334,7 @@ async function handleLogin(e) {
 
   try {
     await login(username, password);
+    document.dispatchEvent(new CustomEvent('hero:authenticated'));
     navigate('/');
   } catch (error) {
     elements.loginError.textContent = error.message;
@@ -514,6 +344,7 @@ async function handleLogin(e) {
 async function handleLogout() {
   try {
     await logout();
+    document.dispatchEvent(new CustomEvent('hero:logout'));
     disconnectWebSocket();
     state.user     = null;
     state.sessions = [];
@@ -661,11 +492,14 @@ function handleNewMessage(wsMessage) {
   if (!state.currentSession || state.currentSession.id !== parseInt(sessionId, 10))
     return;
 
+  const session = getCurrentSessionMessages();
+  if (!session) return;
+
   // Check if message already exists by ID
-  let existingIndex = state.messages.findIndex((m) => m.id === message.id);
-  if (existingIndex !== -1) {
+  const existing = session.findById(message.id);
+  if (existing) {
     debug('App', 'Message already exists by ID, updating', { id: message.id });
-    state.messages[existingIndex] = message;
+    session.update(message.id, message);
     renderMessages();
     scrollToBottom();
     return;
@@ -673,12 +507,12 @@ function handleNewMessage(wsMessage) {
 
   // For user messages, check if we have an optimistic version (no ID, same content)
   if (message.role === 'user') {
-    let optimisticIndex = state.messages.findIndex(
-      (m) => !m.id && m.role === 'user' && m.content === message.content
+    const optimistic = session.find(
+      (m) => m.optimistic && m.role === 'user' && m.content === message.content
     );
-    if (optimisticIndex !== -1) {
+    if (optimistic) {
       debug('App', 'Found optimistic user message, replacing', { content: message.content.slice(0, 50) });
-      state.messages[optimisticIndex] = message;
+      session.confirmOptimistic(optimistic.id, message);
       renderMessages();
       scrollToBottom();
       return;
@@ -693,7 +527,7 @@ function handleNewMessage(wsMessage) {
   }
 
   debug('App', 'Adding new message to state', { id: message.id, role: message.role });
-  state.messages.push(message);
+  session.add(message);
 
   // Re-render messages
   renderMessages();
@@ -872,27 +706,27 @@ function handleQuestionPrompt(message) {
 function handleMessageAppend(message) {
   let { messageId, content } = message;
 
-  // Find the message in state
-  let foundMessage = state.messages.find((m) => m.id === messageId);
-  if (!foundMessage)
-    return;
+  const session = getCurrentSessionMessages();
+  if (!session) return;
 
-  // Append content
-  if (typeof foundMessage.content === 'string') {
-    foundMessage.content += content;
-  } else if (Array.isArray(foundMessage.content)) {
-    let lastBlock = foundMessage.content[foundMessage.content.length - 1];
-    if (lastBlock && lastBlock.type === 'text') {
-      lastBlock.text += content;
-    } else {
-      foundMessage.content.push({ type: 'text', text: content });
-    }
-  }
+  // Find the message in SessionStore
+  let foundMessage = session.findById(messageId);
+  if (!foundMessage) return;
+
+  // Append content using updateContent
+  session.updateContent(messageId, (existingContent) => existingContent + content);
+
+  // Re-fetch the updated message for DOM update
+  foundMessage = session.findById(messageId);
 
   // Update the message in the DOM
   let messageElement = document.querySelector(`[data-message-id="${messageId}"] .message-content`);
-  if (messageElement)
-    messageElement.textContent = (typeof foundMessage.content === 'string') ? foundMessage.content : foundMessage.content.find((b) => b.type === 'text')?.text || '';
+  if (messageElement) {
+    const textContent = (typeof foundMessage.content === 'string')
+      ? foundMessage.content
+      : foundMessage.content.find((b) => b.type === 'text')?.text || '';
+    messageElement.textContent = textContent;
+  }
 }
 
 function handleElementNew(message) {
@@ -1028,7 +862,7 @@ function submitQuestionAnswer(assertionId, answer) {
 function submitUserPromptAnswer(messageId, promptId, question, answer) {
   console.log('[App] submitUserPromptAnswer called:', { messageId, promptId, question, answer });
 
-  // Update the message content in state.messages so re-renders preserve the answered state
+  // Update the message content in SessionStore so re-renders preserve the answered state
   updatePromptInState(messageId, promptId, answer);
 
   // Create message content with interaction
@@ -1056,89 +890,54 @@ function submitUserPromptAnswer(messageId, promptId, question, answer) {
 }
 
 /**
- * Update a prompt's answered state in state.messages so re-renders preserve it.
+ * Update a prompt's answered state in SessionStore so re-renders preserve it.
+ * Uses SessionStore.answerPrompt() which handles:
+ * - ID coercion (string/number)
+ * - Content format (string/array)
+ * - XML escaping
+ * - Prompt pattern matching
  */
 function updatePromptInState(messageId, promptId, answer) {
   console.log('[App] updatePromptInState:', { messageId, promptId, answer });
 
-  // Find the message in state
-  let message = state.messages.find((m) => m.id === messageId || m.id === String(messageId));
-
-  if (!message) {
-    console.log('[App] Message not found in state for ID:', messageId);
+  const session = getCurrentSessionMessages();
+  if (!session) {
+    console.log('[App] No active session');
     return;
   }
 
-  // Escape the answer for XML
-  let escapedAnswer = answer
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+  const success = session.answerPrompt(messageId, promptId, answer);
 
-  // Update the content - find the hml-prompt by ID and add answered attribute + response
-  let pattern = new RegExp(
-    `(<hml-prompt\\s+id=["']${promptId}["'][^>]*)>([\\s\\S]*?)</hml-prompt>`,
-    'gi'
-  );
-
-  let updatedContent = message.content.replace(
-    pattern,
-    (match, openTag, content) => {
-      // Remove any existing answered attribute before adding the new one
-      let cleanedTag = openTag.replace(/\s+answered=["'][^"']*["']/gi, '');
-      // Remove any existing <response> element from content
-      let cleanedContent = content.replace(/<response>[\s\S]*?<\/response>/gi, '').trim();
-      return `${cleanedTag} answered="true">${cleanedContent}<response>${escapedAnswer}</response></hml-prompt>`;
-    }
-  );
-
-  if (updatedContent !== message.content) {
-    message.content = updatedContent;
-    console.log('[App] Updated message content in state');
+  if (success) {
+    console.log('[App] Updated prompt in SessionStore');
   } else {
-    console.log('[App] Pattern did not match, content unchanged');
+    console.log('[App] Failed to update prompt - message or prompt not found');
   }
-}
-
-/**
- * Update the UI for a user_prompt element to show the answered state.
- * @deprecated Use updatePromptInState instead - this targets old-style prompts
- */
-function updateUserPromptUI(promptId, answer) {
-  let promptElement = document.querySelector(`.hml-user-prompt[data-prompt-id="${promptId}"]`);
-
-  if (!promptElement) return;
-
-  let question = promptElement.querySelector('.hml-user-prompt-question')?.textContent || '';
-
-  promptElement.classList.add('answered');
-  promptElement.innerHTML = `
-    <div class="hml-user-prompt-question">${escapeHtmlForPrompt(question)}</div>
-    <div class="hml-user-prompt-response">${escapeHtmlForPrompt(answer)}</div>
-  `;
-}
-
-/**
- * Escape HTML for user prompt display.
- */
-function escapeHtmlForPrompt(text) {
-  if (!text) return '';
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
 }
 
 // Make submitUserPromptAnswer available globally (called from markup.js)
 window.submitUserPromptAnswer = submitUserPromptAnswer;
 
 // Listen for prompt-submit events from <hml-prompt> Web Components
+// Use a Set to track which prompts have been submitted to prevent duplicates
+const _submittedPrompts = new Set();
+
 document.addEventListener('prompt-submit', (event) => {
-  console.log('[App] prompt-submit event received:', event.detail);
+  // Stop propagation to prevent any other listeners from receiving this
+  event.stopPropagation();
+  event.stopImmediatePropagation();
+
   let { messageId, promptId, question, answer } = event.detail;
+
+  // Deduplicate - only process each prompt once per page load
+  let key = `${messageId}-${promptId}`;
+  if (_submittedPrompts.has(key)) {
+    console.log('[App] prompt-submit already processed, skipping:', key);
+    return;
+  }
+  _submittedPrompts.add(key);
+
+  console.log('[App] prompt-submit event received:', event.detail);
   submitUserPromptAnswer(messageId, promptId, question, answer);
 });
 
@@ -1217,87 +1016,6 @@ async function loadAbilities() {
 // Login
 elements.loginForm.addEventListener('submit', handleLogin);
 
-// Session search
-let searchDebounce = null;
-if (elements.sessionSearch) {
-  elements.sessionSearch.addEventListener('input', (e) => {
-    clearTimeout(searchDebounce);
-    searchDebounce = setTimeout(() => {
-      state.searchQuery = e.target.value.trim();
-      renderSessionsList();
-    }, 200);
-  });
-}
-
-// Toggle hidden sessions (archived, agent, etc.)
-if (elements.toggleArchived) {
-  elements.toggleArchived.addEventListener('click', async () => {
-    state.showHidden = !state.showHidden;
-    elements.toggleArchived.classList.toggle('active', state.showHidden);
-    elements.toggleArchived.title = (state.showHidden) ? 'Hide archived/agent sessions' : 'Show all sessions';
-
-    // Reload sessions with new filter
-    state.sessions = await fetchSessions();
-    renderSessionsList();
-  });
-}
-
-// Chat (elements may be null if using hero-input component)
-if (elements.sendBtn) {
-  elements.sendBtn.addEventListener('click', handleSendMessage);
-}
-if (elements.messageInput) {
-  elements.messageInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSendMessage();
-    }
-  });
-  elements.messageInput.addEventListener('input', () => {
-    autoResizeTextarea(elements.messageInput);
-  });
-}
-// Chat header elements (may be null if using hero-header component)
-if (elements.clearButton) {
-  elements.clearButton.addEventListener('click', handleClearMessages);
-}
-if (elements.backBtn) {
-  elements.backBtn.addEventListener('click', () => navigate('/'));
-}
-if (elements.chatLogoutBtn) {
-  elements.chatLogoutBtn.addEventListener('click', handleLogout);
-}
-if (elements.sessionSelect) {
-  elements.sessionSelect.addEventListener('change', () => {
-    let sessionId = elements.sessionSelect.value;
-
-    if (sessionId)
-      navigate(`/sessions/${sessionId}`);
-  });
-}
-
-// Scroll-to-bottom button
-if (elements.scrollToBottomBtn && elements.chatMain) {
-  elements.scrollToBottomBtn.addEventListener('click', () => {
-    forceScrollToBottom();
-  });
-
-  elements.chatMain.addEventListener('scroll', () => {
-    updateScrollToBottomButton();
-  });
-}
-
-// Show hidden messages toggle
-if (elements.showHiddenToggle) {
-  elements.showHiddenToggle.addEventListener('change', () => {
-    state.showHiddenMessages = elements.showHiddenToggle.checked;
-    console.log('[DEBUG] showHiddenMessages toggled:', state.showHiddenMessages);
-    console.log('[DEBUG] Total messages:', state.messages.length);
-    console.log('[DEBUG] Hidden messages:', state.messages.filter((m) => m.hidden).length);
-    renderMessages();
-  });
-}
-
 // Operations panel toggle
 elements.toggleOperations.addEventListener('click', () => {
   let list = elements.operationsList;
@@ -1357,13 +1075,9 @@ document.addEventListener('hero:send-message', async (e) => {
   }
 });
 
-// Handle command events from hero-input
-document.addEventListener('hero:command', (e) => {
-  let command = e.detail?.command;
-  if (command) {
-    handleCommand(command);
-  }
-});
+// Note: Commands are now handled server-side via the message POST endpoint.
+// The hero:command event is no longer used - commands are sent as regular messages
+// and the server intercepts them before involving the AI agent.
 
 // Handle clear events from hero-input
 document.addEventListener('hero:clear', () => {

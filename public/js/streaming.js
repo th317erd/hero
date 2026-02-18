@@ -22,23 +22,46 @@ async function processMessageStream(content) {
   debug('App', 'processMessageStream called', { contentLength: content.length });
 
   state.isLoading = true;
-  if (elements.sendBtn) elements.sendBtn.disabled = true;
 
   let now = new Date().toISOString();
 
+  // Get current session from SessionStore
+  const session = getCurrentSessionMessages();
+
   // Add user message optimistically
-  let existingQueued = state.messages.find((m) => m.queued && m.content === content);
-  if (existingQueued) {
-    debug('App', 'Found existing queued message, updating');
-    existingQueued.queued    = false;
-    existingQueued.createdAt = now;
-    delete existingQueued.queueId;
-    renderMessages();
-  } else {
-    debug('App', 'Adding new user message');
-    state.messages.push({ role: 'user', content: content, createdAt: now });
-    renderMessages();
+  // Strip interaction tags to match what server stores (for proper reconciliation)
+  let legacyDisplayContent = stripInteractionTags(content);
+  if (session) {
+    const existingQueued = session.find((m) => m.optimistic && m.content === legacyDisplayContent);
+    if (existingQueued) {
+      debug('App', 'Found existing queued message, updating');
+      session.update(existingQueued.id, { optimistic: false, createdAt: now });
+      renderMessages();
+    } else {
+      debug('App', 'Adding new user message');
+      session.addOptimistic({ role: 'user', content: legacyDisplayContent, createdAt: now });
+      renderMessages();
+    }
   }
+
+  // Also add user message as an optimistic frame for hero-chat (component-based UI)
+  // This will be updated when the real frame arrives via WebSocket
+  // Strip interaction tags to match what server stores (for proper reconciliation)
+  let displayContent = stripInteractionTags(content);
+  let provider = getFramesProvider();
+  if (provider && typeof provider.addOptimisticFrame === 'function') {
+    provider.addOptimisticFrame({
+      id: 'optimistic-user-' + Date.now(),
+      type: 'message',
+      authorType: 'user',
+      timestamp: now,
+      payload: {
+        role: 'user',
+        content: displayContent,
+      },
+    });
+  }
+
   forceScrollToBottom(); // User just sent a message, always scroll to show it
 
   // Initialize streaming message state
@@ -55,7 +78,24 @@ async function processMessageStream(content) {
 
   try {
     debug('App', 'Calling sendMessageStream', { sessionId: state.currentSession.id });
-    await sendMessageStream(state.currentSession.id, content, {
+    let streamResult = await sendMessageStream(state.currentSession.id, content, {
+      // Handle command responses (server-side command execution)
+      onCommand: (data) => {
+        debug('App', 'Command response received', data);
+        // Commands create frames via WebSocket, so we just clean up streaming state
+        removeStreamingMessagePlaceholder();
+        state.streamingMessage = null;
+
+        // Handle special command flags
+        if (data.streamingMode !== undefined) {
+          state.streamingMode = data.streamingMode;
+          debug('App', 'Streaming mode set to:', data.streamingMode);
+        }
+
+        // The frames are already created by the server and will arrive via WebSocket
+        // Nothing more to do here - hero-chat will render them automatically
+      },
+
       onStart: (data) => {
         debug('App', 'onStart callback', data);
         state.streamingMessage.id = data.messageId;
@@ -81,8 +121,10 @@ async function processMessageStream(content) {
 
       onElementStart: (data) => {
         debug('App', 'onElementStart callback', data);
-        // Skip hml-prompt and response - they're Web Components that render themselves
-        if (data.type === 'hml-prompt' || data.type === 'response') {
+        // Skip elements that shouldn't render as streaming elements:
+        // - hml-prompt/response: They're Web Components that render themselves
+        // - interaction: System communication between agent and server, not for display
+        if (data.type === 'hml-prompt' || data.type === 'response' || data.type === 'interaction') {
           return;
         }
         state.streamingMessage.elements[data.id] = {
@@ -276,10 +318,10 @@ async function processMessageStream(content) {
         let outputTokens = data.output_tokens || 0;
         let cost = calculateCost(inputTokens, outputTokens);
 
-        // Update local spend tracking (real-time display)
-        state.sessionSpend.cost += cost;
-        state.serviceSpend.cost += cost;
-        state.globalSpend.cost  += cost;
+        // Update spend tracking via replacement (Proxy detects top-level writes)
+        state.sessionSpend = { cost: state.sessionSpend.cost + cost };
+        state.serviceSpend = { cost: state.serviceSpend.cost + cost };
+        state.globalSpend  = { cost: state.globalSpend.cost + cost };
 
         // Update cost display
         updateCostDisplay();
@@ -310,10 +352,13 @@ async function processMessageStream(content) {
       },
     });
 
-    debug('App', 'sendMessageStream resolved, checking if finalization needed');
+    debug('App', 'sendMessageStream resolved', { isCommand: streamResult?.isCommand });
 
-    // Ensure streaming message is finalized even if onComplete wasn't called
-    if (state.streamingMessage) {
+    // If this was a command response, we're already done (handled by onCommand callback)
+    if (streamResult?.isCommand) {
+      debug('App', 'Command response handled, skipping finalization');
+    } else if (state.streamingMessage) {
+      // Ensure streaming message is finalized even if onComplete wasn't called
       debug('App', 'Finalizing streaming message (fallback)', {
         contentLength: state.streamingMessage.content.length,
         messageId: state.streamingMessage.id,
@@ -331,24 +376,64 @@ async function processMessageStream(content) {
 
   debug('App', 'processMessageStream complete');
   state.isLoading = false;
-  if (elements.sendBtn) elements.sendBtn.disabled = false;
 
-  // Focus input - use hero-input component if available, fallback to legacy element
+  // Focus input via hero-input component
   let heroInputEl = document.querySelector('hero-input');
-  if (heroInputEl && typeof heroInputEl.focus === 'function') {
+  if (heroInputEl && typeof heroInputEl.focus === 'function')
     heroInputEl.focus();
-  } else if (elements.messageInput) {
-    elements.messageInput.focus();
-  }
 
   // Process any queued messages
   await processMessageQueue();
 }
 
 /**
+ * Get the session-frames-provider element.
+ * @returns {Element|null}
+ */
+function getFramesProvider() {
+  return document.getElementById('session-frames');
+}
+
+/**
  * Create the streaming message placeholder in the chat.
+ * Uses session-frames-provider's phantom frame system for proper shadow DOM rendering.
  */
 function createStreamingMessagePlaceholder() {
+  // Use session-frames-provider for phantom frame (preferred)
+  let provider = getFramesProvider();
+  if (provider && typeof provider.setPhantomFrame === 'function') {
+    provider.setPhantomFrame({
+      id: 'streaming-' + Date.now(),
+      type: 'message',
+      authorType: 'agent',
+      timestamp: new Date().toISOString(),
+      payload: {
+        role: 'assistant',
+        content: '',
+      },
+      complete: false,
+    });
+    return;
+  }
+
+  // Fallback: try hero-chat directly (legacy)
+  let heroChat = elements.heroChat;
+  if (heroChat && typeof heroChat.setPhantomFrame === 'function') {
+    heroChat.setPhantomFrame({
+      id: 'streaming-' + Date.now(),
+      type: 'message',
+      authorType: 'agent',
+      timestamp: new Date().toISOString(),
+      payload: {
+        role: 'assistant',
+        content: '',
+      },
+      complete: false,
+    });
+    return;
+  }
+
+  // Fallback: legacy DOM manipulation (for backwards compatibility)
   let agentName = state.currentSession?.agent?.name || 'Assistant';
 
   let html = `
@@ -368,6 +453,39 @@ function createStreamingMessagePlaceholder() {
 }
 
 /**
+ * Remove the streaming message placeholder.
+ * Used when a command is executed (no streaming response needed).
+ */
+function removeStreamingMessagePlaceholder() {
+  // Clear phantom frame in provider
+  let provider = getFramesProvider();
+  if (provider && typeof provider.clearPhantomFrame === 'function') {
+    provider.clearPhantomFrame();
+  }
+
+  // Clear streaming message state in hero-chat
+  // hero-chat has TWO sources for the phantom: provider._phantomFrame AND #streamingMessage
+  // We need to clear both to ensure the phantom element is removed
+  let heroChat = elements.heroChat;
+  if (heroChat && typeof heroChat.setStreaming === 'function') {
+    heroChat.setStreaming(null);  // This clears #streamingMessage and calls renderDebounced
+    return;
+  }
+
+  // Fallback: try hero-chat setPhantomFrame (triggers renderDebounced internally)
+  if (heroChat && typeof heroChat.setPhantomFrame === 'function') {
+    heroChat.setPhantomFrame(null);
+    return;
+  }
+
+  // Fallback: legacy DOM removal
+  let streamingEl = document.getElementById('streaming-message');
+  if (streamingEl) {
+    streamingEl.remove();
+  }
+}
+
+/**
  * Update the streaming message header (e.g., with agent name).
  */
 function updateStreamingHeader(agentName) {
@@ -380,6 +498,39 @@ function updateStreamingHeader(agentName) {
  * Update the streaming content with new text.
  */
 function updateStreamingContent(content) {
+  // Use session-frames-provider's phantom frame (preferred)
+  let provider = getFramesProvider();
+  if (provider && typeof provider.phantomFrame !== 'undefined') {
+    let phantom = provider.phantomFrame;
+    if (phantom) {
+      provider.setPhantomFrame({
+        ...phantom,
+        payload: {
+          ...phantom.payload,
+          content: content,
+        },
+      });
+      return;
+    }
+  }
+
+  // Fallback: try hero-chat directly (legacy)
+  let heroChat = elements.heroChat;
+  if (heroChat && typeof heroChat.getPhantomFrame === 'function') {
+    let phantom = heroChat.getPhantomFrame();
+    if (phantom) {
+      heroChat.setPhantomFrame({
+        ...phantom,
+        payload: {
+          ...phantom.payload,
+          content: content,
+        },
+      });
+      return;
+    }
+  }
+
+  // Fallback: legacy DOM manipulation
   let el = document.querySelector('#streaming-message .streaming-content');
   debug('Streaming',' updateStreamingContent:', {
     elementFound:   !!el,
@@ -535,14 +686,42 @@ function finalizeStreamingMessage(data) {
     return;
   }
 
-  // Remove streaming indicator
+  // Mark phantom frame as complete (immutable frame pattern - don't clear, update state)
+  // The typing indicator will be hidden when complete: true
+  // The real frame will arrive via WebSocket and replace the phantom
+  let provider = getFramesProvider();
+  if (provider && typeof provider.finalizePhantomFrame === 'function') {
+    debug('App', 'Finalizing phantom frame in session-frames-provider');
+    provider.finalizePhantomFrame();
+  }
+
+  // Also directly update hero-chat's phantom frame
+  let heroChat = elements.heroChat;
+  if (heroChat) {
+    if (typeof heroChat.finalizePhantomFrame === 'function') {
+      debug('App', 'Finalizing phantom frame in hero-chat directly');
+      heroChat.finalizePhantomFrame();
+    }
+    // Clear legacy streaming state (used by _renderStreamingMessage)
+    if (typeof heroChat.setStreaming === 'function') {
+      debug('App', 'Clearing legacy streaming state in hero-chat');
+      heroChat.setStreaming(null);
+    }
+    // Force a render to ensure UI updates
+    if (typeof heroChat.render === 'function') {
+      debug('App', 'Forcing hero-chat render');
+      heroChat.render();
+    }
+  }
+
+  // Remove streaming indicator (legacy DOM)
   let indicator = document.querySelector('#streaming-message .streaming-indicator');
   if (indicator) {
     debug('App', 'Removing streaming indicator');
     indicator.remove();
   }
 
-  // Remove any status messages
+  // Remove any status messages (legacy DOM)
   let statusEl = document.querySelector('#streaming-message .streaming-status');
   if (statusEl)
     statusEl.remove();
@@ -593,21 +772,26 @@ function finalizeStreamingMessage(data) {
   }
 
   // Check if the message was already added via WebSocket broadcast
-  let alreadyExists = state.messages.some(
-    (m) => m.role === 'assistant' && m.content === finalContent
-  );
+  const session = getCurrentSessionMessages();
+  let alreadyExists = false;
 
-  if (!alreadyExists) {
-    let now = new Date().toISOString();
-    state.messages.push({
-      id:        data.persistedMessageID || state.streamingMessage.id,
-      role:      'assistant',
-      content:   finalContent,
-      createdAt: now,
-    });
-    debug('App', 'Added message to state, total messages:', state.messages.length);
-  } else {
-    debug('App', 'Message already exists (from WebSocket), skipping add');
+  if (session) {
+    alreadyExists = session.find(
+      (m) => m.role === 'assistant' && m.content === finalContent
+    ) !== null;
+
+    if (!alreadyExists) {
+      let now = new Date().toISOString();
+      session.add({
+        id:        data.persistedMessageID || state.streamingMessage.id,
+        role:      'assistant',
+        content:   finalContent,
+        createdAt: now,
+      });
+      debug('App', 'Added message to SessionStore, total messages:', session.count);
+    } else {
+      debug('App', 'Message already exists (from WebSocket), skipping add');
+    }
   }
 
   // Clear streaming state
@@ -643,15 +827,34 @@ function showStreamingError(errorMessage) {
   streamingEl.classList.add('message-error');
   streamingEl.removeAttribute('id');
 
-  // Add error to state
-  state.messages.push({
-    role:      'assistant',
-    content:   [{ type: 'text', text: `Error: ${errorMessage}` }],
-    createdAt: new Date().toISOString(),
-  });
+  // Add error to SessionStore
+  const session = getCurrentSessionMessages();
+  if (session) {
+    session.add({
+      role:      'assistant',
+      content:   [{ type: 'text', text: `Error: ${errorMessage}` }],
+      createdAt: new Date().toISOString(),
+    });
+  }
 
   // Clear streaming state
   state.streamingMessage = null;
+
+  // Also clear phantom frame in session-frames-provider and hero-chat
+  let provider = getFramesProvider();
+  if (provider && typeof provider.clearPhantomFrame === 'function') {
+    provider.clearPhantomFrame();
+  }
+  let heroChat = elements.heroChat;
+  if (heroChat && typeof heroChat.setPhantomFrame === 'function') {
+    heroChat.setPhantomFrame(null);
+  }
+  if (heroChat && typeof heroChat.setStreaming === 'function') {
+    heroChat.setStreaming(null);
+  }
+  if (heroChat && typeof heroChat.render === 'function') {
+    heroChat.render();
+  }
 }
 
 /**

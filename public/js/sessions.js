@@ -9,12 +9,6 @@ async function loadSessions() {
     state.sessions = await fetchSessions();
     state.agents   = await fetchAgents();
 
-    // Update GlobalState for hero-sidebar component
-    if (typeof setGlobal === 'function') {
-      setGlobal('sessions', state.sessions);
-      setGlobal('agents', state.agents);
-    }
-
     // Only call renderSessionsList if the element exists (legacy support)
     if (elements.sessionsList) {
       renderSessionsList();
