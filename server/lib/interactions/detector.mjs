@@ -302,6 +302,10 @@ export async function executeInteractions(interactionBlock, context) {
       interactionOptions
     );
 
+    // Attach execution context for system functions (not part of the interaction
+    // protocol, but accessible to handlers that need session/auth state)
+    interaction._executionContext = context;
+
     try {
       let result = await bus.send(interaction);
 

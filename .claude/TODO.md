@@ -36,38 +36,52 @@
 - [ ] Write E2E tests
 
 ## Phase 2: Permissions System
-> Status: **ENGINE COMPLETE** — prompt UX and advanced features pending
-> Risk: MEDIUM-HIGH — security-critical
+> Status: **CORE COMPLETE** — prompt UX and advanced features pending
+> Commits: a9ea37b (engine), 6a7ce5c (routes)
 
-### Engine (complete)
+### Engine + API (complete)
 - [x] Create `permission_rules` table migration (019)
 - [x] Build permission engine (`server/lib/permissions/index.mjs`)
 - [x] Implement `evaluate(subject, resource, context)` → allow/deny/prompt
 - [x] Implement specificity-based resolution (most specific wins, deny beats allow)
 - [x] Wire into BEFORE_COMMAND hook via command-handler.mjs
 - [x] Wire BEFORE_COMMAND/AFTER_COMMAND plugin hooks
-- [x] Write exhaustive unit tests (65 tests — CRUD, specificity, scope, conditions, determinism)
-- [x] Write integration tests (7 tests — command-handler permission flow)
+- [x] Permission management API routes (GET/POST/DELETE /api/permissions + evaluate endpoint)
+- [x] Ownership enforcement, session scoping, validation
+- [x] Write exhaustive unit tests (65 engine + 7 integration + 68 route = 140 tests)
 - [x] Write property-based tests for deterministic resolution
-- [x] All 1314 tests passing
+- [x] All 1321 tests passing
 
-### Pending
-- [ ] Integrate with existing `abilities/approval.mjs` (prompt action → approval flow)
-- [ ] Wire BEFORE_TOOL hook into interaction detector
+### Pending (deferred to Phase 3+)
+- [ ] Wire BEFORE_TOOL hook into interaction detector (needs Phase 3 agent execution)
+- [ ] Integrate approval flow for `prompt` action (needs Phase 3 agent-as-subject)
 - [ ] Build permission prompt UX (`<hml-prompt>`)
 - [ ] Implement meta-permissions (who can modify rules)
 - [ ] Structured command arguments for all commands
-- [ ] Permission management API routes (CRUD for rules)
 
 ## Phase 3: Agent Roles & Coordination
-> Status: PENDING — blocked by Phase 1 + 2
+> Status: **CORE COMPLETE** — advanced features pending
+> Commits: (pending)
 
-- [ ] Implement coordinator/member roles on session_participants
-- [ ] Build inter-agent messaging (async, via frames)
-- [ ] Add command interaction type to detector
-- [ ] Implement recursion depth enforcement (max 10 exchanges)
-- [ ] Build coordinator context vs member context
-- [ ] Tests for role assignment, routing, loop detection
+### Engine + Functions (complete)
+- [x] Coordinator/member roles on session_participants (from Phase 1)
+- [x] Build `DelegateFunction` — coordinator delegates to member agents via interaction system
+- [x] Build `ExecuteCommandFunction` — agents invoke commands, gated by permissions
+- [x] Recursion depth enforcement (max 10 delegation exchanges)
+- [x] Coordinator context includes session participants (enriched with names/types)
+- [x] Execution context passed through to system functions (dataKey, agentId, etc.)
+- [x] New functions registered in interaction system (delegate, execute_command)
+- [x] Write delegate function unit tests (16 tests)
+- [x] Write execute_command function unit tests (17 tests)
+- [x] Write coordination integration tests (14 tests)
+- [x] All 1378 tests passing
+
+### Pending (deferred to Phase 3+)
+- [ ] Inter-agent streaming (member responses streamed back to coordinator)
+- [ ] Multiple coordinator discussion protocol
+- [ ] @mention routing from user messages to specific agents
+- [ ] Participant list sidebar in chat view (client)
+- [ ] Wire BEFORE_TOOL hook for agent tool permission gating
 
 ## Phase 4: Commands + Plugin Hardening
 > Status: PENDING — blocked by Phase 2

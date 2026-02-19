@@ -123,8 +123,11 @@ export class SystemFunction extends InteractionFunction {
       };
     }
 
-    // Build context for permission check and execution
+    // Build context for permission check and execution.
+    // Merge execution context if available (set by detector.mjs executeInteractions)
+    // so that functions like delegate() have access to dataKey, agentId, etc.
     let context = {
+      ...(interaction._executionContext || {}),
       interactionId: interaction.interaction_id,
       sessionId:     interaction.session_id,
       userId:        interaction.user_id,

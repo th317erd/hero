@@ -174,8 +174,41 @@ All modal components migrated to split HTML/JS pattern:
    - Changed `_getScrollContainer()` to return `this` (hero-chat element) instead of `.chat-main`
    - hero-chat is the actual scrollable element (has overflow-y: auto)
 
+### V1 Implementation Progress (2026-02-18 to 2026-02-19)
+
+**Phase 0 — Frame Migration**: COMPLETE (verified server emits `new_frame` exclusively)
+
+**Phase 1 — Multi-party Sessions**: COMPLETE
+- Migration 018: `session_participants` table
+- Module: `server/lib/participants/index.mjs` — CRUD helpers, `loadSessionWithAgent()`
+- All routes rewritten to use participants (sessions, messages, messages-stream, pipeline/context, commands, usage)
+- Client: Multi-agent session creation modal (coordinator dropdown + member checkboxes)
+- 68 integration tests + 47 unit tests
+- Commits: d1f1e50 (server), b91dc61 (client)
+
+**Phase 2 — Permissions System**: CORE COMPLETE
+- Migration 019: `permission_rules` table
+- Module: `server/lib/permissions/index.mjs` — evaluate(), specificity-based resolution
+- API Routes: `server/routes/permissions.mjs` — CRUD + evaluate endpoint
+- Wired into command handler (BEFORE_COMMAND/AFTER_COMMAND hooks)
+- 65 unit + 7 integration + 68 route = 140 permission tests
+- Commits: a9ea37b (engine), 6a7ce5c (routes)
+
+**Phase 3 — Agent Roles & Coordination**: CORE COMPLETE
+- `DelegateFunction`: `server/lib/interactions/functions/delegate.mjs` — coordinator→member delegation
+- `ExecuteCommandFunction`: `server/lib/interactions/functions/execute-command.mjs` — agent command invocation
+- Execution context passed through system functions (dataKey, agentId, participants)
+- `buildContext()` includes enriched participants (names, types, roles)
+- Recursion depth enforcement (MAX_DELEGATION_DEPTH = 10)
+- 16 delegate + 17 execute-command + 14 coordination = 47 new tests
+
+### Test Suite
+- Runner: `find spec -name '*-spec.mjs' | xargs node --test --test-force-exit`
+- Current: **1378 tests, 0 failures**
+
 ### Pending
-- Interaction Frames Phase 4 (WebSocket protocol) and Phase 5 (Interactions & Commands)
+- Phase 3 advanced: Inter-agent streaming, multi-coordinator discussion, @mention routing
+- Phase 4-8: Commands hardening, HML forms, auth enhancement, etc.
 
 ---
 

@@ -2,7 +2,7 @@
 
 import { getDatabase } from '../../database.mjs';
 import { decryptWithKey } from '../../encryption.mjs';
-import { loadSessionWithAgent } from '../participants/index.mjs';
+import { loadSessionWithAgent, getSessionParticipants } from '../participants/index.mjs';
 
 /**
  * Build a rich context object for pipeline execution.
@@ -69,6 +69,28 @@ export function buildContext(options) {
   if (agentConfig.topK !== undefined)
     model.topK = agentConfig.topK;
 
+  // Load session participants for coordination awareness
+  let participants = getSessionParticipants(parseInt(sessionId, 10), db);
+
+  // Enrich agent participants with names from the agents table
+  let enrichedParticipants = participants.map((participant) => {
+    let enriched = { ...participant };
+
+    if (participant.participantType === 'agent') {
+      let agentRow = db.prepare('SELECT name, type FROM agents WHERE id = ?').get(participant.participantId);
+      if (agentRow) {
+        enriched.name = agentRow.name;
+        enriched.agentType = agentRow.type;
+      }
+    } else if (participant.participantType === 'user') {
+      let userRow = db.prepare('SELECT username FROM users WHERE id = ?').get(participant.participantId);
+      if (userRow)
+        enriched.name = userRow.username;
+    }
+
+    return enriched;
+  });
+
   return {
     // User & Auth
     userId:    req.user.id,
@@ -95,6 +117,12 @@ export function buildContext(options) {
       name:         session.session_name,
       systemPrompt: session.system_prompt,
     },
+
+    // Session Participants (for coordination)
+    participants: enrichedParticipants,
+
+    // Delegation depth tracking (for recursion prevention)
+    delegationDepth: 0,
 
     // Abort Signal
     signal: signal || null,
