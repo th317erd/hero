@@ -519,6 +519,44 @@ function getMigrations() {
         CREATE INDEX idx_sessions_parent ON sessions(parent_session_id);
       `,
     },
+    {
+      name: '019_permission_rules',
+      sql:  `
+        -- Permission rules: default-deny policy engine
+        -- Controls what subjects (users, agents, plugins) can do with
+        -- what resources (commands, tools, abilities).
+        --
+        -- Resolution order: most specific rule wins.
+        -- Specificity: exact subject+resource > subject wildcard > resource wildcard > global.
+        -- At equal specificity, explicit deny beats allow.
+        -- When no rule matches, default is 'prompt' (ask the user).
+        --
+        -- Scopes:
+        --   permanent: rule persists until explicitly deleted
+        --   session:   rule applies only within a session (requires session_id)
+        --   once:      rule consumed after first evaluation
+
+        CREATE TABLE permission_rules (
+          id             INTEGER PRIMARY KEY AUTOINCREMENT,
+          owner_id       INTEGER REFERENCES users(id) ON DELETE CASCADE,
+          session_id     INTEGER REFERENCES sessions(id) ON DELETE CASCADE,
+          subject_type   TEXT NOT NULL CHECK(subject_type IN ('user', 'agent', 'plugin', '*')),
+          subject_id     INTEGER,
+          resource_type  TEXT NOT NULL CHECK(resource_type IN ('command', 'tool', 'ability', '*')),
+          resource_name  TEXT,
+          action         TEXT NOT NULL CHECK(action IN ('allow', 'deny', 'prompt')),
+          scope          TEXT DEFAULT 'permanent' CHECK(scope IN ('once', 'session', 'permanent')),
+          conditions     TEXT,
+          priority       INTEGER DEFAULT 0,
+          created_at     TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX idx_permission_rules_owner ON permission_rules(owner_id);
+        CREATE INDEX idx_permission_rules_session ON permission_rules(session_id);
+        CREATE INDEX idx_permission_rules_subject ON permission_rules(subject_type, subject_id);
+        CREATE INDEX idx_permission_rules_resource ON permission_rules(resource_type, resource_name);
+      `,
+    },
   ];
 }
 

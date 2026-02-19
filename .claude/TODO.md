@@ -36,21 +36,28 @@
 - [ ] Write E2E tests
 
 ## Phase 2: Permissions System
-> Status: PENDING — blocked by Phase 1
+> Status: **ENGINE COMPLETE** — prompt UX and advanced features pending
 > Risk: MEDIUM-HIGH — security-critical
 
-- [ ] Create `permission_rules` table migration
-- [ ] Build permission engine (`server/lib/permissions/`)
-- [ ] Implement `evaluate(subject, resource, context)` → allow/deny/prompt
-- [ ] Implement specificity-based resolution (most specific wins)
-- [ ] Wire into BEFORE_COMMAND/BEFORE_TOOL hooks
-- [ ] Integrate with existing `abilities/approval.mjs`
+### Engine (complete)
+- [x] Create `permission_rules` table migration (019)
+- [x] Build permission engine (`server/lib/permissions/index.mjs`)
+- [x] Implement `evaluate(subject, resource, context)` → allow/deny/prompt
+- [x] Implement specificity-based resolution (most specific wins, deny beats allow)
+- [x] Wire into BEFORE_COMMAND hook via command-handler.mjs
+- [x] Wire BEFORE_COMMAND/AFTER_COMMAND plugin hooks
+- [x] Write exhaustive unit tests (65 tests — CRUD, specificity, scope, conditions, determinism)
+- [x] Write integration tests (7 tests — command-handler permission flow)
+- [x] Write property-based tests for deterministic resolution
+- [x] All 1314 tests passing
+
+### Pending
+- [ ] Integrate with existing `abilities/approval.mjs` (prompt action → approval flow)
+- [ ] Wire BEFORE_TOOL hook into interaction detector
 - [ ] Build permission prompt UX (`<hml-prompt>`)
 - [ ] Implement meta-permissions (who can modify rules)
 - [ ] Structured command arguments for all commands
-- [ ] Write exhaustive unit tests (100% branch coverage target)
-- [ ] Write integration tests
-- [ ] Write property-based tests for deterministic resolution
+- [ ] Permission management API routes (CRUD for rules)
 
 ## Phase 3: Agent Roles & Coordination
 > Status: PENDING — blocked by Phase 1 + 2

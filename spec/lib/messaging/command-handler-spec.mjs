@@ -28,8 +28,15 @@ async function loadModules() {
   handleCommandInterception = mod.handleCommandInterception;
 }
 
+let permissions;
+
+async function loadPermissionsModule() {
+  permissions = await import('../../../server/lib/permissions/index.mjs');
+}
+
 describe('command-handler', async () => {
   await loadModules();
+  await loadPermissionsModule();
 
   let db;
   let userId;
@@ -40,6 +47,7 @@ describe('command-handler', async () => {
     db = database.getDatabase();
 
     // Clear test data for isolation
+    db.exec('DELETE FROM permission_rules');
     db.exec('DELETE FROM frames');
     db.exec('DELETE FROM sessions');
     db.exec('DELETE FROM agents');
@@ -183,6 +191,167 @@ describe('command-handler', async () => {
       });
       assert.strictEqual(result.handled, true);
       assert.strictEqual(result.result.command, 'help');
+    });
+  });
+
+  describe('Permission integration', () => {
+    it('should allow commands when no permission rules exist (default: prompt, not deny)', async () => {
+      // Default action is 'prompt' which does NOT block user-initiated commands
+      let result = await handleCommandInterception({
+        content: '/help',
+        sessionId,
+        userId,
+      });
+      assert.strictEqual(result.handled, true);
+      assert.strictEqual(result.result.success, true);
+    });
+
+    it('should deny commands when an explicit deny rule exists', async () => {
+      permissions.createRule({
+        ownerId:      userId,
+        subjectType:  permissions.SubjectType.USER,
+        subjectId:    userId,
+        resourceType: permissions.ResourceType.COMMAND,
+        resourceName: 'help',
+        action:       permissions.Action.DENY,
+      }, db);
+
+      let result = await handleCommandInterception({
+        content: '/help',
+        sessionId,
+        userId,
+      });
+      assert.strictEqual(result.handled, true);
+      assert.strictEqual(result.result.success, false);
+      assert.strictEqual(result.result.error, 'Permission denied');
+    });
+
+    it('should create a permission denied response frame', async () => {
+      permissions.createRule({
+        ownerId:      userId,
+        subjectType:  permissions.SubjectType.USER,
+        subjectId:    userId,
+        resourceType: permissions.ResourceType.COMMAND,
+        resourceName: 'session',
+        action:       permissions.Action.DENY,
+      }, db);
+
+      await handleCommandInterception({
+        content: '/session',
+        sessionId,
+        userId,
+      });
+
+      let frames = db.prepare(`
+        SELECT * FROM frames WHERE session_id = ? AND author_type = 'agent'
+      `).all(sessionId);
+
+      assert.ok(frames.length > 0, 'Should have created a denial response frame');
+      let payloadRaw = frames[0].payload;
+      // The payload may be double-encoded or wrapped in content blocks
+      assert.ok(
+        payloadRaw.includes('Permission denied'),
+        `Frame should contain permission denied message, got: ${payloadRaw.substring(0, 200)}`,
+      );
+    });
+
+    it('should allow commands with explicit allow rule', async () => {
+      permissions.createRule({
+        ownerId:      userId,
+        subjectType:  permissions.SubjectType.USER,
+        subjectId:    userId,
+        resourceType: permissions.ResourceType.COMMAND,
+        resourceName: 'help',
+        action:       permissions.Action.ALLOW,
+      }, db);
+
+      let result = await handleCommandInterception({
+        content: '/help',
+        sessionId,
+        userId,
+      });
+      assert.strictEqual(result.handled, true);
+      assert.strictEqual(result.result.success, true);
+    });
+
+    it('should deny specific command but allow others', async () => {
+      // Deny 'session' command for this user
+      permissions.createRule({
+        ownerId:      userId,
+        subjectType:  permissions.SubjectType.USER,
+        subjectId:    userId,
+        resourceType: permissions.ResourceType.COMMAND,
+        resourceName: 'session',
+        action:       permissions.Action.DENY,
+      }, db);
+
+      // /session should be denied
+      let sessionResult = await handleCommandInterception({
+        content: '/session',
+        sessionId,
+        userId,
+      });
+      assert.strictEqual(sessionResult.result.error, 'Permission denied');
+
+      // /help should still work (no deny rule)
+      let helpResult = await handleCommandInterception({
+        content: '/help',
+        sessionId,
+        userId,
+      });
+      assert.strictEqual(helpResult.result.success, true);
+    });
+
+    it('should respect once-scoped rules (consumed after first use)', async () => {
+      permissions.createRule({
+        ownerId:      userId,
+        subjectType:  permissions.SubjectType.USER,
+        subjectId:    userId,
+        resourceType: permissions.ResourceType.COMMAND,
+        resourceName: 'help',
+        action:       permissions.Action.DENY,
+        scope:        permissions.Scope.ONCE,
+      }, db);
+
+      // First attempt: denied
+      let result1 = await handleCommandInterception({
+        content: '/help',
+        sessionId,
+        userId,
+      });
+      assert.strictEqual(result1.result.error, 'Permission denied');
+
+      // Second attempt: rule consumed, falls to default (prompt = allowed for users)
+      let result2 = await handleCommandInterception({
+        content: '/help',
+        sessionId,
+        userId,
+      });
+      assert.strictEqual(result2.result.success, true);
+    });
+
+    it('should deny all commands with wildcard resource deny rule', async () => {
+      permissions.createRule({
+        ownerId:      userId,
+        subjectType:  permissions.SubjectType.USER,
+        subjectId:    userId,
+        resourceType: permissions.ResourceType.COMMAND,
+        action:       permissions.Action.DENY,
+      }, db);
+
+      let helpResult = await handleCommandInterception({
+        content: '/help',
+        sessionId,
+        userId,
+      });
+      assert.strictEqual(helpResult.result.error, 'Permission denied');
+
+      let sessionResult = await handleCommandInterception({
+        content: '/session',
+        sessionId,
+        userId,
+      });
+      assert.strictEqual(sessionResult.result.error, 'Permission denied');
     });
   });
 });

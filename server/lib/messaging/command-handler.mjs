@@ -13,6 +13,8 @@ import {
 } from '../frames/broadcast.mjs';
 import { isCommand, parseCommand, executeCommand } from '../commands/index.mjs';
 import { loadSessionWithAgent } from '../participants/index.mjs';
+import { evaluate, SubjectType, ResourceType, Action } from '../permissions/index.mjs';
+import { beforeCommand, afterCommand } from '../plugins/hooks.mjs';
 
 /**
  * Check if content is a command and execute it if so.
@@ -61,7 +63,47 @@ export async function handleCommandInterception({ content, sessionId, userId, da
       hidden:    false,
     });
 
-    let result = await executeCommand(parsed.name, parsed.args, context);
+    // Permission check: evaluate whether this subject can execute this command
+    let permission = evaluate(
+      { type: SubjectType.USER, id: userId },
+      { type: ResourceType.COMMAND, name: parsed.name },
+      { sessionId, ownerId: userId },
+      db,
+    );
+
+    if (permission.action === Action.DENY) {
+      createAgentMessageFrame({
+        sessionId:    context.sessionId,
+        userId:       context.userId,
+        agentId:      null,
+        content:      `**Permission denied:** You are not allowed to execute \`/${parsed.name}\`.`,
+        hidden:       false,
+        skipSanitize: true,
+      });
+
+      return {
+        handled: true,
+        result:  {
+          success: false,
+          command: parsed.name,
+          error:   'Permission denied',
+        },
+      };
+    }
+
+    // Run BEFORE_COMMAND hook (allows plugins to modify or block commands)
+    let commandData = await beforeCommand(
+      { command: parsed.name, args: parsed.args },
+      context,
+    );
+
+    let result = await executeCommand(commandData.command, commandData.args, context);
+
+    // Run AFTER_COMMAND hook (allows plugins to process results)
+    await afterCommand(
+      { command: commandData.command, args: commandData.args, result },
+      context,
+    );
 
     // If command has content to display, create a response frame
     if (!result.noResponse) {
