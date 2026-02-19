@@ -294,6 +294,36 @@ All modal components migrated to split HTML/JS pattern:
 - `spec/lib/auth/api-keys-spec.mjs` — 29 tests
 - `spec/routes/users-spec.mjs` — 12 tests
 
+### Phase 7 — Server-Authoritative Hardening (2026-02-19)
+
+**Approval System Hardening:** `server/lib/abilities/approval.mjs`
+- `generateRequestHash(abilityName, params)` — SHA-256 of `{ability, params}` JSON
+- `requestApproval()` now stores `userId` and `requestHash` in pending map
+- `handleApprovalResponse()` rewritten with:
+  - User ownership verification (userId must match pending approval's userId)
+  - Request hash verification (prevents replay — hash of different command rejected)
+  - Atomic delete from pending map (prevents duplicate resolution race condition)
+  - Backward compatibility (no userId or hash → still accepted for legacy callers)
+- Added `getPendingApproval(executionId)` for introspection
+- Exported `generateRequestHash`
+
+**Interaction Bus Hardening:** `server/lib/interactions/bus.mjs`
+- `respond()` accepts optional `securityContext` parameter
+- Verifies responding user matches interaction's `user_id` (prevents cross-user hijacking)
+- Logs security warnings on mismatch
+
+**WebSocket Security:** `server/lib/websocket.mjs`
+- `ability_approval_response` handler passes `{ userId, requestHash }` security context
+- `interaction_response` handler passes `{ userId }` to `bus.respond()`
+
+**Messages Route:** `server/routes/messages.mjs`
+- Added `agentId` to agent interaction context for attribution
+- Clarified no `senderId` for agent-originated interactions (only user interactions get senderId)
+
+**Tests Added:**
+- `spec/lib/security/approval-hardening-spec.mjs` — 16 tests (hash generation, ownership, replay, duplicates, denial, session approval)
+- `spec/lib/security/bus-hardening-spec.mjs` — 10 tests (sender_id, respond verification, creation integrity)
+
 ### Test Suite
 - Runner: `find spec -name '*-spec.mjs' | xargs node --test --test-force-exit`
 - Current: **1595 tests, 0 failures**
@@ -302,7 +332,8 @@ All modal components migrated to split HTML/JS pattern:
 - Phase 3 advanced: Inter-agent streaming, multi-coordinator discussion, @mention routing
 - Phase 4 remaining: npm package plugin support, fs.watch auto-start in server
 - Phase 6 remaining: User settings UI, API key scope enforcement
-- Phase 7-8: Server hardening, polish
+- Phase 7 remaining: Self-approval prevention, cross-session nonce, chained command UX
+- Phase 8: File uploads, avatars, rich content
 
 ---
 

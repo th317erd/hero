@@ -185,13 +185,22 @@ class InteractionBus extends EventEmitter {
    * @param {string} interactionId - Interaction ID
    * @param {*} payload - Response payload
    * @param {boolean} [success=true] - Whether the response is successful
+   * @param {Object} [securityContext] - Optional security context
+   * @param {number} [securityContext.userId] - Authenticated user ID for verification
    * @returns {boolean} True if interaction was pending
    */
-  respond(interactionId, payload, success = true) {
+  respond(interactionId, payload, success = true, securityContext = {}) {
     let pending = this._pending.get(interactionId);
 
     if (!pending)
       return false;
+
+    // If the interaction has a user_id, verify the responding user matches
+    if (securityContext.userId && pending.interaction.user_id &&
+        securityContext.userId !== pending.interaction.user_id) {
+      console.warn(`[Security] Interaction response user mismatch: user ${securityContext.userId} tried to respond to interaction for user ${pending.interaction.user_id}`);
+      return false;
+    }
 
     if (success) {
       pending.resolve(payload);

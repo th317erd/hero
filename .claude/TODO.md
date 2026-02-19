@@ -158,14 +158,36 @@
 - [ ] API key scope enforcement in middleware
 
 ## Phase 7: Server-Authoritative Hardening
-> Status: PENDING — blocked by Phases 0-3
+> Status: **CORE COMPLETE**
 
-- [ ] Audit all approval response paths
-- [ ] Frame creation server-only enforcement
-- [ ] sender_id enforcement in bus.mjs
-- [ ] Approval frame command hash + replay prevention
-- [ ] Chained command permissions UX
-- [ ] Security tests
+### Approval Hardening — DONE
+- [x] Add userId to pending approvals map (verify owner on response)
+- [x] WebSocket: pass userId + requestHash to handleApprovalResponse
+- [x] Prevent duplicate approval resolution (atomic delete from pending map)
+- [x] Generate SHA-256 request hash of ability+params on approval request
+- [x] Verify hash matches on approval response (prevent replay)
+- [x] Backward compatibility: allow approval without userId or hash
+
+### sender_id Enforcement — DONE
+- [x] Non-streaming messages route: add agentId to interaction context, clarify no senderId for agent interactions
+- [x] Bus `respond()`: verify responding user matches interaction's user_id
+- [x] WebSocket interaction_response handler passes authenticated userId
+
+### Security Tests — DONE
+- [x] Approval ownership verification tests (accept correct user, reject wrong user, backward compat)
+- [x] Request hash verification tests (accept match, reject mismatch, backward compat)
+- [x] Duplicate resolution prevention tests
+- [x] Denial flow with security context tests
+- [x] Session approval grant tests
+- [x] sender_id enforcement tests (inclusion, exclusion, user vs agent distinction)
+- [x] Bus respond() user verification tests
+- [x] Interaction creation integrity tests
+- [x] All 1595 tests passing
+
+### Pending (deferred)
+- [ ] Self-approval prevention (agents can't approve own actions — needs agent subject tracking)
+- [ ] Nonce for cross-session replay prevention
+- [ ] Chained command permissions UX (visual approval chain)
 
 ## Phase 8: Polish & Future Features
 > Status: PENDING — independent

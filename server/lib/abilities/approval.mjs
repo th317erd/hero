@@ -5,12 +5,25 @@
 // ============================================================================
 // Handles permission checking and approval requests for ability execution.
 
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
 import { getDatabase } from '../../database.mjs';
 import { broadcast } from '../websocket.mjs';
 
-// In-memory pending approvals (executionId -> resolver)
+// In-memory pending approvals (executionId -> resolver + security context)
 const pendingApprovals = new Map();
+
+/**
+ * Generate a hash of the approval request for replay prevention.
+ * The hash covers the ability name and serialized parameters.
+ *
+ * @param {string} abilityName - Ability name
+ * @param {Object} params - Execution parameters
+ * @returns {string} SHA-256 hex hash
+ */
+function generateRequestHash(abilityName, params) {
+  let data = JSON.stringify({ ability: abilityName, params });
+  return createHash('sha256').update(data).digest('hex');
+}
 
 /**
  * Check if an ability requires approval before execution.
@@ -111,8 +124,9 @@ export function revokeSessionApproval(sessionId, abilityName) {
  * @returns {Promise<{status: string, reason?: string}>} Approval result
  */
 export async function requestApproval(ability, params, context, timeout = 0) {
-  let executionId = randomUUID();
-  let db = getDatabase();
+  let executionId  = randomUUID();
+  let requestHash  = generateRequestHash(ability.name, params);
+  let db           = getDatabase();
 
   // Store pending approval in database
   db.prepare(`
@@ -132,6 +146,7 @@ export async function requestApproval(ability, params, context, timeout = 0) {
   broadcast(context.userId, {
     type:        'ability_approval_request',
     executionId: executionId,
+    requestHash: requestHash,
     abilityName: ability.name,
     abilityType: ability.type,
     description: ability.description,
@@ -147,6 +162,8 @@ export async function requestApproval(ability, params, context, timeout = 0) {
       resolve,
       ability,
       context,
+      userId:      context.userId,
+      requestHash: requestHash,
     });
 
     // Set timeout if specified
@@ -172,17 +189,39 @@ export async function requestApproval(ability, params, context, timeout = 0) {
 /**
  * Handle an approval response from the user.
  *
+ * Security hardening:
+ * - Verifies the responding user owns the pending approval
+ * - Validates request hash to prevent replay attacks
+ * - Prevents duplicate resolution (race condition guard)
+ *
  * @param {string} executionId - The execution ID
  * @param {boolean} approved - Whether the request was approved
  * @param {string} [reason] - Optional reason for denial
  * @param {boolean} [rememberForSession=false] - Remember approval for session
+ * @param {Object} [securityContext] - Security context from WebSocket
+ * @param {number} [securityContext.userId] - Authenticated user ID
+ * @param {string} [securityContext.requestHash] - Request hash for replay prevention
+ * @returns {{success: boolean, error?: string}} Result of the approval handling
  */
-export function handleApprovalResponse(executionId, approved, reason, rememberForSession = false) {
+export function handleApprovalResponse(executionId, approved, reason, rememberForSession = false, securityContext = {}) {
   let pending = pendingApprovals.get(executionId);
 
   if (!pending)
-    return; // Already resolved or unknown
+    return { success: false, error: 'Unknown or already resolved execution' };
 
+  // Verify user ownership: the approving user must match the requesting user
+  if (securityContext.userId && pending.userId && securityContext.userId !== pending.userId) {
+    console.warn(`[Security] Approval ownership mismatch: user ${securityContext.userId} tried to approve execution owned by user ${pending.userId}`);
+    return { success: false, error: 'Not authorized to approve this execution' };
+  }
+
+  // Verify request hash: prevent replay of approval for different command
+  if (securityContext.requestHash && pending.requestHash && securityContext.requestHash !== pending.requestHash) {
+    console.warn(`[Security] Request hash mismatch for execution ${executionId}`);
+    return { success: false, error: 'Request hash mismatch — possible replay attack' };
+  }
+
+  // Race condition guard: atomically remove from pending
   pendingApprovals.delete(executionId);
 
   let db     = getDatabase();
@@ -202,6 +241,8 @@ export function handleApprovalResponse(executionId, approved, reason, rememberFo
 
   // Resolve the promise
   pending.resolve({ status, reason });
+
+  return { success: true };
 }
 
 /**
@@ -264,6 +305,18 @@ export function getApprovalHistory(userId, limit = 50) {
   `).all(userId, limit);
 }
 
+/**
+ * Get a specific pending approval by execution ID (for testing/introspection).
+ *
+ * @param {string} executionId - The execution ID
+ * @returns {Object|undefined} Pending approval entry
+ */
+export function getPendingApproval(executionId) {
+  return pendingApprovals.get(executionId);
+}
+
+export { generateRequestHash };
+
 export default {
   checkApprovalRequired,
   hasSessionApproval,
@@ -273,5 +326,7 @@ export default {
   handleApprovalResponse,
   cancelApproval,
   getPendingApprovals,
+  getPendingApproval,
   getApprovalHistory,
+  generateRequestHash,
 };

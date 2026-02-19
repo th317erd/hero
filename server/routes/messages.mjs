@@ -258,10 +258,12 @@ router.post('/:sessionId/messages', async (req, res) => {
         hidden:    true,
       });
 
-      // Build context and execute interactions
+      // Build context for agent-originated interactions
+      // NOTE: No senderId — these are agent interactions, not user-authorized
       let interactionContext = {
         sessionId: sessionId,
         userId:    req.user.id,
+        agentId:   session.agent_id,
         dataKey:   dataKey,
       };
 
