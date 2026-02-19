@@ -41,8 +41,8 @@
       align-items: stretch;
       overflow: hidden;
       /* Hero theme overrides */
-      min-width: 400px;
-      max-width: 600px;
+      min-width: min(400px, calc(100vw - 32px));
+      max-width: min(600px, calc(100vw - 32px));
       max-height: 85vh;
       border: 1px solid var(--border-color, #2d2d2d);
       border-radius: var(--radius-lg, 8px);
@@ -290,8 +290,7 @@
 
     .abilities-list,
     .agents-list {
-      max-height: 40vh;
-      overflow-y: auto;
+      /* No max-height/overflow - modal main handles scrolling */
     }
 
     /* Config editor */

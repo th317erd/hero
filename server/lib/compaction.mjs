@@ -17,6 +17,11 @@ import {
   countMessagesSinceCompact,
   buildConversationForCompaction,
 } from './frames/context.mjs';
+import {
+  getFrames,
+  compileFrames,
+  FrameType,
+} from './frames/index.mjs';
 import { createCompactFrame } from './frames/broadcast.mjs';
 import { broadcastToUser } from './websocket.mjs';
 
@@ -81,6 +86,31 @@ MEMORY SNAPSHOT:`;
 }
 
 /**
+ * Build a snapshot of visible message payloads for the compact frame.
+ * This preserves the compiled state so compileFrames can restore it.
+ *
+ * @param {number} sessionId
+ * @returns {Object} Map of frame ID to compiled payload
+ */
+function buildSnapshot(sessionId) {
+  const frames = getFrames(sessionId, { fromCompact: true });
+  const compiled = compileFrames(frames);
+  const snapshot = {};
+
+  for (const frame of frames) {
+    if (frame.type !== FrameType.MESSAGE) continue;
+
+    const payload = compiled.get(frame.id);
+    if (!payload) continue;
+    if (payload.hidden) continue;
+
+    snapshot[frame.id] = payload;
+  }
+
+  return snapshot;
+}
+
+/**
  * Perform the actual compaction.
  */
 async function performCompaction(sessionId, userId, agent) {
@@ -123,12 +153,15 @@ async function performCompaction(sessionId, userId, agent) {
       return { success: false, reason: 'No summary returned' };
     }
 
+    // Build snapshot of visible message payloads for state restoration
+    let snapshot = buildSnapshot(sessionId);
+
     // Store compact frame
     let compactFrame = createCompactFrame({
       sessionId: sessionId,
       userId:    userId,
       context:   summary,
-      snapshot:  {}, // Can include additional structured data if needed
+      snapshot:  snapshot,
     });
 
     // Broadcast to user that compaction happened

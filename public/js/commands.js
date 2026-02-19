@@ -12,6 +12,8 @@
 //               fetchAbilities, loadSessionUsage, showView, BASE_PATH
 
 async function handleCommand(content) {
+  console.log('[Commands] Handling command:', content);
+
   let parts   = content.slice(1).split(/\s+/);
   let command = parts[0].toLowerCase();
   let args    = parts.slice(1).join(' ');
@@ -54,7 +56,12 @@ async function handleCommand(content) {
       await handleCompactCommand();
       break;
 
+    case 'reload':
+      await handleReloadCommand();
+      break;
+
     default:
+      console.log('[Commands] Unknown command:', command);
       showSystemMessage(`Unknown command: /${command}\nType /help for available commands.`);
   }
 }
@@ -65,7 +72,10 @@ async function handleClearMessages() {
 
   try {
     await clearMessages(state.currentSession.id);
-    state.messages = [];
+    const session = getCurrentSessionMessages();
+    if (session) {
+      session.clear();
+    }
     renderMessages();
   } catch (error) {
     console.error('Failed to clear messages:', error);
@@ -85,10 +95,13 @@ async function handleHelpCommand(filterArg = '') {
 
     // Check for error response (e.g., invalid regex)
     if (help.error) {
-      state.messages.push({
-        role:    'assistant',
-        content: [{ type: 'text', text: `Error: ${help.error}` }],
-      });
+      const session = getCurrentSessionMessages();
+      if (session) {
+        session.add({
+          role:    'assistant',
+          content: [{ type: 'text', text: `Error: ${help.error}` }],
+        });
+      }
       renderMessages();
       scrollToBottom();
       return;
@@ -178,24 +191,31 @@ async function handleHelpCommand(filterArg = '') {
 function handleStreamCommand(args) {
   args = args.toLowerCase().trim();
 
+  const session = getCurrentSessionMessages();
+  let message;
+
   if (args === 'on' || args === 'enable') {
     state.streamingMode = true;
-    state.messages.push({
+    message = {
       role:    'assistant',
       content: [{ type: 'text', text: 'Streaming mode enabled. Responses will appear progressively.' }],
-    });
+    };
   } else if (args === 'off' || args === 'disable') {
     state.streamingMode = false;
-    state.messages.push({
+    message = {
       role:    'assistant',
       content: [{ type: 'text', text: 'Streaming mode disabled. Responses will appear after completion.' }],
-    });
+    };
   } else {
     let modeText = (state.streamingMode) ? 'enabled' : 'disabled';
-    state.messages.push({
+    message = {
       role:    'assistant',
       content: [{ type: 'text', text: `Streaming mode is currently ${modeText}.\n\nUsage:\n/stream on  - Enable streaming\n/stream off - Disable streaming` }],
-    });
+    };
+  }
+
+  if (session && message) {
+    session.add(message);
   }
 
   renderMessages();
@@ -282,6 +302,62 @@ async function handleCompactCommand() {
   } catch (error) {
     console.error('Failed to compact conversation:', error);
     showSystemMessage(`Error during compaction: ${error.message}`);
+  }
+}
+
+/**
+ * Handle /reload command.
+ * Reloads the agent's startup instructions without generating a response.
+ */
+async function handleReloadCommand() {
+  if (!state.currentSession) {
+    alert('No active session. Please select or create a session first.');
+    return;
+  }
+
+  try {
+    console.log('[Commands] /reload: Starting...');
+
+    // Fetch startup content from API
+    let response = await fetch(`${BASE_PATH}/api/commands/start`, {
+      credentials: 'same-origin',
+    });
+    let result = await response.json();
+
+    console.log('[Commands] /reload: Fetched startup content', { success: result.success, abilityCount: result.abilityCount });
+
+    if (!result.success) {
+      alert(`Failed to reload instructions: ${result.error}`);
+      return;
+    }
+
+    // Send as a hidden system message (agent sees it but user doesn't need response)
+    let reloadContent = `[System Reload]\n\nYour instructions have been refreshed:\n\n${result.content}`;
+
+    // Store as hidden message with visible acknowledgment
+    let postResponse = await fetch(`${BASE_PATH}/api/sessions/${state.currentSession.id}/messages`, {
+      method:      'POST',
+      headers:     { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body:        JSON.stringify({
+        content:           reloadContent,
+        hidden:            true,   // Hide instructions from chat display
+        showAcknowledgment: true,  // Show visible confirmation message
+      }),
+    });
+
+    console.log('[Commands] /reload: POST response status', postResponse.status);
+
+    if (!postResponse.ok) {
+      let errorData = await postResponse.json().catch(() => ({}));
+      throw new Error(errorData.error || 'Failed to store reload message');
+    }
+
+    console.log('[Commands] /reload: Complete');
+  } catch (error) {
+    console.error('[Commands] /reload failed:', error);
+    // Show error as alert since chat feedback may not work for errors
+    alert(`Reload failed: ${error.message}`);
   }
 }
 

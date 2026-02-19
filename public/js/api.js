@@ -134,16 +134,68 @@ const API = {
     charge:     (data) => api('POST', '/usage/charge', data),
     correction: (data) => api('POST', '/usage/correction', data),
   },
+
+  // --------------------------------------------------------------------------
+  // Frames (Interaction Frames System)
+  // --------------------------------------------------------------------------
+  frames: {
+    /**
+     * List frames for a session.
+     * @param {number} sessionId - Session ID
+     * @param {object} [options] - Query options
+     * @param {string} [options.fromTimestamp] - Get frames after this timestamp
+     * @param {boolean} [options.fromCompact] - Start from most recent compact frame
+     * @param {string[]} [options.types] - Filter by frame types
+     * @param {number} [options.limit] - Maximum frames to return
+     * @returns {Promise<{frames: object[], compiled: object}>}
+     */
+    list: async (sessionId, options = {}) => {
+      let params = new URLSearchParams();
+      if (options.fromTimestamp) params.append('fromTimestamp', options.fromTimestamp);
+      if (options.fromCompact) params.append('fromCompact', '1');
+      if (options.types) params.append('types', options.types.join(','));
+      if (options.limit) params.append('limit', String(options.limit));
+      let queryString = params.toString();
+      let path = (queryString)
+        ? `/sessions/${sessionId}/frames?${queryString}`
+        : `/sessions/${sessionId}/frames`;
+      return api('GET', path);
+    },
+
+    /**
+     * Get a single frame by ID.
+     * @param {number} sessionId - Session ID
+     * @param {string} frameId - Frame ID
+     * @returns {Promise<object>}
+     */
+    get: (sessionId, frameId) => api('GET', `/sessions/${sessionId}/frames/${frameId}`),
+
+    /**
+     * Get frame statistics for a session.
+     * @param {number} sessionId - Session ID
+     * @returns {Promise<object>}
+     */
+    stats: (sessionId) => api('GET', `/sessions/${sessionId}/frames/stats`),
+  },
 };
 
 // Make API available globally
 window.API = API;
 
 async function login(username, password) {
-  return await api('POST', '/login', { username, password });
+  let result = await api('POST', '/login', { username, password });
+
+  // Save token to localStorage for WebSocket authentication
+  if (result && result.token) {
+    localStorage.setItem('token', result.token);
+  }
+
+  return result;
 }
 
 async function logout() {
+  // Clear token from localStorage
+  localStorage.removeItem('token');
   return await api('POST', '/logout');
 }
 
@@ -212,6 +264,26 @@ async function sendMessageStream(sessionId, content, callbacks = {}) {
         let error = await response.json().catch(() => ({ error: 'Stream failed' }));
         debug('API', 'Stream error response:', error);
         reject(new Error(error.error || 'Stream failed'));
+        return;
+      }
+
+      // Check if this is a command response (JSON) vs streaming response (SSE)
+      let contentType = response.headers.get('Content-Type') || '';
+      if (contentType.includes('application/json')) {
+        // Command response - parse JSON and call appropriate callback
+        let commandResult = await response.json();
+        debug('API', 'Command response received:', commandResult);
+
+        // Call the command callback if provided
+        if (callbacks.onCommand) {
+          callbacks.onCommand(commandResult);
+        }
+
+        // Resolve with command result
+        resolve({
+          isCommand: true,
+          ...commandResult,
+        });
         return;
       }
 
@@ -521,6 +593,113 @@ async function unarchiveSession(id) {
 }
 
 // ============================================================================
+// Frame Functions
+// ============================================================================
+
+/**
+ * Fetch frames for a session.
+ * @param {number} sessionId - Session ID
+ * @param {object} [options] - Query options
+ * @returns {Promise<{frames: object[], compiled: object}>}
+ */
+async function fetchFrames(sessionId, options = {}) {
+  return await API.frames.list(sessionId, options);
+}
+
+/**
+ * Fetch a single frame by ID.
+ * @param {number} sessionId - Session ID
+ * @param {string} frameId - Frame ID
+ * @returns {Promise<object>}
+ */
+async function fetchFrame(sessionId, frameId) {
+  return await API.frames.get(sessionId, frameId);
+}
+
+/**
+ * Convert frames to message-like objects for rendering.
+ * This bridges the old message-based UI with the new frame system.
+ *
+ * @param {object[]} frames - Array of frames
+ * @param {object} compiled - Compiled frame payloads
+ * @returns {object[]} Array of message-like objects
+ */
+function framesToMessages(frames, compiled = null) {
+  let messages = [];
+
+  for (let frame of frames) {
+    // Get the current payload (may be updated by UPDATE frames)
+    // Support both Map (from session-frames-provider) and plain object
+    let payload;
+    if (compiled instanceof Map) {
+      payload = compiled.get(frame.id) || frame.payload;
+    } else if (compiled && compiled[frame.id]) {
+      payload = compiled[frame.id];
+    } else {
+      payload = frame.payload;
+    }
+
+    if (frame.type === 'message') {
+      messages.push({
+        id:         frame.id,
+        role:       payload.role || (frame.authorType === 'user' ? 'user' : 'assistant'),
+        content:    payload.content || '',
+        hidden:     payload.hidden || false,
+        type:       frame.type,
+        authorType: frame.authorType,
+        timestamp:  frame.timestamp,
+        frameId:    frame.id,
+      });
+    } else if (frame.type === 'request') {
+      // Request frames (like websearch) can be rendered as special messages
+      messages.push({
+        id:         frame.id,
+        role:       'assistant',
+        content:    '',
+        hidden:     false,
+        type:       'request',
+        action:     payload.action,
+        data:       payload,
+        authorType: frame.authorType,
+        timestamp:  frame.timestamp,
+        frameId:    frame.id,
+        parentId:   frame.parentId,
+      });
+    } else if (frame.type === 'result') {
+      // Result frames can be nested under their parent request
+      messages.push({
+        id:         frame.id,
+        role:       'system',
+        content:    '',
+        hidden:     false,
+        type:       'result',
+        result:     payload,
+        authorType: frame.authorType,
+        timestamp:  frame.timestamp,
+        frameId:    frame.id,
+        parentId:   frame.parentId,
+      });
+    } else if (frame.type === 'compact') {
+      // Compact frames render as visible summary dividers
+      messages.push({
+        id:         frame.id,
+        role:       'system',
+        context:    payload.context || '',
+        hidden:     false,
+        type:       'compact',
+        authorType: frame.authorType,
+        timestamp:  frame.timestamp,
+        frameId:    frame.id,
+        createdAt:  frame.timestamp,
+      });
+    }
+    // UPDATE frames don't create new messages, they modify existing ones
+  }
+
+  return messages;
+}
+
+// ============================================================================
 // ES Module Exports
 // ============================================================================
 
@@ -555,3 +734,6 @@ window.createUsageCorrection = createUsageCorrection;
 window.login              = login;
 window.logout             = logout;
 window.fetchMe            = fetchMe;
+window.fetchFrames        = fetchFrames;
+window.fetchFrame         = fetchFrame;
+window.framesToMessages   = framesToMessages;

@@ -41,6 +41,8 @@ const SESSION_MESSAGE_TYPES = [
   'element_new',
   'element_update',
   'todo_item_update',
+  'new_frame',        // Interaction Frames system
+  'frame_update',     // Frame payload updates
 ];
 
 // ============================================================================
@@ -73,9 +75,11 @@ export class HeroWebSocket extends HeroComponent {
     let baseHref = document.querySelector('base')?.getAttribute('href') || '';
     this.#basePath = baseHref.replace(/\/$/, '');
 
-    // Listen for connect/disconnect events from hero-app
-    this.addEventListener('ws:connect', () => this.connect());
-    this.addEventListener('ws:disconnect', () => this.disconnect());
+    // Listen for connect/disconnect events from hero-app (events bubble UP to document)
+    this._onWsConnect = () => this.connect();
+    this._onWsDisconnect = () => this.disconnect();
+    document.addEventListener('ws:connect', this._onWsConnect);
+    document.addEventListener('ws:disconnect', this._onWsDisconnect);
 
     // Subscribe to session changes
     this.#unsubscribers.push(
@@ -90,6 +94,14 @@ export class HeroWebSocket extends HeroComponent {
    */
   unmounted() {
     this.disconnect();
+
+    // Remove document-level event listeners
+    if (this._onWsConnect) {
+      document.removeEventListener('ws:connect', this._onWsConnect);
+    }
+    if (this._onWsDisconnect) {
+      document.removeEventListener('ws:disconnect', this._onWsDisconnect);
+    }
 
     for (let unsub of this.#unsubscribers) {
       unsub();
@@ -111,7 +123,7 @@ export class HeroWebSocket extends HeroComponent {
       return;
     }
 
-    // Build WebSocket URL
+    // Build WebSocket URL (nginx proxies /hero/ws to server's /ws)
     let protocol = (window.location.protocol === 'https:') ? 'wss:' : 'ws:';
     let wsUrl    = `${protocol}//${window.location.host}${this.#basePath}/ws?token=${token}`;
 
@@ -200,10 +212,15 @@ export class HeroWebSocket extends HeroComponent {
   }
 
   /**
-   * Get auth token from cookie.
+   * Get auth token from localStorage or cookie.
    * @returns {string|undefined}
    */
   #getToken() {
+    // Try localStorage first (primary storage)
+    let token = localStorage.getItem('token');
+    if (token) return token;
+
+    // Fallback to cookie
     return document.cookie.split('; ')
       .find((c) => c.startsWith('token='))
       ?.split('=')[1];
@@ -273,10 +290,11 @@ export class HeroWebSocket extends HeroComponent {
       bubbles: true,
     }));
 
-    // Dispatch type-specific event
+    // Dispatch type-specific event (composed: true allows crossing shadow DOM)
     this.dispatchEvent(new CustomEvent(`ws:${message.type}`, {
       detail: message,
       bubbles: true,
+      composed: true,
     }));
 
     // Handle global updates

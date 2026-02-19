@@ -96,6 +96,25 @@ if (!window.__heroComponentsLoaded) {
     }
   };
 
+  // Subscribe to GlobalState changes and reverse-sync to window.state.
+  // This ensures that when Mythix UI components (e.g., hero-app) call
+  // this.setGlobal('currentSession', ...), the legacy state.currentSession
+  // is also updated — critical for streaming/prompt answer flows.
+  for (const key of SYNCED_KEYS) {
+    if (GS[key] && typeof GS[key].addEventListener === 'function') {
+      GS[key].addEventListener('update', (event) => {
+        if (!window.__stateSyncing && window.state) {
+          window.__stateSyncing = true;
+          try {
+            window.state[key] = event.value;
+          } finally {
+            window.__stateSyncing = false;
+          }
+        }
+      });
+    }
+  }
+
   console.log('[Hero] JS-loaded components: hero-app, hero-websocket, hero-modal-*');
   console.log('[Hero] Mythix-loaded components: hero-header, hero-status-bar, hero-main-controls, hero-sessions-list, hero-chat, hero-input, hml-prompt');
 }

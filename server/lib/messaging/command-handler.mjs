@@ -23,9 +23,10 @@ import { isCommand, parseCommand, executeCommand } from '../commands/index.mjs';
  * @param {string} options.content - The message content
  * @param {number} options.sessionId - Session ID
  * @param {number} options.userId - User ID
+ * @param {string} [options.dataKey] - Decryption key from auth middleware (needed for agent-requiring commands like /compact)
  * @returns {{ handled: boolean, result?: object, error?: string, status?: number }}
  */
-export async function handleCommandInterception({ content, sessionId, userId }) {
+export async function handleCommandInterception({ content, sessionId, userId, dataKey }) {
   if (!isCommand(content)) {
     return { handled: false };
   }
@@ -50,6 +51,7 @@ export async function handleCommandInterception({ content, sessionId, userId }) 
     userId:    userId,
     session:   session,
     agentId:   session.agent_id,
+    dataKey:   dataKey,
     db:        db,
   };
 

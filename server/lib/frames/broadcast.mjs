@@ -5,15 +5,20 @@
 // ============================================================================
 // Helper functions for creating frames and broadcasting them to connected clients.
 
+import { randomUUID } from 'node:crypto';
+
 import { createFrame, FrameType, AuthorType } from './index.mjs';
+import { sanitizeHtml } from '../html-sanitizer.mjs';
 import { broadcastToUser } from '../websocket.mjs';
 
 // Debug logging
 const DEBUG = process.env.DEBUG === 'true' || process.env.DEBUG === '1';
 
-function debug(...args) {
-  if (DEBUG)
-    console.log('[FrameBroadcast]', ...args);
+function debug(sessionId, ...args) {
+  if (DEBUG) {
+    const prefix = (sessionId) ? `[session_${sessionId}]` : '[FrameBroadcast]';
+    console.log(prefix, ...args);
+  }
 }
 
 /**
@@ -59,11 +64,10 @@ export function createAndBroadcastFrame(options, db = null) {
     payload,
   }, db);
 
-  debug('Frame created', {
+  debug(sessionId, 'Frame created', {
     id: frame.id,
     type,
     authorType,
-    sessionId,
     skipBroadcast,
   });
 
@@ -121,19 +125,30 @@ export function createUserMessageFrame(options, db = null) {
 
 /**
  * Create an agent message frame.
+ * Content is automatically sanitized to remove dangerous HTML.
  *
  * @param {Object} options - Options
  * @param {number} options.sessionId - Session ID
  * @param {number} options.userId - User ID (for broadcasting)
  * @param {number} options.agentId - Agent ID
- * @param {string} options.content - Message content
+ * @param {string} options.content - Message content (will be sanitized)
  * @param {boolean} [options.hidden] - Whether message is hidden from UI
  * @param {boolean} [options.skipBroadcast] - Skip broadcast
+ * @param {boolean} [options.skipSanitize] - Skip HTML sanitization (use with caution)
  * @param {Database} [db] - Optional database for testing
  * @returns {Object} The created frame
  */
 export function createAgentMessageFrame(options, db = null) {
-  const { sessionId, userId, agentId, content, hidden = false, skipBroadcast = false } = options;
+  const { sessionId, userId, agentId, content, hidden = false, skipBroadcast = false, skipSanitize = false } = options;
+
+  // Ensure all hml-prompt tags have stable IDs before storage
+  let processedContent = content.replace(
+    /<hml-prompt(?![^>]*\bid\s*=)/gi,
+    () => `<hml-prompt id="prompt-${randomUUID().slice(0, 8)}"`,
+  );
+
+  // Sanitize agent content to remove dangerous HTML
+  const sanitizedContent = skipSanitize ? processedContent : sanitizeHtml(processedContent);
 
   return createAndBroadcastFrame({
     sessionId,
@@ -143,7 +158,7 @@ export function createAgentMessageFrame(options, db = null) {
     authorId: agentId,
     payload: {
       role: 'assistant',
-      content,
+      content: sanitizedContent,
       hidden,
     },
     skipBroadcast,

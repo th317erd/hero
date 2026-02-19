@@ -1,5 +1,49 @@
 # Claude Code Instructions
 
+## ⚠️ TEST CREDENTIALS - READ THIS FIRST ⚠️
+
+```
+Username: claude
+Password: claude123
+```
+
+**MEMORIZE THESE.** Use for ALL browser testing and Puppeteer automation.
+
+The `claude` user has agent `test-claude` with a valid Anthropic API key.
+
+---
+
+## ⚠️ Testing Safeguards
+
+### Agent Protection Rule
+
+**NEVER create or edit an agent unless its name starts with `test-`** (case-insensitive).
+
+Examples:
+- ✅ `test-claude` - OK to create/edit
+- ✅ `Test-Agent` - OK to create/edit
+- ✅ `TEST-foo` - OK to create/edit
+- ❌ `Claude` - DO NOT touch
+- ❌ `My Agent` - DO NOT touch
+- ❌ `Test Agent` - DO NOT touch (no hyphen!)
+
+**Why:** During Puppeteer/browser testing, writes go to the real database. This rule prevents accidentally overwriting real API keys with test placeholders.
+
+**Before any agent operation:** Verify the agent name matches `/^test-/i`. If it doesn't, STOP and ask the user.
+
+### For Real Interaction Testing
+
+Use the `claude` user's `test-claude` agent which has a valid API key.
+
+- Login as `claude` / `claude123`
+- Create a new **session** (sessions are safe to create freely)
+- Select `test-claude` as the agent
+- Send test messages to verify functionality
+
+**DO NOT** create new agents for interaction testing - use `test-claude`.
+
+---
+
 ## !!!MANDATORY FIRST ACTION!!!
 
 **STOP. Before responding to the user, ask yourself: "Do I have the contents of `~/.claude-config/startup.md` in my current context?"**

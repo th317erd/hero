@@ -17,11 +17,11 @@ export class HeroModalAbilities extends HeroModal {
   getAdditionalStyles() {
     return `
       dialog[open] {
-        width: 50vw;
-        min-width: 400px;
-        max-width: 600px;
+        width: min(50vw, calc(100vw - 32px));
+        min-width: min(400px, calc(100vw - 32px));
+        max-width: min(600px, calc(100vw - 32px));
         height: 70vh;
-        min-height: 400px;
+        min-height: min(400px, calc(100vh - 100px));
         max-height: 80vh;
       }
     `;

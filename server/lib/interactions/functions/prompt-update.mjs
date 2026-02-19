@@ -8,6 +8,7 @@
 
 import { InteractionFunction, PERMISSION } from '../function.mjs';
 import { getDatabase } from '../../../database.mjs';
+import { broadcastToUser } from '../../websocket.mjs';
 
 /**
  * PromptUpdate Function class.
@@ -37,6 +38,10 @@ export class PromptUpdateFunction extends InteractionFunction {
           answer: {
             type:        'string',
             description: 'The user\'s answer to the prompt',
+          },
+          question: {
+            type:        'string',
+            description: 'The question text (used for fallback matching when prompt has no ID)',
           },
         },
         required: ['message_id', 'prompt_id', 'answer'],
@@ -91,12 +96,12 @@ export class PromptUpdateFunction extends InteractionFunction {
    * @returns {Promise<Object>} Result of the update
    */
   async execute(payload) {
-    let { message_id, prompt_id, answer } = payload;
+    let { message_id, prompt_id, answer, question } = payload;
 
     let db = getDatabase();
 
     // Get the frame (message_id is now a frame ID)
-    let frame = db.prepare('SELECT id, payload FROM frames WHERE id = ?').get(message_id);
+    let frame = db.prepare('SELECT id, session_id, payload FROM frames WHERE id = ?').get(message_id);
 
     if (!frame) {
       return {
@@ -116,7 +121,30 @@ export class PromptUpdateFunction extends InteractionFunction {
       };
     }
 
-    let contentStr = framePayload.content;
+    // Handle both string and Claude API array format for content
+    // Claude API format: [{type: 'text', text: '...'}]
+    let contentStr;
+    let isArrayFormat = false;
+    let textBlockIndex = -1;
+
+    if (typeof framePayload.content === 'string') {
+      contentStr = framePayload.content;
+    } else if (Array.isArray(framePayload.content)) {
+      isArrayFormat = true;
+      textBlockIndex = framePayload.content.findIndex(
+        (block) => block.type === 'text' && typeof block.text === 'string'
+      );
+      if (textBlockIndex >= 0) {
+        contentStr = framePayload.content[textBlockIndex].text;
+      }
+    }
+
+    if (!contentStr) {
+      return {
+        success: false,
+        error:   'Could not extract content string from frame payload',
+      };
+    }
 
     // Escape XML special characters in the answer
     let escapedAnswer = escapeXml(answer);
@@ -167,6 +195,37 @@ export class PromptUpdateFunction extends InteractionFunction {
       );
     }
 
+    // Fallback: match by question text when prompt has no id attribute
+    if (updated === contentStr && question) {
+      let escapedQuestion = escapeRegex(question);
+      let questionPattern = new RegExp(
+        `(<(?:hml-|user[-_])prompt\\b[^>]*?)>([\\s\\S]*?${escapedQuestion}[\\s\\S]*?)<\\/(?:hml-|user[-_])prompt>`,
+        'i'
+      );
+
+      let matched = false;
+      updated = contentStr.replace(questionPattern, (match, openTag, content) => {
+        // Skip if already answered
+        if (/\banswered\s*=/.test(openTag)) return match;
+        matched = true;
+
+        let tagName = 'hml-prompt';
+        if (match.includes('user-prompt')) tagName = 'user-prompt';
+        else if (match.includes('user_prompt')) tagName = 'user_prompt';
+
+        // Add the id attribute so future matches work by id
+        let tagWithId = openTag;
+        if (!/\bid\s*=/.test(openTag)) {
+          tagWithId = openTag.replace(/<(?:hml-|user[-_])prompt/i, `$& id="${prompt_id}"`);
+        }
+
+        let cleanedContent = content.replace(/<response>[\s\S]*?<\/response>/gi, '').trim();
+        return `${tagWithId} answered="true">${cleanedContent}<response>${escapedAnswer}</response></${tagName}>`;
+      });
+
+      if (!matched) updated = contentStr;
+    }
+
     if (updated === contentStr) {
       return {
         success:  false,
@@ -176,8 +235,25 @@ export class PromptUpdateFunction extends InteractionFunction {
     }
 
     // Update the frame payload in the database
-    framePayload.content = updated;
+    // Put the updated content back in the correct format (string or array)
+    if (isArrayFormat && textBlockIndex >= 0) {
+      framePayload.content[textBlockIndex].text = updated;
+    } else {
+      framePayload.content = updated;
+    }
     db.prepare('UPDATE frames SET payload = ? WHERE id = ?').run(JSON.stringify(framePayload), message_id);
+
+    // Broadcast the frame update via WebSocket so clients re-render immediately
+    // The context contains userId from the interaction
+    let userId = this.context?.userId;
+    if (userId) {
+      broadcastToUser(userId, {
+        type:          'frame_update',
+        sessionId:     frame.session_id,
+        targetFrameId: message_id,
+        payload:       framePayload,
+      });
+    }
 
     return {
       success:   true,

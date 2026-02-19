@@ -1,7 +1,7 @@
-/* Hero - Markdown & HML Element Styles */
+/* Hero - Message Content & HML Element Styles */
 
 /* ============================================================================
-   Standard Markdown Elements
+   Standard HTML Elements (Headings, Lists, Tables, etc.)
    ============================================================================ */
 
 .message-content {
@@ -666,8 +666,9 @@ hml-prompt {
   vertical-align: baseline;
 }
 
-/* Hide data element inside hml-prompt (contains JSON options, should never be visible) */
-hml-prompt data {
+/* Hide data and option elements inside hml-prompt (for component parsing, not display) */
+hml-prompt data,
+hml-prompt option {
   display: none !important;
 }
 

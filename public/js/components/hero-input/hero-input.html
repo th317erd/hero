@@ -18,8 +18,8 @@
     .input-container {
       display: flex;
       align-items: flex-end;
-      gap: 12px;
-      padding: 12px;
+      gap: 8px;
+      padding: 8px;
       border-top: 1px solid var(--border-color, #2d2d2d);
       background: var(--bg-secondary, #1a1a2e);
     }
@@ -27,9 +27,9 @@
     textarea {
       flex: 1;
       resize: none;
-      min-height: 42px;
+      min-height: 36px;
       max-height: 150px;
-      padding: 10px 14px;
+      padding: 8px 12px;
       background: var(--bg-tertiary, #2a2a3e);
       border: 1px solid var(--border-color, #2d2d2d);
       border-radius: var(--radius-sm, 4px);
@@ -37,6 +37,33 @@
       font-family: inherit;
       font-size: 14px;
       line-height: 1.4;
+      box-sizing: border-box;
+    }
+
+    /* Custom scrollbar for textarea - force classic scrollbar style */
+    textarea {
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-color, #2d2d2d) var(--bg-tertiary, #2a2a3e);
+    }
+
+    textarea::-webkit-scrollbar {
+      width: 8px;
+      background: var(--bg-tertiary, #2a2a3e);
+    }
+
+    textarea::-webkit-scrollbar-track {
+      background: var(--bg-tertiary, #2a2a3e);
+      border-radius: 4px;
+    }
+
+    textarea::-webkit-scrollbar-thumb {
+      background: var(--border-color, #4a4a5e);
+      border-radius: 4px;
+      min-height: 30px;
+    }
+
+    textarea::-webkit-scrollbar-thumb:hover {
+      background: var(--text-muted, #6b7280);
     }
 
     textarea:focus {
@@ -57,8 +84,8 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      height: 42px;
-      padding: 0 16px;
+      height: 36px;
+      padding: 0 12px;
       border: none;
       border-radius: var(--radius-sm, 4px);
       font-size: 14px;
@@ -99,19 +126,20 @@
     /* Mobile */
     @media (max-width: 640px) {
       .input-container {
-        gap: 8px;
-        padding: 8px;
+        gap: 6px;
+        padding: 6px;
       }
 
       textarea {
-        min-height: 38px;
-        padding: 8px 12px;
+        min-height: 32px;
+        padding: 6px 10px;
         font-size: 16px; /* Prevent zoom on iOS */
+        box-sizing: border-box;
       }
 
       .button {
-        height: 38px;
-        padding: 0 12px;
+        height: 32px;
+        padding: 0 10px;
         font-size: 13px;
       }
     }
@@ -121,14 +149,12 @@
     <textarea
       class="message-input"
       placeholder="@@placeholder@@"
+      rows="1"
       data-event-onkeydown="handleKeydown"
       data-event-oninput="autoResize"
     ></textarea>
     <button class="button send-button" data-event-onclick="handleSend">
       Send
-    </button>
-    <button class="button clear-button" data-event-onclick="handleClear">
-      Clear
     </button>
   </div>
 </template>

@@ -12,23 +12,17 @@ router.use(requireAuth);
 /**
  * GET /api/sessions
  * List all sessions for the current user.
+ * Always returns ALL sessions (including archived) - frontend handles filtering.
  *
  * Query params:
- *   - showHidden: '1' to include archived/agent sessions, '0' or omit to exclude (default)
  *   - search: search term to filter by session name or message content
  */
 router.get('/', (req, res) => {
   let db          = getDatabase();
-  let showHidden  = req.query.showHidden === '1' || req.query.archived === '1'; // Support legacy param
   let searchQuery = req.query.search?.trim() || '';
 
   let params = [req.user.id];
   let whereClause = 's.user_id = ?';
-
-  // Filter by status - hide archived/agent sessions unless showHidden is true
-  if (!showHidden) {
-    whereClause += ' AND (s.status IS NULL)';
-  }
 
   // Search filter
   if (searchQuery) {
@@ -190,6 +184,12 @@ router.post('/', (req, res) => {
     });
   } catch (error) {
     console.error('Create session error:', error);
+
+    // Handle duplicate session name
+    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      return res.status(409).json({ error: 'A session with this name already exists' });
+    }
+
     return res.status(500).json({ error: 'Failed to create session' });
   }
 });

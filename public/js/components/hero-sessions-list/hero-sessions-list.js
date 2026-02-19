@@ -216,6 +216,13 @@ export class HeroSessionsList extends MythixUIComponent {
     let agents      = GlobalState?.agents?.valueOf() || [];
     let filtered    = this.filteredSessions.valueOf();
     let query       = this.searchQuery.valueOf();
+    let showHidden  = this.showHidden.valueOf();
+
+    // Calculate hidden sessions count (archived or agent status when not showing hidden)
+    let hiddenCount = 0;
+    if (!showHidden) {
+      hiddenCount = sessions.filter((s) => s.status === 'archived' || s.status === 'agent').length;
+    }
 
     // Determine current state
     let state;
@@ -225,9 +232,8 @@ export class HeroSessionsList extends MythixUIComponent {
       state = 'no-sessions';
     } else if (filtered.length === 0 && query) {
       state = 'no-results';
-    } else if (filtered.length === 0) {
-      state = 'no-sessions';
     } else {
+      // We have sessions (even if all are hidden)
       state = 'has-sessions';
     }
 
@@ -243,6 +249,27 @@ export class HeroSessionsList extends MythixUIComponent {
       } else {
         el.classList.remove('visible');
       }
+    }
+
+    // Update hidden sessions message
+    this.updateHiddenMessage(hiddenCount);
+  }
+
+  /**
+   * Update the "## sessions are not currently visible" message.
+   */
+  updateHiddenMessage(hiddenCount) {
+    let hiddenMessage = this.shadow?.querySelector('.hidden-sessions-message');
+    if (!hiddenMessage) return;
+
+    if (hiddenCount > 0) {
+      let text = (hiddenCount === 1)
+        ? '1 session is not currently visible'
+        : `${hiddenCount} sessions are not currently visible`;
+      hiddenMessage.textContent = text;
+      hiddenMessage.style.display = '';
+    } else {
+      hiddenMessage.style.display = 'none';
     }
   }
 

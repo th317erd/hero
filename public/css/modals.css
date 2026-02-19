@@ -8,9 +8,10 @@ dialog.hero-modal-dialog {
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   padding: 0;
-  min-width: 400px;
-  max-width: 90vw;
+  min-width: min(400px, calc(100vw - 32px));
+  max-width: min(90vw, calc(100vw - 32px));
   max-height: 85vh;
+  box-sizing: border-box;
   overflow: hidden; /* No dialog scroll - main scrolls instead */
   box-shadow: var(--shadow-lg);
   color: var(--text-primary);
@@ -68,12 +69,13 @@ dialog[open]:not(.hero-modal-dialog) {
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   padding: 0;
-  min-width: 400px;
-  max-width: 90vw;
+  min-width: min(400px, calc(100vw - 32px));
+  max-width: min(90vw, calc(100vw - 32px));
   max-height: 90vh;
   overflow: auto;
   box-shadow: var(--shadow-lg);
   color: var(--text-primary);
+  box-sizing: border-box;
 }
 
 dialog::backdrop {

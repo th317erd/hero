@@ -119,7 +119,17 @@ export function createFrame(frame, db = null) {
     type: frame.type,
     authorType: frame.authorType,
     authorId: frame.authorId || null,
-    payload: (typeof frame.payload === 'string') ? JSON.parse(frame.payload) : frame.payload,
+    payload: (() => {
+      if (typeof frame.payload !== 'string')
+        return frame.payload;
+
+      try {
+        return JSON.parse(frame.payload);
+      } catch (error) {
+        console.error(`Failed to parse frame payload for frame in session ${frame.sessionId}:`, error.message);
+        return { error: 'Failed to parse payload' };
+      }
+    })(),
   };
 }
 
@@ -367,16 +377,33 @@ export function compileFrames(frames) {
  * @returns {Object} Parsed frame
  */
 function parseFrameRow(row) {
+  let targetIds = null;
+  if (row.target_ids) {
+    try {
+      targetIds = JSON.parse(row.target_ids);
+    } catch (error) {
+      console.error(`Failed to parse target_ids for frame ${row.id}:`, error.message);
+    }
+  }
+
+  let payload = {};
+  try {
+    payload = JSON.parse(row.payload);
+  } catch (error) {
+    console.error(`Failed to parse payload for frame ${row.id}:`, error.message);
+    payload = { error: 'Failed to parse payload' };
+  }
+
   return {
-    id: row.id,
-    sessionId: row.session_id,
-    parentId: row.parent_id,
-    targetIds: (row.target_ids) ? JSON.parse(row.target_ids) : null,
-    timestamp: row.timestamp,
-    type: row.type,
+    id:         row.id,
+    sessionId:  row.session_id,
+    parentId:   row.parent_id,
+    targetIds,
+    timestamp:  row.timestamp,
+    type:       row.type,
     authorType: row.author_type,
-    authorId: row.author_id,
-    payload: JSON.parse(row.payload),
+    authorId:   row.author_id,
+    payload,
   };
 }
 

@@ -57,8 +57,8 @@ export const MODAL_STYLES = `
     padding: 0;
     align-items: stretch;
     overflow: hidden;
-    min-width: 400px;
-    max-width: 600px;
+    min-width: min(400px, calc(100vw - 32px));
+    max-width: min(600px, calc(100vw - 32px));
     max-height: 85vh;
     border: 1px solid var(--border-color, #2d2d2d);
     border-radius: var(--radius-lg, 8px);
@@ -326,6 +326,23 @@ export class HeroModal extends MythixUIModal {
     let closeButtons = this.querySelectorAll('[slot="footer"] button[type="button"]');
     for (let button of closeButtons) {
       button.addEventListener('click', () => this.close());
+    }
+
+    // Bind submit buttons in footer (since they're outside the form)
+    let submitButtons = this.querySelectorAll('[slot="footer"] button[type="submit"]');
+    for (let button of submitButtons) {
+      button.addEventListener('click', (event) => {
+        event.preventDefault();
+        if (form) {
+          // Trigger form validation and submit
+          if (form.reportValidity()) {
+            form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+          }
+        } else {
+          // No form, call handleSubmit directly
+          this.handleSubmit(event);
+        }
+      });
     }
   }
 

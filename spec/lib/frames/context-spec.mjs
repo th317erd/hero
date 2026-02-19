@@ -190,6 +190,41 @@ describe('Frame Context Builder', () => {
 
       assert.equal(messages.length, 5);
     });
+
+    it('should strip <interaction> tags from user messages', () => {
+      // User message containing an interaction tag (e.g., from prompt answer)
+      createFrame({
+        sessionId:  1,
+        type:       'message',
+        authorType: 'user',
+        payload:    { content: 'Blue<interaction>{"target_id":"@system","target_property":"update_prompt"}</interaction>' },
+      }, db);
+
+      const messages = loadFramesForContext(1, {}, db);
+
+      assert.equal(messages.length, 1);
+      assert.equal(messages[0].role, 'user');
+      // The <interaction> tag should be stripped
+      assert.equal(messages[0].content, 'Blue');
+      assert.ok(!messages[0].content.includes('<interaction>'), 'Should not contain <interaction> tags');
+    });
+
+    it('should NOT strip <interaction> tags from assistant messages', () => {
+      // Agent messages may legitimately contain interaction tags
+      createFrame({
+        sessionId:  1,
+        type:       'message',
+        authorType: 'agent',
+        payload:    { content: 'Let me search for that.<interaction>{"target_id":"@system"}</interaction>' },
+      }, db);
+
+      const messages = loadFramesForContext(1, {}, db);
+
+      assert.equal(messages.length, 1);
+      assert.equal(messages[0].role, 'assistant');
+      // Agent messages keep their interaction tags
+      assert.ok(messages[0].content.includes('<interaction>'), 'Assistant messages should keep <interaction> tags');
+    });
   });
 
   describe('getFramesForDisplay', () => {

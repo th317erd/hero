@@ -1,6 +1,6 @@
 # Current Status
 
-Last updated: 2026-02-07
+Last updated: 2026-02-15
 
 ## In Progress: Mythix-UI Client Migration
 
@@ -129,16 +129,66 @@ All components have comprehensive test suites in `spec/components/`:
 - `hero-header-spec.mjs` - 32 tests
 - `hero-modal-spec.mjs` - 35 tests
 
-Total: **505 tests passing** (247 component + 258 server tests)
+Total: **930 tests passing**
 
 ### Notes
-- Markdown/HML renderer strategy TBD - currently using basic escapeHtml
+- HTML sanitization: Server-side (jsdom) + client-side defense-in-depth (see `server/lib/html-sanitizer.mjs`)
 - Keep existing `api.js` functions, update as needed
 - Per-session WS connections + global updates for sessions/agents/abilities
 
 ---
 
 ## Recent Changes
+
+### Markdown → HTML Migration (2026-02-16)
+
+Replaced markdown rendering with direct HTML output from agent, sanitized server-side.
+
+**Changes:**
+- Agent now outputs HTML directly (h1-h6, p, ul/ol, strong, em, code, etc.)
+- Server-side HTML sanitization using jsdom (`server/lib/html-sanitizer.mjs`)
+- Client-side defense-in-depth sanitization in `markup.js`
+- Removed markdown-it dependency from frontend
+- Renamed `markdown.css` → `content.css`
+- Agent instructions (`__onstart_.md`) rewritten from 501 to 163 lines
+
+**Security:**
+- Whitelist-based tag filtering (see `.claude/TODO.md` for full list)
+- Dangerous tags removed completely (script, iframe, form, etc.)
+- Event handlers stripped (onclick, onerror, etc.)
+- Dangerous URLs neutralized (javascript:, vbscript:, data:text/html)
+- 105 sanitizer tests covering XSS vectors, encoding attacks, stress tests
+
+**Files:**
+- `server/lib/html-sanitizer.mjs` - Server-side sanitizer (jsdom)
+- `public/js/markup.js` - Client-side sanitizer + HML processing
+- `public/css/content.css` - Message content styling (renamed from markdown.css)
+- `spec/lib/html-sanitizer-spec.mjs` - 105 security tests
+
+### HML Prompt Known Issues (2026-02-15)
+
+Three issues have been identified with the HML Prompt interaction flow:
+
+**Issue 1: AI Sends Duplicate `update_prompt` Interactions**
+- When user submits a prompt answer, the system sends an `<interaction>` to update the prompt
+- The AI agent also sees this and sends its OWN `update_prompt` interaction
+- The AI's duplicate fails with "Prompt not found in message" (already updated)
+- The error gets displayed as JSON in the chat
+
+**Issue 2: System Interaction Results Displayed in Chat**
+- The `update_prompt` interaction result (including errors) is displayed as a "streaming element"
+- System interactions like `update_prompt` should be silent/hidden from chat display
+
+**Issue 3: Prompt May Not Turn Green Immediately**
+- When `processMessageStream()` calls `renderMessages()`, all messages are re-rendered from `state.messages`
+- If `updatePromptInState()` fails to find/update the message, the DOM element gets replaced with original HTML without `answered` attribute
+- After page reload, prompts show correctly because database has correct state
+
+**Related Files:**
+- `public/js/components/hml-prompt/hml-prompt.js` - Line 674 sets answered attribute
+- `public/js/app.js` - `updatePromptInState()` (lines 1063-1105)
+- `public/js/streaming.js` - `renderStreamingElement()` displays interaction results
+- `server/lib/interactions/functions/prompt-update.mjs` - Server-side prompt update
 
 ### HML Prompt Web Component (Complete)
 Full-featured inline prompt component with multiple input types.
@@ -173,7 +223,7 @@ Full-featured inline prompt component with multiple input types.
 **Files:**
 - `public/js/components/hml-prompt.js` - Web Component implementation
 - `public/js/markup.js` - Tag conversion, newline collapsing, `<p>` unwrapping
-- `public/css/markdown.css` - Inline display, `<data>` hiding
+- `public/css/content.css` - Inline display, `<data>` hiding
 - `server/lib/interactions/functions/prompt-update.mjs` - Server-side update handler
 - `server/lib/processes/__onstart_.md` - Agent instructions for all types
 
@@ -342,7 +392,7 @@ Fixed critical issue where the "Web Search: Pending" banner appeared simultaneou
 - `public/js/markup.js` - Removed duplicate websearch banner rendering (now handled by interaction events)
 - `nginx/locations.nginx-include` - SSE buffering prevention settings
 - `public/css/chat.css` - Text shadow on timestamps
-- `public/css/markdown.css` - Text shadow on message content
+- `public/css/content.css` - Text shadow on message content
 
 ### UI/UX Improvements (Complete)
 Various improvements to the chat interface and styling.
@@ -356,7 +406,7 @@ Various improvements to the chat interface and styling.
 - Fixed bullet point overflow with `list-style-position: inside`
 
 **Link handling:**
-- All markdown links now open in new tabs (`target="_blank"`)
+- All links now open in new tabs (`target="_blank"`)
 - Added `rel="noopener noreferrer"` for security
 - Links use new light blue color (`#64b5f6`) that fits the dark theme
 

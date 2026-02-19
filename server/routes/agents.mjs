@@ -44,7 +44,7 @@ router.get('/', (req, res) => {
         type:             a.type,
         apiUrl:           a.api_url,
         config:           config,
-        defaultAbilities: JSON.parse(a.default_processes || '[]'),
+        defaultAbilities: (() => { try { return JSON.parse(a.default_processes || '[]'); } catch { return []; } })(),
         createdAt:        a.created_at,
         updatedAt:        a.updated_at,
       };
@@ -131,8 +131,19 @@ router.get('/:id', (req, res) => {
     let agentConfig = null;
 
     if (agent.encrypted_config) {
-      let decrypted = decryptWithKey(agent.encrypted_config, dataKey);
-      agentConfig   = JSON.parse(decrypted);
+      try {
+        let decrypted = decryptWithKey(agent.encrypted_config, dataKey);
+        agentConfig   = JSON.parse(decrypted);
+      } catch (error) {
+        console.error(`Failed to decrypt/parse agent config for agent ${agentId}:`, error.message);
+      }
+    }
+
+    let agentAbilities = [];
+    try {
+      agentAbilities = JSON.parse(agent.default_processes || '[]');
+    } catch (error) {
+      console.error(`Failed to parse default_processes for agent ${agentId}:`, error.message);
     }
 
     return res.json({
@@ -141,7 +152,7 @@ router.get('/:id', (req, res) => {
       type:             agent.type,
       apiUrl:           agent.api_url,
       config:           agentConfig,
-      defaultAbilities: JSON.parse(agent.default_processes || '[]'),
+      defaultAbilities: agentAbilities,
       hasApiKey:        !!agent.encrypted_api_key,
       createdAt:        agent.created_at,
       updatedAt:        agent.updated_at,

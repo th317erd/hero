@@ -194,16 +194,8 @@ export class HeroInput extends HeroComponent {
     // Clear input immediately
     this.clear();
 
-    // Check for commands
-    if (content.startsWith('/')) {
-      this.dispatchEvent(new CustomEvent('hero:command', {
-        detail: { command: content },
-        bubbles: true,
-        composed: true,
-      }));
-      this.focus();
-      return;
-    }
+    // Commands are now handled server-side - send them like regular messages
+    // The server will intercept /command patterns and execute them
 
     // If busy, queue the message
     if (this.#isLoading) {
@@ -212,7 +204,7 @@ export class HeroInput extends HeroComponent {
       return;
     }
 
-    // Send the message
+    // Send the message (commands and regular messages are handled the same way)
     await this._sendMessage(content);
   }
 
@@ -243,7 +235,11 @@ export class HeroInput extends HeroComponent {
     if (!textarea) return;
 
     textarea.style.height = 'auto';
-    textarea.style.height = Math.min(textarea.scrollHeight, this.#maxHeight) + 'px';
+    let newHeight = Math.min(textarea.scrollHeight, this.#maxHeight);
+    textarea.style.height = newHeight + 'px';
+
+    // Enable scrolling when content exceeds max height
+    textarea.style.overflowY = (textarea.scrollHeight > this.#maxHeight) ? 'auto' : 'hidden';
   }
 
   /**

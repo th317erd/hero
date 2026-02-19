@@ -874,6 +874,7 @@ function submitUserPromptAnswer(messageId, promptId, question, answer) {
       message_id: messageId,
       prompt_id:  promptId,
       answer:     answer,
+      question:   question,
     },
   };
 

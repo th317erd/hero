@@ -1244,6 +1244,395 @@ describe('HelpFunction', () => {
 });
 
 // ============================================================================
+// Frame Creation in executeInteractions Tests
+// ============================================================================
+
+import Database from 'better-sqlite3';
+import {
+  createFrame,
+  getFrames,
+} from '../../../server/lib/frames/index.mjs';
+
+describe('executeInteractions Frame Creation', () => {
+  let testDb = null;
+
+  function createTestDatabase() {
+    testDb = new Database(':memory:');
+    testDb.pragma('foreign_keys = ON');
+
+    testDb.exec(`
+      CREATE TABLE users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL
+      );
+
+      CREATE TABLE agents (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name TEXT NOT NULL
+      );
+
+      CREATE TABLE sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        agent_id INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+        name TEXT NOT NULL
+      );
+
+      CREATE TABLE frames (
+        id            TEXT PRIMARY KEY,
+        session_id    INTEGER NOT NULL,
+        parent_id     TEXT,
+        target_ids    TEXT,
+        timestamp     TEXT NOT NULL,
+        type          TEXT NOT NULL,
+        author_type   TEXT NOT NULL,
+        author_id     INTEGER,
+        payload       TEXT NOT NULL,
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX idx_frames_session ON frames(session_id, timestamp);
+      CREATE INDEX idx_frames_parent ON frames(parent_id);
+      CREATE INDEX idx_frames_type ON frames(type);
+    `);
+
+    testDb.prepare("INSERT INTO users (id, username) VALUES (1, 'testuser')").run();
+    testDb.prepare("INSERT INTO agents (id, user_id, name) VALUES (1, 1, 'TestAgent')").run();
+    testDb.prepare("INSERT INTO sessions (id, user_id, agent_id, name) VALUES (1, 1, 1, 'Test Session')").run();
+
+    return testDb;
+  }
+
+  beforeEach(() => {
+    createTestDatabase();
+    clearRegisteredFunctions();
+    registerFunctionClass(EchoFunction);
+    initializeSystemFunction();
+  });
+
+  afterEach(() => {
+    clearRegisteredFunctions();
+    if (testDb) {
+      testDb.close();
+      testDb = null;
+    }
+  });
+
+  it('should create REQUEST and RESULT frames when context has parentFrameId and agentId', async () => {
+    // Create a parent message frame
+    const parentFrame = createFrame({
+      sessionId: 1,
+      type: 'message',
+      authorType: 'agent',
+      authorId: 1,
+      payload: { content: 'Let me search for that' },
+    }, testDb);
+
+    const block = {
+      mode:         'single',
+      interactions: [{
+        interaction_id:  'frame-test-1',
+        target_id:       '@system',
+        target_property: 'echo',
+        payload:         { message: 'test query' },
+      }],
+    };
+
+    // Context with all required fields for frame creation
+    const context = {
+      sessionId:     1,
+      userId:        1,
+      agentId:       1,
+      parentFrameId: parentFrame.id,
+      db:            testDb,
+    };
+
+    clearAgentMessages(1);
+    const results = await executeInteractions(block, context);
+
+    assert.equal(results.results.length, 1);
+    assert.equal(results.results[0].status, 'completed');
+
+    // Check that REQUEST frame was created
+    const frames = getFrames(1, { types: ['request'] }, testDb);
+    assert.ok(frames.length >= 1, 'Should have at least one REQUEST frame');
+
+    const requestFrame = frames.find((f) => f.payload.action === 'echo');
+    assert.ok(requestFrame, 'Should have a REQUEST frame with action=echo');
+    assert.equal(requestFrame.parentId, parentFrame.id, 'REQUEST frame should have correct parent');
+
+    // Check that RESULT frame was created
+    const resultFrames = getFrames(1, { types: ['result'] }, testDb);
+    assert.ok(resultFrames.length >= 1, 'Should have at least one RESULT frame');
+
+    const resultFrame = resultFrames.find((f) => f.parentId === requestFrame.id);
+    assert.ok(resultFrame, 'RESULT frame should be child of REQUEST frame');
+    assert.equal(resultFrame.payload.status, 'completed', 'RESULT should show completed status');
+  });
+
+  it('should NOT create frames when context lacks parentFrameId', async () => {
+    const block = {
+      mode:         'single',
+      interactions: [{
+        interaction_id:  'no-frame-test',
+        target_id:       '@system',
+        target_property: 'echo',
+        payload:         { message: 'test' },
+      }],
+    };
+
+    // Context WITHOUT parentFrameId
+    const context = {
+      sessionId: 1,
+      userId:    1,
+      agentId:   1,
+      // No parentFrameId
+      db:        testDb,
+    };
+
+    clearAgentMessages(1);
+    await executeInteractions(block, context);
+
+    // Should not create REQUEST/RESULT frames
+    const requestFrames = getFrames(1, { types: ['request'] }, testDb);
+    const resultFrames = getFrames(1, { types: ['result'] }, testDb);
+
+    assert.equal(requestFrames.length, 0, 'Should NOT create REQUEST frames without parentFrameId');
+    assert.equal(resultFrames.length, 0, 'Should NOT create RESULT frames without parentFrameId');
+  });
+
+  it('should include requestFrameId in results when frames are created', async () => {
+    const parentFrame = createFrame({
+      sessionId: 1,
+      type: 'message',
+      authorType: 'agent',
+      payload: { content: 'Parent' },
+    }, testDb);
+
+    const block = {
+      mode:         'single',
+      interactions: [{
+        interaction_id:  'result-id-test',
+        target_id:       '@system',
+        target_property: 'echo',
+        payload:         { message: 'test' },
+      }],
+    };
+
+    const context = {
+      sessionId:     1,
+      userId:        1,
+      agentId:       1,
+      parentFrameId: parentFrame.id,
+      db:            testDb,
+    };
+
+    const results = await executeInteractions(block, context);
+
+    assert.ok(results.results[0].requestFrameId, 'Result should include requestFrameId');
+  });
+
+  it('should create RESULT frame with failed status on execution error', async () => {
+    // Register a failing function
+    class FailingFunction extends InteractionFunction {
+      static register() {
+        return { name: 'failing', description: 'Always fails', permission: PERMISSION.ALWAYS };
+      }
+      constructor(context = {}) {
+        super('failing', context);
+      }
+      async execute() {
+        throw new Error('Intentional failure');
+      }
+    }
+    registerFunctionClass(FailingFunction);
+
+    const parentFrame = createFrame({
+      sessionId: 1,
+      type: 'message',
+      authorType: 'agent',
+      payload: { content: 'Try this' },
+    }, testDb);
+
+    const block = {
+      mode:         'single',
+      interactions: [{
+        interaction_id:  'fail-test',
+        target_id:       '@system',
+        target_property: 'failing',
+        payload:         {},
+      }],
+    };
+
+    const context = {
+      sessionId:     1,
+      userId:        1,
+      agentId:       1,
+      parentFrameId: parentFrame.id,
+      db:            testDb,
+    };
+
+    const results = await executeInteractions(block, context);
+
+    assert.equal(results.results[0].status, 'failed');
+
+    // Check RESULT frame has failed status
+    const resultFrames = getFrames(1, { types: ['result'] }, testDb);
+    assert.ok(resultFrames.length >= 1);
+
+    const failedResult = resultFrames.find((f) => f.payload.status === 'failed');
+    assert.ok(failedResult, 'Should have a RESULT frame with failed status');
+    assert.ok(failedResult.payload.error, 'Failed RESULT should include error message');
+  });
+});
+
+// ============================================================================
+// Prompt Update Fallback Matching Tests
+// ============================================================================
+// Tests the question-based fallback matching logic added for prompts without IDs.
+// Uses the same regex patterns from prompt-update.mjs to verify matching behavior.
+
+describe('Prompt Update Fallback Matching', () => {
+  /**
+   * Helper: Simulate the id-based + fallback update logic from prompt-update.mjs.
+   * Returns the updated content string (or the original if no match).
+   */
+  function applyPromptUpdate(contentStr, promptId, answer, question) {
+    let escapedAnswer = answer
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+
+    let escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    // Primary: match by id
+    let pattern = new RegExp(
+      `(<(?:hml-|user[-_])prompt\\s+id=["']${escapeRegex(promptId)}["'][^>]*)>([\\s\\S]*?)<\\/(?:hml-|user[-_])prompt>`,
+      'gi'
+    );
+
+    let updated = contentStr.replace(pattern, (match, openTag, content) => {
+      let tagName = 'hml-prompt';
+      if (match.includes('user-prompt')) tagName = 'user-prompt';
+      else if (match.includes('user_prompt')) tagName = 'user_prompt';
+      let cleanedTag = openTag.replace(/\s+answered=["'][^"']*["']/gi, '');
+      let cleanedContent = content.replace(/<response>[\s\S]*?<\/response>/gi, '').trim();
+      return `${cleanedTag} answered="true">${cleanedContent}<response>${escapedAnswer}</response></${tagName}>`;
+    });
+
+    // Alt pattern
+    if (updated === contentStr) {
+      let altPattern = new RegExp(
+        `(<(?:hml-|user[-_])prompt[^>]*\\bid=["']${escapeRegex(promptId)}["'][^>]*)>([\\s\\S]*?)<\\/(?:hml-|user[-_])prompt>`,
+        'gi'
+      );
+      updated = contentStr.replace(altPattern, (match, openTag, content) => {
+        let tagName = 'hml-prompt';
+        if (match.includes('user-prompt')) tagName = 'user-prompt';
+        else if (match.includes('user_prompt')) tagName = 'user_prompt';
+        let cleanedTag = openTag.replace(/\s+answered=["'][^"']*["']/gi, '');
+        let cleanedContent = content.replace(/<response>[\s\S]*?<\/response>/gi, '').trim();
+        return `${cleanedTag} answered="true">${cleanedContent}<response>${escapedAnswer}</response></${tagName}>`;
+      });
+    }
+
+    // Fallback: match by question text
+    if (updated === contentStr && question) {
+      let escapedQuestion = escapeRegex(question);
+      let questionPattern = new RegExp(
+        `(<(?:hml-|user[-_])prompt\\b[^>]*?)>([\\s\\S]*?${escapedQuestion}[\\s\\S]*?)<\\/(?:hml-|user[-_])prompt>`,
+        'i'
+      );
+
+      let matched = false;
+      updated = contentStr.replace(questionPattern, (match, openTag, content) => {
+        if (/\banswered\s*=/.test(openTag)) return match;
+        matched = true;
+
+        let tagName = 'hml-prompt';
+        if (match.includes('user-prompt')) tagName = 'user-prompt';
+        else if (match.includes('user_prompt')) tagName = 'user_prompt';
+
+        let tagWithId = openTag;
+        if (!/\bid\s*=/.test(openTag)) {
+          tagWithId = openTag.replace(/<(?:hml-|user[-_])prompt/i, `$& id="${promptId}"`);
+        }
+
+        let cleanedContent = content.replace(/<response>[\s\S]*?<\/response>/gi, '').trim();
+        return `${tagWithId} answered="true">${cleanedContent}<response>${escapedAnswer}</response></${tagName}>`;
+      });
+
+      if (!matched) updated = contentStr;
+    }
+
+    return updated;
+  }
+
+  it('should update prompt with matching id attribute', () => {
+    let content = '<p>Hello!</p><hml-prompt id="prompt-abc123" type="text">What is your name?</hml-prompt>';
+    let updated = applyPromptUpdate(content, 'prompt-abc123', 'Alice');
+
+    assert.ok(updated.includes('answered="true"'), 'Should have answered attribute');
+    assert.ok(updated.includes('<response>Alice</response>'), 'Should contain the answer');
+    assert.ok(updated !== content, 'Content should be updated');
+  });
+
+  it('should fallback to question text when prompt has no id', () => {
+    let content = '<hml-prompt type="radio">What is your favorite color?<data>["Red","Blue","Green"]</data></hml-prompt>';
+    let updated = applyPromptUpdate(content, 'prompt-gen1', 'Blue', 'What is your favorite color?');
+
+    assert.ok(updated.includes('answered="true"'), 'Should have answered attribute');
+    assert.ok(updated.includes('<response>Blue</response>'), 'Should contain the answer');
+    assert.ok(updated.includes('id="prompt-gen1"'), 'Should inject the prompt id for future lookups');
+  });
+
+  it('should match correct prompt when multiple prompts have no ids', () => {
+    let content = '<hml-prompt type="text">What is your name?</hml-prompt><hml-prompt type="text">What is your age?</hml-prompt>';
+    let updated = applyPromptUpdate(content, 'prompt-age1', '30', 'What is your age?');
+
+    // The first prompt (name) should be unchanged
+    assert.ok(updated.includes('What is your name?</hml-prompt>'), 'First prompt should be untouched');
+    // The second prompt (age) should be answered
+    assert.ok(updated.includes('<response>30</response>'), 'Second prompt should have the answer');
+    assert.ok(updated.includes('id="prompt-age1"'), 'Should inject id on the matched prompt');
+  });
+
+  it('should not match already-answered prompts in fallback', () => {
+    let content = '<hml-prompt type="text" answered="true">What is your name?<response>Alice</response></hml-prompt>';
+    let updated = applyPromptUpdate(content, 'prompt-x', 'Bob', 'What is your name?');
+
+    // Should not change anything — the prompt is already answered
+    assert.equal(updated, content, 'Should not modify already-answered prompt');
+  });
+
+  it('should return original content when neither id nor question matches', () => {
+    let content = '<hml-prompt type="text">What is your name?</hml-prompt>';
+    let updated = applyPromptUpdate(content, 'prompt-nonexistent', 'test');
+
+    assert.equal(updated, content, 'Should not modify content when no match');
+  });
+
+  it('should handle special characters in question text', () => {
+    let content = '<hml-prompt type="text">What\'s your "nickname"?</hml-prompt>';
+    let updated = applyPromptUpdate(content, 'prompt-nick1', 'Bob', 'What\'s your "nickname"?');
+
+    assert.ok(updated.includes('answered="true"'), 'Should match despite special chars');
+    assert.ok(updated.includes('<response>Bob</response>'), 'Should contain answer');
+  });
+
+  it('should escape answer content for XML safety', () => {
+    let content = '<hml-prompt id="prompt-xss" type="text">Enter code:</hml-prompt>';
+    let updated = applyPromptUpdate(content, 'prompt-xss', '<script>alert("xss")</script>');
+
+    assert.ok(updated.includes('&lt;script&gt;'), 'Should escape < in answer');
+    assert.ok(!updated.includes('<script>'), 'Should not contain unescaped script tag');
+  });
+});
+
+// ============================================================================
 // Run Tests
 // ============================================================================
 

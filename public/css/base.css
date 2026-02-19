@@ -68,7 +68,6 @@ a:hover {
   height: 100%;
   display: flex;
   flex-direction: column;
-  padding-bottom: 32px;  /* Space for fixed status bar */
 }
 
 /* Scrollbar */

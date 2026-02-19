@@ -35,9 +35,9 @@
       padding: 0;
       align-items: stretch;
       overflow: hidden;
-      width: 50vw;
-      min-width: 400px;
-      max-width: 600px;
+      width: min(50vw, calc(100vw - 32px));
+      min-width: min(400px, calc(100vw - 32px));
+      max-width: min(600px, calc(100vw - 32px));
       height: 70vh;
       min-height: 400px;
       max-height: 80vh;
@@ -96,10 +96,9 @@
       margin-bottom: 16px;
     }
 
-    /* Ability list styles */
+    /* Ability list styles - modal main handles scrolling */
     ::slotted(.abilities-list) {
-      max-height: 40vh;
-      overflow-y: auto;
+      /* No max-height/overflow - prevents double scrollbars */
     }
 
     ::slotted(.ability-item) {

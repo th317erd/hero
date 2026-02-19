@@ -27,6 +27,22 @@
 import { MythixUIComponent } from '@cdn/mythix-ui-core@1';
 
 // ============================================================================
+// Event Cascade Prevention (Smell 2.3 fix)
+// ============================================================================
+// Using WeakSet to track consumed events - cleaner than element property flags.
+// Events are automatically garbage collected when no longer referenced.
+
+const consumedEvents = new WeakSet();
+
+function consumeEvent(event) {
+  if (consumedEvents.has(event)) {
+    return false; // Already consumed
+  }
+  consumedEvents.add(event);
+  return true; // First consumer
+}
+
+// ============================================================================
 // Component Styles
 // ============================================================================
 
@@ -112,6 +128,20 @@ const PROMPT_STYLES = `
 
     .input-number:focus { outline: none; border-color: #2563eb; }
 
+    .input-generic {
+      border: 1px solid #3b82f6;
+      border-radius: 4px;
+      background: transparent;
+      color: inherit;
+      font-family: inherit;
+      font-size: inherit;
+      padding: 2px 6px;
+      margin-left: 4px;
+      min-width: 120px;
+    }
+
+    .input-generic:focus { outline: none; border-color: #2563eb; }
+
     .input-color {
       border: 1px solid #3b82f6;
       border-radius: 4px;
@@ -156,7 +186,7 @@ const PROMPT_STYLES = `
 
     .radio-option label, .checkbox-option label {
       cursor: pointer;
-      color: inherit;
+      color: var(--text-primary, #e2e8f0);
     }
 
     .input-select {
@@ -197,7 +227,9 @@ const PROMPT_STYLES = `
 
     .submit-button:hover { background: #2563eb; }
 
-    :host([answered]) .container {
+    /* Green "answered" style - triggered by either attribute */
+    :host([answered]) .container,
+    :host([value]) .container {
       background: rgba(34, 197, 94, 0.1);
       border-bottom: 1px solid #22c55e;
       border-radius: 6px;
@@ -225,35 +257,74 @@ const PROMPT_STYLES = `
 class HmlPrompt extends MythixUIComponent {
   static tagName = 'hml-prompt';
 
-  // Observed attributes
-  static observedAttributes = ['answered', 'type'];
+  // Observed attributes - includes 'value' for server-provided answers
+  static observedAttributes = ['answered', 'type', 'value'];
 
   constructor() {
     super();
-    this.attachShadow({ mode: 'open' });
-    this._renderCount = 0;
+    // Only attach shadow root if one doesn't already exist
+    if (!this.shadowRoot) {
+      this.attachShadow({ mode: 'open' });
+    }
+    // Time-based render loop detection (Smell 2.2 fix)
+    this._renderTimes = [];
+    this._renderWindowMs = 1000; // 1 second window
+    this._maxRendersInWindow = 50; // Allow 50 renders per second
     this._isRendering = false;
   }
 
   connectedCallback() {
     super.connectedCallback?.();
-    this._renderCount = 0;
+    this._renderTimes = [];
+    // Persist a stable ID so promptId returns the same value consistently
+    if (!this.getAttribute('id')) {
+      this.setAttribute('id', 'prompt-' + Math.random().toString(36).substring(2, 10));
+    }
     if (this.getAttribute('answered') === 'false') {
       this.removeAttribute('answered');
+    }
+    // Check for value attribute (server-provided answer)
+    const value = this.getAttribute('value');
+    if (value && !this.isAnswered) {
+      this._setAnswer(value);
     }
     this.render();
   }
 
   disconnectedCallback() {
     super.disconnectedCallback?.();
-    this._renderCount = 0;
+    this._renderTimes = [];
     this._isRendering = false;
   }
 
   attributeChangedCallback(name, oldValue, newValue) {
-    if (oldValue !== newValue && this.isConnected && !this._isSubmitting) {
-      this.render();
+    if (oldValue === newValue) return;
+    if (!this.isConnected) return;
+    if (this._isSubmitting) return;
+
+    // Handle value attribute for server-provided answers
+    if (name === 'value' && newValue && !this.isAnswered) {
+      this._setAnswer(newValue);
+      return;
     }
+
+    this.render();
+  }
+
+  /**
+   * Set the answer without dispatching a submit event.
+   * Used when the answer comes from the server (via value attribute or UPDATE frame).
+   * @param {string} answer
+   */
+  _setAnswer(answer) {
+    if (this.isAnswered) return;
+
+    const question = this.question;
+    this.innerHTML = `${question}<response>${this._escapeHtml(answer)}</response>`;
+    this.setAttribute('answered', '');
+    this._renderTimes = [];
+    this._isRendering = false;
+    this.render();
   }
 
   // ---------------------------------------------------------------------------
@@ -269,34 +340,37 @@ class HmlPrompt extends MythixUIComponent {
   }
 
   get isAnswered() {
-    let val = this.getAttribute('answered');
-    return val !== null && val !== 'false';
+    // Answered if either 'answered' attribute is set OR 'value' attribute has content
+    const answered = this.getAttribute('answered');
+    const value = this.getAttribute('value');
+    return (answered !== null && answered !== 'false') || (value !== null && value !== '');
   }
 
   get question() {
-    let clone = this.cloneNode(true);
+    const clone = this.cloneNode(true);
     clone.querySelectorAll('response, option, opt, data').forEach((el) => el.remove());
     return clone.textContent.trim();
   }
 
   get response() {
-    let responseEl = this.querySelector('response');
-    return responseEl ? responseEl.textContent.trim() : '';
+    // Check <response> element first, then fall back to value attribute
+    const responseEl = this.querySelector('response');
+    if (responseEl) {
+      return responseEl.textContent.trim();
+    }
+    // Fall back to value attribute (server-provided answer)
+    const value = this.getAttribute('value');
+    return (value) ? value : '';
   }
 
   get options() {
     let dataEl = this.querySelector('data');
     if (dataEl) {
       try {
-        // Decode HTML entities (markdown processors may encode quotes)
         let rawText = dataEl.textContent.trim();
         let decoded = this._decodeHtmlEntities(rawText);
         let parsed = JSON.parse(decoded);
-        return parsed.map((opt) => ({
-          value:    opt.value || opt.label || '',
-          label:    opt.label || opt.value || '',
-          selected: !!opt.selected,
-        }));
+        return this._normalizeOptions(parsed);
       } catch (e) {
         console.warn('[hml-prompt] Failed to parse <data> JSON:', e);
       }
@@ -306,11 +380,7 @@ class HmlPrompt extends MythixUIComponent {
     if (optionsAttr) {
       try {
         let parsed = JSON.parse(optionsAttr);
-        return parsed.map((opt) => ({
-          value:    opt.value || opt.label || '',
-          label:    opt.label || opt.value || '',
-          selected: !!opt.selected,
-        }));
+        return this._normalizeOptions(parsed);
       } catch (e) {
         console.warn('[hml-prompt] Failed to parse options JSON:', e);
       }
@@ -324,10 +394,48 @@ class HmlPrompt extends MythixUIComponent {
     }));
   }
 
+  /**
+   * Normalize options array to handle multiple formats:
+   * - Array of strings: ["Option A", "Option B"]
+   * - Array of objects: [{value: "a", label: "Option A"}]
+   * - Mixed: ["Option A", {value: "b", label: "Option B"}]
+   */
+  _normalizeOptions(parsed) {
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((opt) => {
+      // Handle string format: "Option A" -> {value: "Option A", label: "Option A"}
+      if (typeof opt === 'string') {
+        return { value: opt, label: opt, selected: false };
+      }
+      // Handle object format: {value, label, selected}
+      return {
+        value:    opt.value || opt.label || '',
+        label:    opt.label || opt.value || '',
+        selected: !!opt.selected,
+      };
+    });
+  }
+
   get min() { return this.getAttribute('min'); }
   get max() { return this.getAttribute('max'); }
   get step() { return this.getAttribute('step') || '1'; }
   get defaultValue() { return this.getAttribute('default'); }
+
+  /**
+   * Get the value attribute (server-provided answer).
+   * @returns {string|null}
+   */
+  get value() { return this.getAttribute('value'); }
+
+  /**
+   * Set value programmatically (triggers answer).
+   * @param {string} val
+   */
+  set value(val) {
+    if (val && !this.isAnswered) {
+      this._setAnswer(val);
+    }
+  }
 
   _generateId() {
     return 'prompt-' + Math.random().toString(36).substring(2, 10);
@@ -340,9 +448,13 @@ class HmlPrompt extends MythixUIComponent {
   render() {
     if (this._isRendering) return;
 
-    this._renderCount++;
-    if (this._renderCount > 10) {
-      console.error('[hml-prompt] Render loop detected!');
+    // Time-based render loop detection
+    const now = Date.now();
+    this._renderTimes = this._renderTimes.filter((t) => now - t < this._renderWindowMs);
+    this._renderTimes.push(now);
+
+    if (this._renderTimes.length > this._maxRendersInWindow) {
+      console.error('[hml-prompt] Render loop detected: ' + this._renderTimes.length + ' renders in ' + this._renderWindowMs + 'ms');
       return;
     }
 
@@ -359,6 +471,14 @@ class HmlPrompt extends MythixUIComponent {
           case 'radio': this._renderRadio(); break;
           case 'select': this._renderSelect(); break;
           case 'range': this._renderRange(); break;
+          case 'email':
+          case 'password':
+          case 'url':
+          case 'tel':
+          case 'date':
+          case 'time':
+          case 'datetime-local':
+            this._renderInput(this.promptType); break;
           case 'text':
           default: this._renderText(); break;
         }
@@ -403,7 +523,10 @@ class HmlPrompt extends MythixUIComponent {
 
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
+        if (!consumeEvent(e)) return;
         e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
         let answer = input.value.trim();
         if (answer) this._submitAnswer(answer);
       }
@@ -429,20 +552,74 @@ class HmlPrompt extends MythixUIComponent {
     `;
 
     let input = this.shadowRoot.querySelector('.input-number');
-    input._handlingEnter = false;
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
-        if (input._handlingEnter || e._hmlHandled) return;
-        input._handlingEnter = true;
-        e._hmlHandled = true;
+        if (!consumeEvent(e)) return;
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
         let answer = input.value.trim();
         if (answer) this._submitAnswer(answer);
-        setTimeout(() => { input._handlingEnter = false; }, 100);
       }
     });
+  }
+
+  /**
+   * Render generic HTML input types (email, password, url, tel, date, time, datetime-local).
+   * @param {string} inputType - The HTML input type
+   */
+  _renderInput(inputType) {
+    let question = this._escapeHtml(this.question);
+    let defVal = this.defaultValue || '';
+    let placeholder = this._getPlaceholder(inputType);
+
+    this.shadowRoot.innerHTML = `
+      ${PROMPT_STYLES}
+      <span class="container">
+        <span class="question-inline">${question}</span>
+        <input type="${inputType}" class="input-generic" value="${defVal}" placeholder="${placeholder}" title="Press Enter to submit">
+        <button class="submit-button">OK</button>
+      </span>
+    `;
+
+    let input = this.shadowRoot.querySelector('.input-generic');
+    let button = this.shadowRoot.querySelector('.submit-button');
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        if (!consumeEvent(e)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        let answer = input.value.trim();
+        if (answer) this._submitAnswer(answer);
+      }
+    });
+
+    button.addEventListener('click', (e) => {
+      if (!consumeEvent(e)) return;
+      e.preventDefault();
+      let answer = input.value.trim();
+      if (answer) this._submitAnswer(answer);
+    });
+  }
+
+  /**
+   * Get placeholder text for input type.
+   * @param {string} inputType
+   * @returns {string}
+   */
+  _getPlaceholder(inputType) {
+    const placeholders = {
+      email: 'email@example.com',
+      password: '',
+      url: 'https://...',
+      tel: '+1 (555) 123-4567',
+      date: '',
+      time: '',
+      'datetime-local': '',
+    };
+    return placeholders[inputType] || '';
   }
 
   _renderColor() {
@@ -461,14 +638,10 @@ class HmlPrompt extends MythixUIComponent {
     let input = this.shadowRoot.querySelector('.input-color');
     let submit = this.shadowRoot.querySelector('.submit-button');
 
-    submit._handlingClick = false;
     submit.addEventListener('click', (e) => {
-      if (submit._handlingClick || e._hmlHandled) return;
-      submit._handlingClick = true;
-      e._hmlHandled = true;
+      if (!consumeEvent(e)) return;
       e.stopImmediatePropagation();
       this._submitAnswer(input.value);
-      setTimeout(() => { submit._handlingClick = false; }, 100);
     });
   }
 
@@ -490,14 +663,10 @@ class HmlPrompt extends MythixUIComponent {
     let input = this.shadowRoot.querySelector('.input-checkbox');
     let submit = this.shadowRoot.querySelector('.submit-button');
 
-    submit._handlingClick = false;
     submit.addEventListener('click', (e) => {
-      if (submit._handlingClick || e._hmlHandled) return;
-      submit._handlingClick = true;
-      e._hmlHandled = true;
+      if (!consumeEvent(e)) return;
       e.stopImmediatePropagation();
       this._submitAnswer(input.checked ? 'yes' : 'no');
-      setTimeout(() => { submit._handlingClick = false; }, 100);
     });
   }
 
@@ -526,18 +695,14 @@ class HmlPrompt extends MythixUIComponent {
     `;
 
     let submit = this.shadowRoot.querySelector('.submit-button');
-    submit._handlingClick = false;
     submit.addEventListener('click', (e) => {
-      if (submit._handlingClick || e._hmlHandled) return;
-      submit._handlingClick = true;
-      e._hmlHandled = true;
+      if (!consumeEvent(e)) return;
       e.stopImmediatePropagation();
       let checked = this.shadowRoot.querySelectorAll(`input[name="${name}"]:checked`);
       let values = Array.from(checked).map((cb) => cb.value);
       if (values.length > 0) {
         this._submitAnswer(values.join(', '));
       }
-      setTimeout(() => { submit._handlingClick = false; }, 100);
     });
   }
 
@@ -566,17 +731,13 @@ class HmlPrompt extends MythixUIComponent {
     `;
 
     let submit = this.shadowRoot.querySelector('.submit-button');
-    submit._handlingClick = false;
     submit.addEventListener('click', (e) => {
-      if (submit._handlingClick || e._hmlHandled) return;
-      submit._handlingClick = true;
-      e._hmlHandled = true;
+      if (!consumeEvent(e)) return;
       e.stopImmediatePropagation();
       let selected = this.shadowRoot.querySelector(`input[name="${name}"]:checked`);
       if (selected) {
         this._submitAnswer(selected.value);
       }
-      setTimeout(() => { submit._handlingClick = false; }, 100);
     });
   }
 
@@ -604,16 +765,12 @@ class HmlPrompt extends MythixUIComponent {
     let select = this.shadowRoot.querySelector('.input-select');
     let submit = this.shadowRoot.querySelector('.submit-button');
 
-    submit._handlingClick = false;
     submit.addEventListener('click', (e) => {
-      if (submit._handlingClick || e._hmlHandled) return;
-      submit._handlingClick = true;
-      e._hmlHandled = true;
+      if (!consumeEvent(e)) return;
       e.stopImmediatePropagation();
       if (select.value) {
         this._submitAnswer(select.value);
       }
-      setTimeout(() => { submit._handlingClick = false; }, 100);
     });
   }
 
@@ -644,14 +801,10 @@ class HmlPrompt extends MythixUIComponent {
       valueLabel.textContent = input.value;
     });
 
-    submit._handlingClick = false;
     submit.addEventListener('click', (e) => {
-      if (submit._handlingClick || e._hmlHandled) return;
-      submit._handlingClick = true;
-      e._hmlHandled = true;
+      if (!consumeEvent(e)) return;
       e.stopImmediatePropagation();
       this._submitAnswer(input.value);
-      setTimeout(() => { submit._handlingClick = false; }, 100);
     });
   }
 
@@ -667,12 +820,12 @@ class HmlPrompt extends MythixUIComponent {
 
     let question = this.question;
     let messageEl = this.closest('[data-message-id]');
-    let messageId = (messageEl) ? parseInt(messageEl.dataset.messageId, 10) : null;
+    let messageId = (messageEl) ? messageEl.dataset.messageId : null;
 
     if (this.isConnected) {
       this.innerHTML = `${question}<response>${this._escapeHtml(answer)}</response>`;
       this.setAttribute('answered', '');
-      this._renderCount = 0;
+      this._renderTimes = [];
       this._isRendering = false;
       this.render();
     }

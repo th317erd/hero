@@ -18,6 +18,7 @@
 
 import { getInteractionBus, queueAgentMessage, TARGETS } from './bus.mjs';
 import { checkSystemMethodAllowed } from './functions/system.mjs';
+import { createRequestFrame, createResultFrame } from '../frames/broadcast.mjs';
 
 // Regex to find <interaction> tag starts
 const INTERACTION_START_REGEX = /<interaction>\s*/g;
@@ -203,11 +204,14 @@ export function detectInteractions(content) {
 /**
  * Execute interactions through the InteractionBus.
  * Sends status updates to the agent via @agent target.
+ * Creates REQUEST/RESULT frames when context has parentFrameId and agentId.
  *
  * @param {Object} interactionBlock - Parsed interaction block from detectInteractions
  * @param {Object} context - Execution context
  * @param {number} [context.sessionId] - Session ID
  * @param {number} [context.userId] - User ID
+ * @param {number} [context.agentId] - Agent ID (for frame creation)
+ * @param {string} [context.parentFrameId] - Parent frame ID (for frame creation)
  * @param {number} [context.senderId] - Sender ID (user ID if from authenticated user, null if from agent)
  * @returns {Promise<Object>} Execution results
  */
@@ -215,8 +219,17 @@ export async function executeInteractions(interactionBlock, context) {
   let bus     = getInteractionBus();
   let results = [];
 
+  // Check if we should create frames (need sessionId, userId, agentId, and parentFrameId)
+  let canCreateFrames = !!(
+    context.sessionId &&
+    context.userId &&
+    context.agentId &&
+    context.parentFrameId
+  );
+
   for (let interactionData of interactionBlock.interactions) {
     let agentInteractionId = interactionData.interaction_id;
+    let requestFrame = null;
 
     // Step 1: Check permissions for @system targets
     if (interactionData.target_id === TARGETS.SYSTEM) {
@@ -245,13 +258,29 @@ export async function executeInteractions(interactionBlock, context) {
       }
     }
 
-    // Step 2: Queue pending status for agent
+    // Step 2: Create REQUEST frame (before execution)
+    if (canCreateFrames) {
+      try {
+        requestFrame = createRequestFrame({
+          sessionId: parseInt(context.sessionId, 10),
+          userId:    context.userId,
+          agentId:   context.agentId,
+          parentId:  context.parentFrameId,
+          action:    interactionData.target_property,
+          data:      interactionData.payload,
+        }, context.db);
+      } catch (error) {
+        console.error('Failed to create REQUEST frame:', error);
+      }
+    }
+
+    // Step 3: Queue pending status for agent
     queueAgentMessage(context.sessionId, agentInteractionId, 'interaction_update', {
       status: 'pending',
       permit: 'allowed',
     });
 
-    // Step 3: Create and send the interaction
+    // Step 4: Create and send the interaction
     // Include senderId if provided - this indicates the interaction originated
     // from an authenticated user (secure/authorized)
     let interactionOptions = {
@@ -276,7 +305,45 @@ export async function executeInteractions(interactionBlock, context) {
     try {
       let result = await bus.send(interaction);
 
-      // Step 4: Queue completed status for agent
+      // Check if the function returned a failed status (common for @system functions)
+      let functionFailed = result && typeof result === 'object' && result.status === 'failed';
+
+      // Step 5: Create RESULT frame (after execution)
+      if (canCreateFrames && requestFrame) {
+        try {
+          createResultFrame({
+            sessionId: parseInt(context.sessionId, 10),
+            userId:    context.userId,
+            parentId:  requestFrame.id,
+            agentId:   context.agentId,
+            result:    functionFailed
+              ? { status: 'failed', error: result.error }
+              : { status: 'completed', data: result },
+          }, context.db);
+        } catch (error) {
+          console.error('Failed to create RESULT frame:', error);
+        }
+      }
+
+      // Handle function failures that didn't throw
+      if (functionFailed) {
+        queueAgentMessage(context.sessionId, agentInteractionId, 'interaction_update', {
+          status: 'failed',
+          error:  result.error,
+        });
+
+        results.push({
+          interaction_id:  agentInteractionId,
+          target_id:       interactionData.target_id,
+          target_property: interactionData.target_property,
+          status:          'failed',
+          error:           result.error,
+          requestFrameId:  requestFrame?.id,
+        });
+        continue;
+      }
+
+      // Step 6: Queue completed status for agent
       queueAgentMessage(context.sessionId, agentInteractionId, 'interaction_update', {
         status: 'completed',
         result: result,
@@ -288,9 +355,28 @@ export async function executeInteractions(interactionBlock, context) {
         target_property: interactionData.target_property,
         status:          'completed',
         result:          result,
+        requestFrameId:  requestFrame?.id,
       });
 
     } catch (error) {
+      // Create RESULT frame for failure
+      if (canCreateFrames && requestFrame) {
+        try {
+          createResultFrame({
+            sessionId: parseInt(context.sessionId, 10),
+            userId:    context.userId,
+            parentId:  requestFrame.id,
+            agentId:   context.agentId,
+            result:    {
+              status: 'failed',
+              error:  error.message,
+            },
+          }, context.db);
+        } catch (frameError) {
+          console.error('Failed to create RESULT frame:', frameError);
+        }
+      }
+
       // Queue failed status for agent
       queueAgentMessage(context.sessionId, agentInteractionId, 'interaction_update', {
         status: 'failed',
@@ -303,6 +389,7 @@ export async function executeInteractions(interactionBlock, context) {
         target_property: interactionData.target_property,
         status:          'failed',
         error:           error.message,
+        requestFrameId:  requestFrame?.id,
       });
     }
   }

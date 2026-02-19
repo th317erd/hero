@@ -1,6 +1,7 @@
 # Hero Project Todo
 
 ## Completed
+[x] Markdown → HTML migration - Agent outputs HTML, server-side sanitization (105 tests)
 [x] Startup abilities (`_onstart_*` pattern) - implemented and working
 [x] Abilities system consolidation (processes + functions = abilities)
 [x] Hidden messages feature - startup messages hidden from UI but sent to AI

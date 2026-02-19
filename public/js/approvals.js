@@ -356,25 +356,23 @@ function renderAssertionsForMessage(messageId) {
 }
 
 /**
- * Scroll to bottom only if user is already near the bottom (auto-follow behavior).
- * This prevents jarring scrolls while reading older messages.
+ * Scroll to bottom of the chat. Delegates to hero-chat component.
+ * Respects user scroll intent — if user scrolled up to read, this is a no-op.
  */
 function scrollToBottom() {
-  if (isNearBottom()) {
-    forceScrollToBottom();
-  }
+  let heroChat = elements.heroChat;
+  if (heroChat && typeof heroChat.scrollToBottom === 'function')
+    heroChat.scrollToBottom();
 }
 
 /**
  * Force scroll to bottom regardless of current position.
- * Use this for explicit user actions like clicking the scroll button.
+ * Resets user scroll intent — use for explicit user actions (send message, etc).
  */
 function forceScrollToBottom() {
-  requestAnimationFrame(() => {
-    let chatMain = elements.messagesContainer.parentElement;
-    chatMain.scrollTop = chatMain.scrollHeight;
-    updateScrollToBottomButton();
-  });
+  let heroChat = elements.heroChat;
+  if (heroChat && typeof heroChat.forceScrollToBottom === 'function')
+    heroChat.forceScrollToBottom();
 }
 
 /**
@@ -382,23 +380,11 @@ function forceScrollToBottom() {
  * @returns {boolean} True if within 100px of bottom
  */
 function isNearBottom() {
-  let chatMain = elements.chatMain;
-  if (!chatMain) return true;
-  let threshold = 100; // pixels from bottom
-  return chatMain.scrollHeight - chatMain.scrollTop - chatMain.clientHeight < threshold;
-}
+  let heroChat = elements.heroChat;
+  if (heroChat && typeof heroChat.isNearBottom === 'function')
+    return heroChat.isNearBottom();
 
-/**
- * Update visibility of the scroll-to-bottom button.
- */
-function updateScrollToBottomButton() {
-  if (!elements.scrollToBottomBtn) return;
-
-  if (isNearBottom()) {
-    elements.scrollToBottomBtn.style.display = 'none';
-  } else {
-    elements.scrollToBottomBtn.style.display = 'flex';
-  }
+  return true;
 }
 
 function showTypingIndicator() {
@@ -422,39 +408,6 @@ function hideTypingIndicator() {
 
   if (indicator)
     indicator.remove();
-}
-
-async function handleSendMessage() {
-  let content = elements.messageInput?.value?.trim();
-
-  if (!content || !state.currentSession)
-    return;
-
-  // Clear input immediately
-  if (elements.messageInput) {
-    elements.messageInput.value        = '';
-    elements.messageInput.style.height = 'auto';
-  }
-
-  // Check for commands (always process immediately)
-  if (content.startsWith('/')) {
-    await handleCommand(content);
-    elements.messageInput?.focus();
-    return;
-  }
-
-  // If busy, queue the message instead
-  if (state.isLoading) {
-    queueMessage(content);
-    elements.messageInput?.focus();
-    return;
-  }
-
-  // Process the message (use streaming or batch based on mode)
-  if (state.streamingMode)
-    await processMessageStream(content);
-  else
-    await processMessage(content);
 }
 
 /**
@@ -484,30 +437,32 @@ function queueMessage(content) {
   // Add to queue
   state.messageQueue.push({ id: queueId, content });
 
-  // Add queued message to UI immediately
-  state.messages.push({ role: 'user', content, queued: true, queueId });
+  // Add queued message to UI immediately via SessionStore
+  const session = getCurrentSessionMessages();
+  if (session) {
+    session.add({ role: 'user', content, queued: true, queueId });
+  }
   renderMessages();
   forceScrollToBottom(); // User just sent a message, always scroll to show it
 }
 
 async function processMessage(content) {
   state.isLoading = true;
-  if (elements.sendBtn) elements.sendBtn.disabled = true;
+
+  const session = getCurrentSessionMessages();
 
   // Add user message optimistically (if not already in messages from queue)
-  let existingQueued = state.messages.find((m) => m.queued && m.content === content);
+  let existingQueued = session ? session.find((m) => m.queued && m.content === content) : null;
   if (existingQueued) {
     // Remove queued styling
-    existingQueued.queued = false;
-    delete existingQueued.queueId;
+    session.update(existingQueued.id, { queued: false, queueId: undefined });
     renderMessages();
-  } else {
-    state.messages.push({ role: 'user', content: content });
+  } else if (session) {
+    session.add({ role: 'user', content: content });
     renderMessages();
   }
-  forceScrollToBottom(); // User just sent a message, always scroll to show it
+  forceScrollToBottom();
 
-  // Show typing indicator
   showTypingIndicator();
 
   try {
@@ -515,34 +470,31 @@ async function processMessage(content) {
 
     hideTypingIndicator();
 
-    // Add assistant response
-    state.messages.push({ role: 'assistant', content: response.content });
+    if (session)
+      session.add({ role: 'assistant', content: response.content });
+
     renderMessages();
     scrollToBottom();
   } catch (error) {
     hideTypingIndicator();
 
-    // Show error as assistant message
-    state.messages.push({
-      role:    'assistant',
-      content: [{ type: 'text', text: `Error: ${error.message}` }],
-    });
+    if (session) {
+      session.add({
+        role:    'assistant',
+        content: [{ type: 'text', text: `Error: ${error.message}` }],
+      });
+    }
     renderMessages();
     scrollToBottom();
   }
 
   state.isLoading = false;
-  if (elements.sendBtn) elements.sendBtn.disabled = false;
 
-  // Focus input - use hero-input component if available, fallback to legacy element
+  // Focus input via hero-input component
   let heroInputEl = document.querySelector('hero-input');
-  if (heroInputEl && typeof heroInputEl.focus === 'function') {
+  if (heroInputEl && typeof heroInputEl.focus === 'function')
     heroInputEl.focus();
-  } else if (elements.messageInput) {
-    elements.messageInput.focus();
-  }
 
-  // Process any queued messages
   await processMessageQueue();
 }
 

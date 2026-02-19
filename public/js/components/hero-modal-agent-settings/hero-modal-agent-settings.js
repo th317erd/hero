@@ -17,7 +17,7 @@ export class HeroModalAgentSettings extends HeroModal {
   getAdditionalStyles() {
     return `
       dialog[open] {
-        min-width: 550px;
+        min-width: min(550px, calc(100vw - 32px));
       }
     `;
   }

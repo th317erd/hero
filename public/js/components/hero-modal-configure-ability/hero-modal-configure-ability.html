@@ -35,9 +35,9 @@
       padding: 0;
       align-items: stretch;
       overflow: hidden;
-      width: 500px;
-      min-width: 400px;
-      max-width: 600px;
+      width: min(500px, calc(100vw - 32px));
+      min-width: min(400px, calc(100vw - 32px));
+      max-width: min(600px, calc(100vw - 32px));
       max-height: 85vh;
       border: 1px solid var(--border-color, #2d2d2d);
       border-radius: var(--radius-lg, 8px);

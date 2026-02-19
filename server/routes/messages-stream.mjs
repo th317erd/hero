@@ -129,6 +129,7 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
     content,
     sessionId: parseInt(req.params.sessionId, 10),
     userId:    req.user.id,
+    dataKey:   (req.user && req.user.secret) ? req.user.secret.dataKey : null,
   });
 
   if (commandResult.handled) {

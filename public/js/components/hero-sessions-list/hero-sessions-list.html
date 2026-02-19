@@ -233,8 +233,8 @@
     .new-session-button {
       margin-top: 1rem;
       padding: 0.75rem 1.5rem;
-      background: var(--accent-color, #00d4aa);
-      color: #000;
+      background: var(--accent, #e94560);
+      color: #fff;
       border: none;
       border-radius: 4px;
       font-weight: 500;
@@ -243,7 +243,7 @@
     }
 
     .new-session-button:hover {
-      background: var(--accent-hover, #00f5c4);
+      background: var(--accent-hover, #ff6b6b);
     }
 
     /* Hide when not matching state */
@@ -254,6 +254,17 @@
     /* Hide elements with data-show="false" */
     [data-show="false"] {
       display: none !important;
+    }
+
+    /* Hidden sessions message */
+    .hidden-sessions-message {
+      padding: 1rem;
+      text-align: center;
+      color: var(--text-muted, #888);
+      font-size: 0.875rem;
+      font-style: italic;
+      border-top: 1px solid var(--border-color, #2d2d2d);
+      margin-top: auto;
     }
   </style>
 
@@ -299,6 +310,9 @@
           </div>
         </div>
       </mythix-for-each>
+
+      <!-- Hidden sessions message (shown at bottom when sessions are hidden) -->
+      <div class="hidden-sessions-message" style="display: none;"></div>
     </div>
 
     <!-- Empty State: No agents -->

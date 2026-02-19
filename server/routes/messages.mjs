@@ -84,6 +84,7 @@ router.post('/:sessionId/messages', async (req, res) => {
     content,
     sessionId: parseInt(req.params.sessionId, 10),
     userId:    req.user.id,
+    dataKey:   (req.user && req.user.secret) ? req.user.secret.dataKey : null,
   });
 
   if (commandResult.handled) {
@@ -283,8 +284,14 @@ router.post('/:sessionId/messages', async (req, res) => {
       response = await agent.sendMessage(messages);
     }
 
-    // Process HML markup elements
+    // Extract text content from response (Claude API returns array of content blocks)
     let finalContent = response.content;
+    if (Array.isArray(finalContent)) {
+      finalContent = finalContent
+        .filter((block) => block.type === 'text')
+        .map((block) => block.text)
+        .join('');
+    }
 
     if (typeof finalContent === 'string' && hasExecutableElements(finalContent)) {
       let hmlContext = buildContext({

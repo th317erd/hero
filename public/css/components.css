@@ -32,6 +32,10 @@ hero-status-bar {
   z-index: 800;
 }
 
+hero-status-bar.hidden {
+  display: none;
+}
+
 /* ===========================================
    hero-main-controls
    =========================================== */
@@ -54,6 +58,17 @@ hero-chat {
   flex: 1;
   overflow-y: auto;
   position: relative;
+}
+
+/* ===========================================
+   session-frames-provider
+   =========================================== */
+session-frames-provider {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;  /* Required for flex children to shrink properly */
+  overflow: hidden;
 }
 
 /* ===========================================
@@ -117,12 +132,13 @@ hero-modal-abilities::part(dialog),
 hero-modal-agents::part(dialog),
 hero-modal-agent-settings::part(dialog),
 hero-step-modal::part(dialog) {
-  max-width: 90vw;
+  max-width: min(90vw, calc(100vw - 32px));
   max-height: 90vh;
   border: 1px solid var(--border-color, #2d2d2d);
   border-radius: var(--radius-lg, 8px);
   background: var(--bg-secondary, #1a1a2e);
   color: var(--text-primary, #e0e0e0);
+  box-sizing: border-box;
 }
 
 /* Header styling */
@@ -193,13 +209,12 @@ hero-modal-abilities .tab-content:not(.active) {
   display: none;
 }
 
-/* List containers - scroll within their container */
+/* List containers - let modal main handle scrolling */
 hero-modal-abilities .abilities-list,
 hero-modal-agents .agents-list {
   flex: 1;
-  overflow-y: auto;
   min-height: 0;
-  max-height: 50vh;
+  /* No max-height or overflow - modal main scrolls instead */
 }
 
 /* Agents content wrapper */
@@ -458,7 +473,7 @@ hero-modal-agents .agents-content {
 
 /* Agent config modal - make it wider for code editing */
 body > dialog[data-modal-name="agent-settings"] {
-  width: min(600px, 90vw);
+  width: min(600px, calc(100vw - 32px));
 }
 
 :is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) .config-description {

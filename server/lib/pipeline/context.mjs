@@ -47,12 +47,22 @@ export function buildContext(options) {
   let agentConfig = {};
 
   if (session.encrypted_config) {
-    let decrypted = decryptWithKey(session.encrypted_config, dataKey);
-    agentConfig   = JSON.parse(decrypted);
+    try {
+      let decrypted = decryptWithKey(session.encrypted_config, dataKey);
+      agentConfig   = JSON.parse(decrypted);
+    } catch (error) {
+      console.error(`Failed to decrypt/parse agent config for session ${sessionId}:`, error.message);
+      agentConfig = {};
+    }
   }
 
   // Parse default processes
-  let defaultProcesses = JSON.parse(session.default_processes || '[]');
+  let defaultProcesses = [];
+  try {
+    defaultProcesses = JSON.parse(session.default_processes || '[]');
+  } catch (error) {
+    console.error(`Failed to parse default_processes for session ${sessionId}:`, error.message);
+  }
 
   // Build model info from agent config
   let model = {

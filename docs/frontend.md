@@ -432,7 +432,7 @@ All `<a>` tags use the link color by default and open in new tabs.
   font-family: var(--font-mono);
   font-size: 14px;
   line-height: 1.4;
-  white-space: normal;      /* Collapses newlines from markdown */
+  white-space: normal;      /* Collapses extra whitespace */
   word-break: break-word;
   overflow-wrap: break-word;
 }

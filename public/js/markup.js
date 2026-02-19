@@ -3,47 +3,50 @@
 // ============================================================================
 // Hero Markup Language (HML) - Frontend Parser & Renderer
 // ============================================================================
+// Processes HTML content from the agent, sanitizes it, and renders custom
+// HML elements like <hml-prompt> and <hml-thinking>.
 
-// Initialize markdown-it with HTML enabled
-const md = window.markdownit({
-  html:        true,   // Enable HTML tags in source
-  linkify:     true,   // Auto-convert URLs to links
-  typographer: true,   // Smart quotes, dashes
-  breaks:      true,   // Convert \n to <br>
-});
+// =============================================================================
+// Configuration
+// =============================================================================
 
-// Custom element allowlist - elements we process, all others stripped
-const ALLOWED_ELEMENTS = [
-  'todo', 'item', 'progress', 'link', 'copy', 'result',
-  'websearch', 'bash', 'ask', 'thinking',
-  'hml-prompt', 'response',               // hml-prompt is our Web Component
-];
+/**
+ * Allowed HTML tags (whitelist).
+ * Unknown tags are stripped but content is preserved.
+ */
+const ALLOWED_TAGS = new Set([
+  // Headings
+  'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+  // Structure
+  'p', 'br', 'hr', 'div', 'span',
+  // Inline formatting
+  'b', 'strong', 'i', 'em', 'u', 's', 'mark', 'code', 'small', 'sub', 'sup',
+  // Block elements
+  'pre', 'blockquote',
+  // Lists
+  'ul', 'ol', 'li',
+  // Links and media
+  'a', 'img',
+  // Tables
+  'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td',
+  // Custom HML elements
+  'hml-prompt', 'hml-thinking', 'response', 'data', 'option',
+]);
 
-// Dangerous tags to completely remove (content and all)
-// Note: SVG is allowed but sanitized for dangerous attributes
-const DANGEROUS_TAGS = [
-  'script',       // JavaScript execution
-  'iframe',       // Embed external content
-  'embed',        // Plugin execution
-  'object',       // Plugin execution
-  'style',        // CSS injection attacks
-  'base',         // Hijacks all relative URLs
-  'meta',         // Can redirect page
-  'form',         // Phishing attacks
-  'input',        // Form elements (phishing)
-  'button',       // Form submission
-  'textarea',     // Form elements
-  'select',       // Form elements
-  'math',         // XSS vectors in some browsers
-  'noscript',     // Can leak info
-  'template',     // Can hide malicious content
-  'slot',         // Shadow DOM manipulation
-  'interaction',  // Our protocol tag - should be processed server-side, strip from display
-];
+/**
+ * Dangerous tags to completely remove (content AND tag).
+ */
+const DANGEROUS_TAGS = new Set([
+  'script', 'iframe', 'embed', 'object', 'style', 'base', 'meta',
+  'form', 'input', 'button', 'textarea', 'select',
+  'math', 'noscript', 'template', 'slot',
+  'interaction', // System protocol tag - never display
+]);
 
-// Dangerous attributes to strip from ALL elements
-const DANGEROUS_ATTRS = [
-  // Event handlers
+/**
+ * Event handler attributes to strip.
+ */
+const EVENT_HANDLERS = new Set([
   'onclick', 'ondblclick', 'onmousedown', 'onmouseup', 'onmouseover',
   'onmousemove', 'onmouseout', 'onmouseenter', 'onmouseleave',
   'onkeydown', 'onkeyup', 'onkeypress',
@@ -55,467 +58,213 @@ const DANGEROUS_ATTRS = [
   'ontouchmove', 'ontouchcancel', 'onanimationstart', 'onanimationend',
   'onanimationiteration', 'ontransitionend', 'onpointerdown', 'onpointerup',
   'onpointermove', 'onpointerenter', 'onpointerleave', 'onpointercancel',
-  // Other dangerous attributes
-  'formaction',   // Form hijacking
-  'xlink:href',   // SVG links (can be javascript:)
-  'data',         // Object tag data
-  'srcdoc',       // Iframe content
-  'sandbox',      // Can be used to weaken security
-];
-
-// ============================================================================
-// Main Render Function
-// ============================================================================
+  'onbegin', 'onend', 'onrepeat',
+]);
 
 /**
- * Render content with markdown and custom HML elements.
+ * Allowed attributes per tag.
+ */
+const ALLOWED_ATTRS = {
+  '*':            ['id', 'class', 'title'],
+  'a':            ['href', 'target', 'rel'],
+  'img':          ['src', 'alt', 'width', 'height', 'loading'],
+  'td':           ['colspan', 'rowspan'],
+  'th':           ['colspan', 'rowspan'],
+  'code':         ['class'],
+  'hml-prompt':   ['id', 'type', 'min', 'max', 'step', 'default', 'answered'],
+  'hml-thinking': ['title'],
+  'option':       ['value', 'selected'],
+};
+
+// =============================================================================
+// Main Render Function
+// =============================================================================
+
+/**
+ * Render content with custom HML elements.
+ * Content is expected to be HTML (not markdown).
  *
- * @param {string} content - Raw text with markdown and HML elements
- * @returns {string} Rendered HTML
+ * @param {string} content - HTML content from agent
+ * @returns {string} Sanitized and processed HTML
  */
 function renderMarkup(content) {
-  if (!content) return '';
+  if (!content)
+    return '';
 
-  // 0. Convert <user-prompt> and <user_prompt> tags to <hml-prompt> Web Component
-  // This must happen before markdown to prevent escaping
-  content = convertUserPromptTags(content);
+  // Safeguard: ensure content is a string
+  // If content is an object, convert it appropriately
+  if (typeof content !== 'string') {
+    console.warn('[renderMarkup] Received non-string content:', typeof content, content);
+    // Try to extract text if it's a content block array
+    if (Array.isArray(content)) {
+      content = content
+        .filter((block) => block && block.type === 'text')
+        .map((block) => block.text || '')
+        .join('');
+    } else if (content && typeof content === 'object') {
+      // Single content block
+      if (content.type === 'text' && content.text) {
+        content = content.text;
+      } else {
+        // Last resort: stringify for debugging
+        content = JSON.stringify(content, null, 2);
+      }
+    } else {
+      return '';
+    }
+  }
 
-  // 1. Parse markdown (preserves our custom HTML elements)
-  let html = md.render(content);
-
-  // 2. Create DOM fragment for processing
+  // Create DOM fragment for processing
   let template = document.createElement('template');
-  template.innerHTML = html;
+  template.innerHTML = content;
 
-  // 3. Sanitize and process custom elements
+  // Sanitize content (defense in depth - server also sanitizes)
   sanitizeContent(template.content);
+
+  // Process custom HML elements
   processCustomElements(template.content);
 
-  // 4. Return processed HTML
   return template.innerHTML;
 }
 
-/**
- * Convert legacy <user-prompt> and <user_prompt> tags to <hml-prompt> Web Component.
- * The Web Component handles its own rendering via Shadow DOM.
- * New content should use <hml-prompt> directly.
- */
-function convertUserPromptTags(content) {
-  // Convert legacy user-prompt and user_prompt to hml-prompt
-  content = content
-    .replace(/<user_prompt\b/gi, '<hml-prompt')
-    .replace(/<\/user_prompt>/gi, '</hml-prompt>')
-    .replace(/<user-prompt\b/gi, '<hml-prompt')
-    .replace(/<\/user-prompt>/gi, '</hml-prompt>');
-
-  // Convert <option> to <opt> inside hml-prompt tags
-  // (Browser strips <option> tags when not inside <select>)
-  content = content.replace(
-    /(<hml-prompt[^>]*>)([\s\S]*?)(<\/hml-prompt>)/gi,
-    (match, openTag, inner, closeTag) => {
-      let converted = inner
-        .replace(/<option\b/gi, '<opt')
-        .replace(/<\/option>/gi, '</opt>');
-      return openTag + converted + closeTag;
-    }
-  );
-
-  // Collapse newlines around hml-prompt tags to keep them inline
-  // This prevents markdown-it from creating separate <p> blocks
-  content = content
-    .replace(/\n+(<hml-prompt)/gi, ' $1')   // newlines before -> space
-    .replace(/(<\/hml-prompt>)\n+/gi, '$1 '); // newlines after -> space
-
-  return content;
-}
-
-// ============================================================================
-// Sanitization
-// ============================================================================
+// =============================================================================
+// Sanitization (Defense in Depth)
+// =============================================================================
 
 /**
  * Sanitize content by removing dangerous elements and attributes.
+ * This is defense-in-depth - the server also sanitizes.
  */
 function sanitizeContent(container) {
-  // Remove all dangerous tags completely
+  // Remove dangerous tags completely
   for (let tag of DANGEROUS_TAGS) {
     container.querySelectorAll(tag).forEach((el) => el.remove());
   }
 
-  // Add target="_blank" to all links for security and UX
-  container.querySelectorAll('a[href]').forEach((el) => {
-    let href = el.getAttribute('href');
-    // Only add target="_blank" for external links (not anchors)
-    if (href && !href.startsWith('#')) {
-      el.setAttribute('target', '_blank');
-      el.setAttribute('rel', 'noopener noreferrer');
-    }
-  });
+  // Remove comments
+  let walker = document.createTreeWalker(container, NodeFilter.SHOW_COMMENT, null, false);
+  let comments = [];
+  while (walker.nextNode())
+    comments.push(walker.currentNode);
+  for (let comment of comments)
+    comment.remove();
 
-  // Remove dangerous attributes from all elements
+  // Process all elements
   container.querySelectorAll('*').forEach((el) => {
-    for (let attr of DANGEROUS_ATTRS) {
-      el.removeAttribute(attr);
+    let tagName = el.tagName.toLowerCase();
+
+    // Strip unknown tags (keep content)
+    if (!ALLOWED_TAGS.has(tagName)) {
+      let parent = el.parentNode;
+      while (el.firstChild)
+        parent.insertBefore(el.firstChild, el);
+      el.remove();
+      return;
     }
 
-    // Remove javascript: and data: URLs from href/src attributes
-    for (let urlAttr of ['href', 'src', 'action', 'poster', 'background']) {
-      if (el.hasAttribute(urlAttr)) {
-        let value = el.getAttribute(urlAttr);
-        if (value) {
-          let lower = value.toLowerCase().trim();
-          if (lower.startsWith('javascript:') || lower.startsWith('data:text/html')) {
-            el.setAttribute(urlAttr, '#');
-          }
+    // Strip dangerous attributes
+    let attrs = Array.from(el.attributes);
+    let globalAllowed = ALLOWED_ATTRS['*'] || [];
+    let tagAllowed = ALLOWED_ATTRS[tagName] || [];
+    let allowedSet = new Set([...globalAllowed, ...tagAllowed]);
+
+    for (let attr of attrs) {
+      let attrName = attr.name.toLowerCase();
+
+      // Remove event handlers
+      if (EVENT_HANDLERS.has(attrName) || attrName.startsWith('on')) {
+        el.removeAttribute(attr.name);
+        continue;
+      }
+
+      // Remove style attribute
+      if (attrName === 'style') {
+        el.removeAttribute(attr.name);
+        continue;
+      }
+
+      // Check whitelist
+      if (!allowedSet.has(attrName)) {
+        el.removeAttribute(attr.name);
+        continue;
+      }
+
+      // Sanitize URLs
+      if (attrName === 'href' || attrName === 'src') {
+        let value = attr.value.trim().toLowerCase();
+        if (value.startsWith('javascript:') || value.startsWith('data:text/html')) {
+          el.setAttribute(attr.name, '#');
         }
       }
     }
 
-    // Remove SVG-specific dangerous attributes
-    if (el.tagName && el.tagName.toLowerCase() === 'svg') {
-      el.removeAttribute('onload');
-      el.removeAttribute('onerror');
-    }
-
-    // Check for SVG children with dangerous attributes
-    if (el.closest && el.closest('svg')) {
-      el.removeAttribute('onload');
-      el.removeAttribute('onerror');
-      el.removeAttribute('onbegin');
-      el.removeAttribute('onend');
-      el.removeAttribute('onrepeat');
-
-      // Remove xlink:href with javascript:
-      let xlinkHref = el.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
-      if (xlinkHref && xlinkHref.toLowerCase().trim().startsWith('javascript:')) {
-        el.removeAttributeNS('http://www.w3.org/1999/xlink', 'href');
+    // Add security attributes to links
+    if (tagName === 'a' && el.hasAttribute('href')) {
+      let href = el.getAttribute('href');
+      if (href && !href.startsWith('#')) {
+        el.setAttribute('target', '_blank');
+        el.setAttribute('rel', 'noopener noreferrer');
       }
     }
   });
 }
 
-// ============================================================================
+// =============================================================================
 // Custom Element Processing
-// ============================================================================
+// =============================================================================
 
 /**
- * Process all custom HML elements in the container.
+ * Process custom HML elements in the container.
  */
 function processCustomElements(container) {
-  // First, unwrap inline elements from unnecessary <p> wrappers
-  unwrapInlineElements(container);
-
-  processTodoElements(container);
-  processProgressElements(container);
-  processLinkElements(container);
-  processCopyElements(container);
-  processResultElements(container);
   processThinkingElements(container);
-  processExecutableElements(container);
-  // Note: user-prompt elements are pre-processed before markdown rendering
+  // Note: hml-prompt is a Web Component - it handles its own rendering
 }
 
 /**
- * Unwrap inline custom elements (like hml-prompt) from <p> tags.
- * Markdown-it wraps standalone elements in <p>, which breaks inline display.
- */
-function unwrapInlineElements(container) {
-  // Elements that should be inline and unwrapped from <p> tags
-  let inlineElements = ['hml-prompt'];
-
-  for (let tagName of inlineElements) {
-    container.querySelectorAll(`p > ${tagName}`).forEach((el) => {
-      let p = el.parentElement;
-      if (p && p.tagName === 'P') {
-        // Check if <p> only contains this element (plus whitespace/br)
-        let dominated = Array.from(p.childNodes).every((node) => {
-          if (node === el) return true;
-          if (node.nodeType === Node.TEXT_NODE && !node.textContent.trim()) return true;
-          if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'BR') return true;
-          return false;
-        });
-
-        if (dominated) {
-          // Replace <p> with just the element
-          p.replaceWith(el);
-        }
-      }
-    });
-  }
-}
-
-/**
- * Process <todo> elements into interactive task lists.
- */
-function processTodoElements(container) {
-  container.querySelectorAll('todo').forEach((el) => {
-    let title = el.getAttribute('title') || 'Tasks';
-    let items = Array.from(el.querySelectorAll('item')).map((item) => ({
-      text:   item.textContent.trim(),
-      status: item.getAttribute('status') || 'pending',
-    }));
-
-    let completed = items.filter((i) => i.status === 'completed').length;
-    let percent   = (items.length > 0) ? Math.round((completed / items.length) * 100) : 0;
-
-    let html = `
-      <div class="hml-todo">
-        <div class="hml-todo-header">
-          <span class="hml-todo-title">${escapeHtml(title)}</span>
-          <span class="hml-todo-progress">${completed}/${items.length}</span>
-        </div>
-        <div class="hml-todo-progress-bar">
-          <div class="hml-todo-progress-fill" style="width: ${percent}%"></div>
-        </div>
-        <ul class="hml-todo-items">
-          ${items.map((item) => `
-            <li class="hml-todo-item ${item.status}">
-              <span class="hml-todo-status">${getStatusIcon(item.status)}</span>
-              <span class="hml-todo-text">${escapeHtml(item.text)}</span>
-            </li>
-          `).join('')}
-        </ul>
-      </div>
-    `;
-
-    el.outerHTML = html;
-  });
-}
-
-/**
- * Process <progress> elements into progress bars.
- */
-function processProgressElements(container) {
-  container.querySelectorAll('progress').forEach((el) => {
-    let value  = parseInt(el.getAttribute('value') || '0', 10);
-    let max    = parseInt(el.getAttribute('max') || '100', 10);
-    let status = el.getAttribute('status') || '';
-    let label  = el.textContent.trim() || 'Progress';
-
-    let percent = Math.min(100, Math.max(0, Math.round((value / max) * 100)));
-
-    let html = `
-      <div class="hml-progress">
-        <div class="hml-progress-header">
-          <span class="hml-progress-label">${escapeHtml(label)}</span>
-          <span class="hml-progress-percent">${percent}%</span>
-        </div>
-        <div class="hml-progress-bar">
-          <div class="hml-progress-fill" style="width: ${percent}%"></div>
-        </div>
-        ${(status) ? `<div class="hml-progress-status">${escapeHtml(status)}</div>` : ''}
-      </div>
-    `;
-
-    el.outerHTML = html;
-  });
-}
-
-/**
- * Process <link> elements into clickable links.
- */
-function processLinkElements(container) {
-  container.querySelectorAll('link').forEach((el) => {
-    let href  = el.getAttribute('href') || '#';
-    let label = el.textContent.trim() || href;
-
-    // Determine link type
-    let isInternal = href.startsWith('#message-') || href.startsWith('#');
-    let icon       = (isInternal) ? '↓' : '🔗';
-    let linkClass  = (isInternal) ? 'hml-link-internal' : 'hml-link-external';
-
-    if (isInternal) {
-      let html = `
-        <button class="hml-link ${linkClass}" onclick="scrollToMessage('${escapeHtml(href.slice(1))}')" title="Jump to message">
-          <span class="hml-link-icon">${icon}</span>
-          <span class="hml-link-label">${escapeHtml(label)}</span>
-        </button>
-      `;
-      el.outerHTML = html;
-    } else {
-      let html = `
-        <a class="hml-link ${linkClass}" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">
-          <span class="hml-link-icon">${icon}</span>
-          <span class="hml-link-label">${escapeHtml(label)}</span>
-        </a>
-      `;
-      el.outerHTML = html;
-    }
-  });
-}
-
-/**
- * Process <copy> elements into copy-to-clipboard buttons.
- */
-function processCopyElements(container) {
-  container.querySelectorAll('copy').forEach((el) => {
-    let text  = el.textContent.trim();
-    let label = el.getAttribute('label') || 'Copy';
-
-    // Escape text for use in onclick attribute
-    let escapedText = text.replace(/'/g, "\\'").replace(/\n/g, '\\n');
-
-    let html = `
-      <button class="hml-copy" onclick="copyToClipboard('${escapedText}', this)" title="Copy to clipboard">
-        <span class="hml-copy-icon">📋</span>
-        <span class="hml-copy-label">${escapeHtml(label)}</span>
-        <code class="hml-copy-text">${escapeHtml(text)}</code>
-      </button>
-    `;
-
-    el.outerHTML = html;
-  });
-}
-
-/**
- * Process <result> elements (output from executed commands).
- */
-function processResultElements(container) {
-  container.querySelectorAll('result').forEach((el) => {
-    let forCmd = el.getAttribute('for') || 'command';
-    let status = el.getAttribute('status') || 'success';
-    let content = el.innerHTML;
-
-    let statusClass;
-    let icon;
-
-    if (status === 'success') {
-      statusClass = 'hml-result-success';
-      icon = '✓';
-    } else if (status === 'error') {
-      statusClass = 'hml-result-error';
-      icon = '✗';
-    } else {
-      statusClass = 'hml-result-pending';
-      icon = '⏳';
-    }
-
-    let html = `
-      <div class="hml-result ${statusClass}">
-        <div class="hml-result-header">
-          <span class="hml-result-icon">${icon}</span>
-          <span class="hml-result-type">${escapeHtml(forCmd)}</span>
-          <span class="hml-result-status">${escapeHtml(status)}</span>
-        </div>
-        <div class="hml-result-content">${content}</div>
-      </div>
-    `;
-
-    el.outerHTML = html;
-  });
-}
-
-/**
- * Process <thinking> elements into collapsible thought blocks.
- * These show the agent's reasoning about abilities and context.
+ * Process <hml-thinking> elements into collapsible blocks.
  */
 function processThinkingElements(container) {
-  container.querySelectorAll('thinking').forEach((el, index) => {
+  container.querySelectorAll('hml-thinking').forEach((el, index) => {
     let content = el.innerHTML.trim();
     let title = el.getAttribute('title') || 'Thinking';
-    let uniqueID = `thinking-${Date.now()}-${index}`;
-
-    // Render markdown inside the thinking block
-    let renderedContent = md.render(content);
 
     let html = `
-      <details class="hml-thinking-block" open>
+      <details class="hml-thinking-block">
         <summary class="hml-thinking-header">
           <span class="hml-thinking-brain">🧠</span>
           <span class="hml-thinking-title">${escapeHtml(title)}</span>
           <span class="hml-thinking-toggle">▼</span>
         </summary>
         <div class="hml-thinking-content">
-          ${renderedContent}
+          ${content}
         </div>
       </details>
     `;
 
-    el.outerHTML = html;
+    replaceElementWithHTML(el, html);
   });
 }
 
-/**
- * Process executable elements (<bash>, <ask>) into pending displays.
- * These are processed on the server, but if they appear unprocessed, show as pending.
- * Note: websearch is handled via interaction events for proper timing, so it's
- * stripped here rather than rendered as a duplicate banner.
- */
-function processExecutableElements(container) {
-  // Websearch - strip the tags, interaction events handle the banner
-  container.querySelectorAll('websearch').forEach((el) => {
-    el.remove();
-  });
-
-  // Bash
-  container.querySelectorAll('bash').forEach((el) => {
-    let command = el.textContent.trim();
-    let html = `
-      <div class="hml-executable hml-bash">
-        <span class="hml-executable-icon">$</span>
-        <span class="hml-executable-label">Command:</span>
-        <code class="hml-executable-content">${escapeHtml(command)}</code>
-        <span class="hml-executable-status">pending</span>
-      </div>
-    `;
-    el.outerHTML = html;
-  });
-
-  // Ask
-  container.querySelectorAll('ask').forEach((el) => {
-    let question = el.textContent.trim();
-    let options  = el.getAttribute('options');
-    let html = `
-      <div class="hml-executable hml-ask">
-        <span class="hml-executable-icon">❓</span>
-        <span class="hml-executable-label">Question:</span>
-        <span class="hml-executable-content">${escapeHtml(question)}</span>
-        ${(options) ? `<span class="hml-executable-options">[${escapeHtml(options)}]</span>` : ''}
-        <span class="hml-executable-status">awaiting response</span>
-      </div>
-    `;
-    el.outerHTML = html;
-  });
-}
-
-// ============================================================================
-// User Prompt Elements
-// ============================================================================
-
-/**
- * Attach event handlers to user prompt elements.
- * Note: <hml-prompt> Web Components handle their own events via Shadow DOM.
- * This function is kept for backwards compatibility but is now a no-op.
- */
-function attachUserPromptHandlers(container, messageId) {
-  // No-op: <hml-prompt> Web Component handles its own events
-  // The component emits 'prompt-submit' events that bubble up
-}
-
-// Make attachUserPromptHandlers available globally
-window.attachUserPromptHandlers = attachUserPromptHandlers;
-
-// ============================================================================
+// =============================================================================
 // Helpers
-// ============================================================================
+// =============================================================================
 
 /**
- * Get status icon for todo items.
+ * Replace an element with HTML string.
  */
-function getStatusIcon(status) {
-  switch (status) {
-    case 'completed':   return '✓';
-    case 'in_progress': return '⏳';
-    case 'pending':
-    default:            return '○';
-  }
+function replaceElementWithHTML(el, html) {
+  let template = document.createElement('template');
+  template.innerHTML = html;
+  el.replaceWith(template.content);
 }
 
 /**
  * Escape HTML entities.
  */
 function escapeHtml(text) {
-  if (!text) return '';
+  if (!text)
+    return '';
   return text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -524,31 +273,9 @@ function escapeHtml(text) {
     .replace(/'/g, '&#039;');
 }
 
-/**
- * Copy text to clipboard (global function for onclick handlers).
- */
-function copyToClipboard(text, button) {
-  navigator.clipboard.writeText(text).then(() => {
-    let label = button.querySelector('.hml-copy-label');
-    let originalText = label.textContent;
-    label.textContent = 'Copied!';
-    button.classList.add('copied');
-
-    setTimeout(() => {
-      label.textContent = originalText;
-      button.classList.remove('copied');
-    }, 2000);
-  }).catch((error) => {
-    console.error('Failed to copy:', error);
-  });
-}
-
-// Make copyToClipboard available globally
-window.copyToClipboard = copyToClipboard;
-
-// ============================================================================
+// =============================================================================
 // Hero Interaction WebComponent
-// ============================================================================
+// =============================================================================
 
 /**
  * <hero-interaction> WebComponent
@@ -557,7 +284,8 @@ window.copyToClipboard = copyToClipboard;
 class HeroInteraction extends HTMLElement {
   constructor() {
     super();
-    this.attachShadow({ mode: 'open' });
+    if (!this.shadowRoot)
+      this.attachShadow({ mode: 'open' });
   }
 
   connectedCallback() {
@@ -573,26 +301,16 @@ class HeroInteraction extends HTMLElement {
   }
 
   render() {
-    let status  = this.getAttribute('status') || 'processing';
+    let status = this.getAttribute('status') || 'processing';
     let message = this.getAttribute('message') || '';
 
-    // Default messages based on status
     if (!message) {
       switch (status) {
-        case 'processing':
-          message = 'Thinking...';
-          break;
-        case 'searching':
-          message = 'Searching...';
-          break;
-        case 'waiting':
-          message = 'Waiting...';
-          break;
-        case 'complete':
-          message = 'Done';
-          break;
-        default:
-          message = 'Processing...';
+        case 'processing': message = 'Thinking...'; break;
+        case 'searching':  message = 'Searching...'; break;
+        case 'waiting':    message = 'Waiting...'; break;
+        case 'complete':   message = 'Done'; break;
+        default:           message = 'Processing...';
       }
     }
 
@@ -605,40 +323,26 @@ class HeroInteraction extends HTMLElement {
           align-items: center;
           gap: 8px;
         }
-
         .brain {
           font-size: 1.2em;
           display: inline-block;
         }
-
         .brain.active {
           animation: jiggle 0.4s ease-in-out infinite;
         }
-
         @keyframes jiggle {
-          0%, 100% {
-            transform: rotate(0deg) scale(1);
-          }
-          25% {
-            transform: rotate(-8deg) scale(1.05);
-          }
-          50% {
-            transform: rotate(0deg) scale(1);
-          }
-          75% {
-            transform: rotate(8deg) scale(1.05);
-          }
+          0%, 100% { transform: rotate(0deg) scale(1); }
+          25% { transform: rotate(-8deg) scale(1.05); }
+          50% { transform: rotate(0deg) scale(1); }
+          75% { transform: rotate(8deg) scale(1.05); }
         }
-
         .message {
           color: inherit;
           opacity: 0.8;
         }
-
         :host([status="complete"]) .brain {
           animation: none;
         }
-
         :host([status="error"]) .brain::after {
           content: "❌";
           font-size: 0.6em;
@@ -655,5 +359,19 @@ class HeroInteraction extends HTMLElement {
 // Register the WebComponent
 customElements.define('hero-interaction', HeroInteraction);
 
-// Export for use in app.js
+// =============================================================================
+// Legacy Compatibility
+// =============================================================================
+
+/**
+ * Attach event handlers to user prompt elements.
+ * Note: <hml-prompt> Web Components handle their own events via Shadow DOM.
+ * This function is kept for backwards compatibility but is now a no-op.
+ */
+function attachUserPromptHandlers(container, messageId) {
+  // No-op: <hml-prompt> Web Component handles its own events
+}
+
+// Make functions available globally
 window.renderMarkup = renderMarkup;
+window.attachUserPromptHandlers = attachUserPromptHandlers;

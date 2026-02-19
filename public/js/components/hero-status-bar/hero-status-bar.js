@@ -81,14 +81,18 @@ export class HeroStatusBar extends HeroComponent {
     if (!this.inSession)
       return 'N/A';
 
-    return formatCost(this.#serviceSpend.cost);
+    // Use GlobalState if available, fall back to private field
+    let serviceSpend = GlobalState.serviceSpend?.valueOf() || this.#serviceSpend;
+    return formatCost(serviceSpend.cost);
   }
 
   get sessionSpendFormatted() {
     if (!this.inSession)
       return 'N/A';
 
-    return formatCost(this.#sessionSpend.cost);
+    // Use GlobalState if available, fall back to private field
+    let sessionSpend = GlobalState.sessionSpend?.valueOf() || this.#sessionSpend;
+    return formatCost(sessionSpend.cost);
   }
 
   get spendDisabledClass() {
@@ -120,7 +124,9 @@ export class HeroStatusBar extends HeroComponent {
    * @returns {boolean}
    */
   get inSession() {
-    return this.#view === 'chat' && this.currentSession !== null;
+    // Simply check if there's a current session selected
+    // (no need to track view separately - currentSession being set implies chat view)
+    return this.currentSession !== null;
   }
 
   // ---------------------------------------------------------------------------
@@ -128,26 +134,187 @@ export class HeroStatusBar extends HeroComponent {
   // ---------------------------------------------------------------------------
 
   /**
-   * Component mounted.
+   * Component connected to DOM.
+   */
+  connectedCallback() {
+    super.connectedCallback?.();
+
+    // Create shadow root if needed
+    if (!this.shadowRoot) {
+      this.attachShadow({ mode: 'open' });
+    }
+
+    // Render content immediately
+    this._renderShadowDOM();
+
+    // Set initial visibility based on auth state
+    // (mounted() may not be called by MythixUI in all cases)
+    this.scheduleRender();
+  }
+
+  /**
+   * Component mounted (called by MythixUI after connectedCallback).
    */
   mounted() {
     // Subscribe to state changes
     this.#unsubscribers.push(
       this.subscribeGlobal('currentSession', () => this.scheduleRender()),
       this.subscribeGlobal('globalSpend', () => this.scheduleRender()),
+      this.subscribeGlobal('serviceSpend', () => this.scheduleRender()),
+      this.subscribeGlobal('sessionSpend', () => this.scheduleRender()),
       this.subscribeGlobal('wsConnected', () => this.scheduleRender())
     );
 
-    // Listen for view changes from hero-app
-    document.addEventListener('viewchange', (event) => {
-      this.view = event.detail.view;
-      this.scheduleRender();
-    });
+    // Listen for auth changes via custom events
+    this._onAuthenticated = () => this.scheduleRender();
+    this._onLogout = () => this.scheduleRender();
+    document.addEventListener('hero:authenticated', this._onAuthenticated);
+    document.addEventListener('hero:logout', this._onLogout);
 
-    // Don't render on login view
-    if (this.#view === 'login') {
-      this.style.display = 'none';
-    }
+    // Also listen for storage changes (catches token changes from other tabs or direct manipulation)
+    this._onStorage = (e) => {
+      if (e.key === 'token') {
+        this.scheduleRender();
+      }
+    };
+    window.addEventListener('storage', this._onStorage);
+
+    // Initial render
+    this.scheduleRender();
+  }
+
+  /**
+   * Render the shadow DOM content.
+   */
+  _renderShadowDOM() {
+    if (!this.shadowRoot) return;
+
+    this.shadowRoot.innerHTML = `
+      <style>
+        :host {
+          display: block;
+        }
+
+        .status-bar {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 12px;
+          padding: 6px 16px;
+          background: var(--bg-secondary, #1a1a2e);
+          border-top: 1px solid var(--border-color, #2d2d2d);
+          font-family: var(--font-mono, monospace);
+          font-size: 12px;
+          height: 32px;
+          box-sizing: border-box;
+        }
+
+        .connection-status {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+
+        .connection-status.connected {
+          color: var(--success, #4ade80);
+        }
+
+        .connection-status.disconnected {
+          color: var(--error, #f87171);
+        }
+
+        .connection-icon {
+          font-size: 10px;
+        }
+
+        .connection-text {
+          font-weight: 500;
+        }
+
+        .status-separator {
+          color: var(--text-muted, #6b7280);
+          opacity: 0.5;
+        }
+
+        .spend-item {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+
+        .spend-label {
+          color: var(--text-secondary, #9ca3af);
+        }
+
+        .spend-value {
+          font-weight: 600;
+          min-width: 60px;
+        }
+
+        .spend-global .spend-value,
+        .spend-service .spend-value,
+        .spend-session .spend-value {
+          color: var(--info, #60a5fa);
+        }
+
+        .spend-disabled {
+          opacity: 0.5;
+        }
+
+        .spend-disabled .spend-value {
+          color: var(--text-muted, #6b7280) !important;
+        }
+
+        @media (max-width: 640px) {
+          .status-bar {
+            flex-wrap: wrap;
+            gap: 4px 12px;
+            padding: 4px 12px;
+            height: auto;
+            min-height: 32px;
+          }
+
+          .status-separator {
+            display: none;
+          }
+
+          .connection-status {
+            width: 100%;
+            justify-content: center;
+          }
+
+          .spend-item {
+            font-size: 11px;
+          }
+
+          .spend-value {
+            min-width: 50px;
+          }
+        }
+      </style>
+
+      <div class="status-bar">
+        <span class="connection-status ${this.connectionClass}" title="WebSocket connection status">
+          <span class="connection-icon">${this.connectionIcon}</span>
+          <span class="connection-text">${this.connectionText}</span>
+        </span>
+        <span class="status-separator">|</span>
+        <span class="spend-item spend-global" title="Total usage across all agents">
+          <span class="spend-label">Global:</span>
+          <span class="spend-value">${this.globalSpendFormatted}</span>
+        </span>
+        <span class="status-separator">|</span>
+        <span class="spend-item spend-service ${this.spendDisabledClass}" title="Usage for this API key/service">
+          <span class="spend-label">Service:</span>
+          <span class="spend-value">${this.serviceSpendFormatted}</span>
+        </span>
+        <span class="status-separator">|</span>
+        <span class="spend-item spend-session ${this.spendDisabledClass}" title="Usage in this session">
+          <span class="spend-label">Session:</span>
+          <span class="spend-value">${this.sessionSpendFormatted}</span>
+        </span>
+      </div>
+    `;
   }
 
   /**
@@ -158,6 +325,17 @@ export class HeroStatusBar extends HeroComponent {
       unsub();
     }
     this.#unsubscribers = [];
+
+    // Clean up event listeners
+    if (this._onAuthenticated) {
+      document.removeEventListener('hero:authenticated', this._onAuthenticated);
+    }
+    if (this._onLogout) {
+      document.removeEventListener('hero:logout', this._onLogout);
+    }
+    if (this._onStorage) {
+      window.removeEventListener('storage', this._onStorage);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -186,12 +364,66 @@ export class HeroStatusBar extends HeroComponent {
     this._renderScheduled = true;
     requestAnimationFrame(() => {
       this._renderScheduled = false;
-      if (this.#view === 'login') {
-        this.style.display = 'none';
+      // Hide when not authenticated using CSS class
+      let hasToken = !!localStorage.getItem('token');
+
+      if (hasToken) {
+        this.classList.remove('hidden');
+        this._updateDOM();
       } else {
-        this.style.display = '';
+        this.classList.add('hidden');
       }
     });
+  }
+
+  /**
+   * Update Shadow DOM elements with current values.
+   * Template expressions are only evaluated on mount, so we update manually.
+   */
+  _updateDOM() {
+    if (!this.shadowRoot) return;
+
+    // Connection status
+    let connectionEl = this.shadowRoot.querySelector('.connection-status');
+    if (connectionEl) {
+      connectionEl.className = 'connection-status ' + this.connectionClass;
+    }
+
+    let iconEl = this.shadowRoot.querySelector('.connection-icon');
+    if (iconEl) {
+      iconEl.textContent = this.connectionIcon;
+    }
+
+    let textEl = this.shadowRoot.querySelector('.connection-text');
+    if (textEl) {
+      textEl.textContent = this.connectionText;
+    }
+
+    // Global spend
+    let globalValueEl = this.shadowRoot.querySelector('.spend-global .spend-value');
+    if (globalValueEl) {
+      globalValueEl.textContent = this.globalSpendFormatted;
+    }
+
+    // Service spend
+    let serviceEl = this.shadowRoot.querySelector('.spend-service');
+    if (serviceEl) {
+      serviceEl.className = 'spend-item spend-service ' + this.spendDisabledClass;
+    }
+    let serviceValueEl = this.shadowRoot.querySelector('.spend-service .spend-value');
+    if (serviceValueEl) {
+      serviceValueEl.textContent = this.serviceSpendFormatted;
+    }
+
+    // Session spend
+    let sessionEl = this.shadowRoot.querySelector('.spend-session');
+    if (sessionEl) {
+      sessionEl.className = 'spend-item spend-session ' + this.spendDisabledClass;
+    }
+    let sessionValueEl = this.shadowRoot.querySelector('.spend-session .spend-value');
+    if (sessionValueEl) {
+      sessionValueEl.textContent = this.sessionSpendFormatted;
+    }
   }
 }
 

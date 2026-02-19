@@ -49,7 +49,7 @@ router.get('/:sessionId/frames', (req, res) => {
   // Build options from query params
   const options = {};
 
-  if (req.query.fromCompact === 'true') {
+  if (req.query.fromCompact) {
     options.fromCompact = true;
   }
 

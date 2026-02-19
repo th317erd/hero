@@ -42,8 +42,10 @@ export const GlobalState = {
   // WebSocket connection status
   wsConnected: Utils.dynamicPropID('heroWsConnected', false),
 
-  // Global spend tracking
+  // Spend tracking
   globalSpend: Utils.dynamicPropID('heroGlobalSpend', { cost: 0, inputTokens: 0, outputTokens: 0 }),
+  serviceSpend: Utils.dynamicPropID('heroServiceSpend', { cost: 0 }),
+  sessionSpend: Utils.dynamicPropID('heroSessionSpend', { cost: 0 }),
 
   // UI state
   showHiddenSessions: Utils.dynamicPropID('heroShowHiddenSessions', false),

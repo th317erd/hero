@@ -30,22 +30,21 @@ function formatRelativeDate(dateString) {
   let date    = new Date(dateString);
   let now     = new Date();
   let diffMs  = now - date;
+  let diffSec = Math.floor(diffMs / 1000);
   let diffMin = Math.floor(diffMs / 60000);
+  let diffHr  = Math.floor(diffMs / 3600000);
   let diffDay = Math.floor(diffMs / 86400000);
 
-  if (diffMin < 5) return 'just now';
+  // Up to 2 days: use "x units ago" format
+  if (diffSec < 60) return 'just now';
+  if (diffMin < 60) return `${diffMin} minute${(diffMin === 1) ? '' : 's'} ago`;
+  if (diffHr < 24) return `${diffHr} hour${(diffHr === 1) ? '' : 's'} ago`;
+  if (diffDay < 2) return (diffDay === 1) ? 'yesterday' : `${diffDay} days ago`;
 
+  // Beyond 2 days: show actual date/time
   let timeStr = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-
-  if (diffDay < 1 && date.getDate() === now.getDate()) return timeStr;
-  if (diffDay < 2 && date.getDate() === now.getDate() - 1) return `yesterday ${timeStr}`;
-
-  if (diffDay < 7) {
-    let dayName = date.toLocaleDateString([], { weekday: 'short' });
-    return `${dayName} ${timeStr}`;
-  }
-
-  return date.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ` ${timeStr}`;
+  let dateStr = date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+  return `${dateStr} ${timeStr}`;
 }
 
 function formatTokenCount(tokens) {
@@ -62,11 +61,15 @@ export class HeroChat extends HeroComponent {
   static tagName = 'hero-chat';
 
   // Component state (session-level)
+  // NOTE: #messages kept for backwards compatibility only
   #messages = [];
   #showHiddenMessages = false;
   #streamingMessage = null;
   #unsubscribers = [];
-  #scrollThreshold = 100;
+  #scrollThreshold = 150;
+
+  // Frame state is owned by session-frames-provider (SINGLE SOURCE OF TRUTH)
+  // This component reads from provider.frames and provider.compiled
 
   // Debounce state
   #renderDebounceTimer = null;
@@ -74,6 +77,12 @@ export class HeroChat extends HeroComponent {
   #renderPending = false;
   #RENDER_DEBOUNCE_MS = 16;
   #RENDER_MAX_WAIT_MS = 100;
+
+  // Scroll state - Intent-based (tracks if user scrolled away to read)
+  #resizeObserver = null;
+  #lastScrollTop = 0;
+  #lastScrollHeight = 0;
+  #userScrolledAway = false;  // TRUE = user scrolled up to read, don't auto-scroll
 
   // ---------------------------------------------------------------------------
   // Shadow DOM
@@ -84,17 +93,95 @@ export class HeroChat extends HeroComponent {
   }
 
   // ---------------------------------------------------------------------------
+  // Provider Access
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Get the parent session-frames-provider.
+   * @returns {Element|null}
+   */
+  get framesProvider() {
+    // Look for provider in ancestors (light DOM parent since hero-chat is in shadow DOM of chat view)
+    return this.closest('session-frames-provider') ||
+           document.getElementById('session-frames');
+  }
+
+  // ---------------------------------------------------------------------------
   // Accessors
   // ---------------------------------------------------------------------------
 
   /**
    * Get visible messages (filtered by hidden state).
+   * Reads from session-frames-provider (SINGLE SOURCE OF TRUTH).
+   * Falls back to #messages for backwards compatibility.
    * @returns {Array}
    */
   get visibleMessages() {
+    let messages;
+    const provider = this.framesProvider;
+
+    // Read from provider (single source of truth)
+    if (provider && provider.frames) {
+      const frames = provider.frames.valueOf();
+      const compiled = provider.compiled ? provider.compiled.valueOf() : new Map();
+
+      if (frames && frames.length > 0) {
+        // Filter out UPDATE frames only — COMPACT frames are displayed as summary dividers
+        const displayableFrames = frames.filter((f) =>
+          f.type !== 'update'
+        );
+
+        // Convert frames to message format for rendering
+        if (typeof window.framesToMessages === 'function') {
+          messages = window.framesToMessages(displayableFrames, compiled);
+        } else {
+          messages = displayableFrames.map((f) => this._frameToMessage(f, compiled));
+        }
+      }
+    }
+
+    // Fall back to #messages for backwards compatibility
+    if (!messages || messages.length === 0) {
+      messages = this.#messages;
+    }
+
     return (this.#showHiddenMessages)
-      ? this.#messages
-      : this.#messages.filter((m) => !m.hidden);
+      ? messages
+      : messages.filter((m) => !m.hidden);
+  }
+
+  /**
+   * Convert a single frame to message format.
+   * @param {object} frame
+   * @param {Map} compiled - Compiled payloads map from provider
+   * @returns {object}
+   */
+  _frameToMessage(frame, compiled) {
+    // Compact frames → divider messages with summary context
+    if (frame.type === 'compact') {
+      return {
+        id:        frame.id,
+        type:      'compact',
+        role:      'system',
+        context:   frame.payload?.context || '',
+        frameId:   frame.id,
+        createdAt: frame.timestamp,
+      };
+    }
+
+    // Get payload from compiled map, fall back to frame payload
+    const payload = (compiled instanceof Map && compiled.get(frame.id)) || frame.payload || {};
+
+    return {
+      id:         frame.id,
+      role:       payload.role || ((frame.authorType === 'user') ? 'user' : 'assistant'),
+      content:    payload.content || '',
+      hidden:     payload.hidden || false,
+      type:       frame.type,
+      authorType: frame.authorType,
+      createdAt:  frame.timestamp,
+      frameId:    frame.id,
+    };
   }
 
   /**
@@ -188,14 +275,18 @@ export class HeroChat extends HeroComponent {
       })
     );
 
-    // Setup scroll listener on parent .chat-main
-    let container = this.closest('.chat-main');
-    if (container) {
-      container.addEventListener('scroll', () => this._updateScrollButton());
-    }
+    // Setup scroll listener to continuously track if user is at bottom
+    // This captures the state BEFORE any content changes
+    this._setupScrollTracking();
+
+    // WebSocket events are handled by session-frames-provider (SINGLE SOURCE OF TRUTH)
+    // This component subscribes to provider's DynamicProperties for reactive updates
+
+    // Subscribe to provider's frames AND compiled changes
+    this._setupProviderSubscription();
 
     // Check if session already exists (subscription won't fire for existing value)
-    let existingSession = this.session;
+    const existingSession = this.session;
     if (existingSession) {
       this._loadSession(existingSession);
     } else {
@@ -204,16 +295,136 @@ export class HeroChat extends HeroComponent {
   }
 
   /**
+   * Setup scroll tracking with INTENT-BASED approach.
+   *
+   * The key insight: track USER INTENT, not just position.
+   * - If user scrolls UP → they want to read, STOP auto-scrolling
+   * - If user scrolls DOWN to bottom → they want to follow, RESUME auto-scrolling
+   * - Content growth only triggers scroll when user hasn't scrolled away
+   */
+  _setupScrollTracking() {
+    const scrollHandler = (e) => {
+      const container = this._getScrollContainer();
+      if (!container) return;
+
+      const currentScrollTop = container.scrollTop;
+      const scrolledUp = currentScrollTop < this.#lastScrollTop;
+      const atBottom = this.isNearBottom();
+
+      // User scrolled UP and is not at bottom → they want to read
+      if (scrolledUp && !atBottom) {
+        this.#userScrolledAway = true;
+      }
+
+      // User reached the bottom → they want to follow new content
+      if (atBottom) {
+        this.#userScrolledAway = false;
+      }
+
+      this.#lastScrollTop = currentScrollTop;
+      this._updateScrollButton();
+    };
+
+    // Listen on both potential scroll containers
+    this.addEventListener('scroll', scrollHandler);
+    const chatMain = this.closest('.chat-main');
+    if (chatMain) {
+      chatMain.addEventListener('scroll', scrollHandler);
+      this.#unsubscribers.push(() => chatMain.removeEventListener('scroll', scrollHandler));
+    }
+    this.#unsubscribers.push(() => this.removeEventListener('scroll', scrollHandler));
+
+    // Initialize state
+    this.#userScrolledAway = false;
+    const container = this._getScrollContainer();
+    this.#lastScrollTop = container ? container.scrollTop : 0;
+    this.#lastScrollHeight = container ? container.scrollHeight : 0;
+
+    // Setup ResizeObserver to detect content size changes
+    this._setupResizeObserver();
+  }
+
+  /**
+   * Setup ResizeObserver on the messages container.
+   * When content grows and user hasn't scrolled away, auto-scroll.
+   */
+  _setupResizeObserver() {
+    this.#resizeObserver = new ResizeObserver((entries) => {
+      const container = this._getScrollContainer();
+      if (!container) return;
+
+      const newScrollHeight = container.scrollHeight;
+      const heightGrew = newScrollHeight > this.#lastScrollHeight;
+
+      // Only auto-scroll if:
+      // 1. Content actually grew (not just a reflow)
+      // 2. User hasn't scrolled away to read
+      if (heightGrew && !this.#userScrolledAway) {
+        this._executeScroll();
+      }
+
+      // Update tracked height
+      this.#lastScrollHeight = newScrollHeight;
+    });
+
+    // Observe the shadow root for size changes
+    requestAnimationFrame(() => {
+      const container = this.shadowRoot?.querySelector('.messages-container');
+      if (container) {
+        this.#resizeObserver.observe(container);
+      }
+      this.#resizeObserver.observe(this);
+    });
+  }
+
+  /**
+   * Setup subscription to session-frames-provider.
+   * Subscribes to compiled DynamicProperty only (single source of truth).
+   * Called on mount and re-called if provider becomes available later.
+   */
+  _setupProviderSubscription() {
+    const provider = this.framesProvider;
+    if (!provider) {
+      // Provider not ready yet, try again after a tick
+      requestAnimationFrame(() => this._setupProviderSubscription());
+      return;
+    }
+
+    const handler = () => {
+      // Render on content changes - scroll is handled by _doRender based on
+      // whether content grew AND user was already near bottom
+      this.renderDebounced();
+    };
+
+    // Subscribe to compiled changes ONLY (not frames)
+    // The compiled Map is updated after _recompile() which runs after every frame change
+    // Subscribing to both would cause double-renders
+    if (provider.compiled && typeof provider.compiled.addEventListener === 'function') {
+      provider.compiled.addEventListener('update', handler);
+      this.#unsubscribers.push(() => {
+        provider.compiled.removeEventListener('update', handler);
+      });
+      this.debug('Subscribed to provider compiled updates');
+    }
+  }
+
+  /**
    * Component unmounted.
    */
   unmounted() {
-    for (let unsub of this.#unsubscribers) {
+    for (const unsub of this.#unsubscribers) {
       unsub();
     }
     this.#unsubscribers = [];
 
+    // WebSocket events handled by provider, no cleanup needed here
+
     if (this.#renderDebounceTimer) clearTimeout(this.#renderDebounceTimer);
     if (this.#renderMaxWaitTimer) clearTimeout(this.#renderMaxWaitTimer);
+    if (this.#resizeObserver) {
+      this.#resizeObserver.disconnect();
+      this.#resizeObserver = null;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -221,13 +432,24 @@ export class HeroChat extends HeroComponent {
   // ---------------------------------------------------------------------------
 
   /**
-   * Load session messages.
+   * Load session data.
+   * Frame loading is handled by session-frames-provider.
+   * This just resets local state and triggers render.
    * @param {object} session
    */
-  _loadSession(session) {
+  async _loadSession(session) {
+    // Reset local state (backwards compatibility)
     this.#messages = session.messages || [];
-    this.render();
-    this.scrollToBottom();
+    this.#streamingMessage = null;
+
+    // Provider handles frame loading via GlobalState.currentSession subscription
+    this.renderDebounced();
+
+    // Force scroll to bottom when loading a new session
+    // Multiple delays to catch async frame loading
+    setTimeout(() => this.forceScrollToBottom(), 50);
+    setTimeout(() => this.forceScrollToBottom(), 200);
+    setTimeout(() => this.forceScrollToBottom(), 500);
   }
 
   /**
@@ -249,6 +471,7 @@ export class HeroChat extends HeroComponent {
    */
   setMessages(messages) {
     this.#messages = messages;
+    // Let content growth detection handle scrolling
     this.renderDebounced();
   }
 
@@ -259,7 +482,8 @@ export class HeroChat extends HeroComponent {
   addMessage(message) {
     this.#messages.push(message);
     this.renderDebounced();
-    this.scrollToBottom();
+    // Force scroll when user sends a message
+    setTimeout(() => this.forceScrollToBottom(), 50);
   }
 
   /**
@@ -268,8 +492,8 @@ export class HeroChat extends HeroComponent {
    */
   setStreaming(streaming) {
     this.#streamingMessage = streaming;
+    // Let content growth detection handle scrolling
     this.renderDebounced();
-    this.scrollToBottom();
   }
 
   /**
@@ -280,16 +504,112 @@ export class HeroChat extends HeroComponent {
     this.render();
   }
 
+  /**
+   * Set show hidden messages state explicitly.
+   * @param {boolean} show - Whether to show hidden messages
+   */
+  setShowHiddenMessages(show) {
+    if (this.#showHiddenMessages === show)
+      return;
+
+    this.#showHiddenMessages = show;
+    this.render();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Frame Management (delegates to session-frames-provider)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Set phantom frame for streaming (before message is persisted).
+   * Delegates to provider.
+   * @param {object|null} phantom - Phantom frame data
+   */
+  setPhantomFrame(phantom) {
+    const provider = this.framesProvider;
+    if (provider && typeof provider.setPhantomFrame === 'function') {
+      provider.setPhantomFrame(phantom);
+    }
+    // Let content growth detection handle scrolling during streaming
+    this.renderDebounced();
+  }
+
+  /**
+   * Get the current phantom frame.
+   * Delegates to provider.
+   * @returns {object|null}
+   */
+  getPhantomFrame() {
+    const provider = this.framesProvider;
+    return (provider) ? provider.phantomFrame : null;
+  }
+
+  /**
+   * Finalize phantom frame (mark as complete).
+   * Delegates to provider.
+   */
+  finalizePhantomFrame() {
+    const provider = this.framesProvider;
+    if (provider && typeof provider.finalizePhantomFrame === 'function') {
+      provider.finalizePhantomFrame();
+    }
+    // ResizeObserver will handle scrolling when content changes
+    this.renderDebounced();
+  }
+
+  /**
+   * Get all frames from provider.
+   * @returns {Array}
+   */
+  getFrames() {
+    const provider = this.framesProvider;
+    return (provider && provider.frames) ? provider.frames.valueOf() : [];
+  }
+
+  /**
+   * Get the last known timestamp from provider.
+   * @returns {string|null}
+   */
+  getLastTimestamp() {
+    const provider = this.framesProvider;
+    return (provider) ? provider.getLastTimestamp() : null;
+  }
+
+  /**
+   * Add an optimistic frame (for user messages before WebSocket confirmation).
+   * Delegates to provider.
+   * @param {object} frame
+   */
+  addOptimisticFrame(frame) {
+    const provider = this.framesProvider;
+    if (provider && typeof provider.addOptimisticFrame === 'function') {
+      provider.addOptimisticFrame(frame);
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Scroll Management
   // ---------------------------------------------------------------------------
 
   /**
-   * Get the scrollable container (parent .chat-main).
-   * @returns {HTMLElement|null}
+   * Get the scrollable container.
+   * Returns the element that actually has scrollable overflow.
+   * @returns {HTMLElement}
    */
   _getScrollContainer() {
-    return this.closest('.chat-main');
+    // Check if hero-chat itself has overflow (scrollHeight > clientHeight)
+    if (this.scrollHeight > this.clientHeight) {
+      return this;
+    }
+
+    // Otherwise check parent .chat-main
+    const chatMain = this.closest('.chat-main');
+    if (chatMain && chatMain.scrollHeight > chatMain.clientHeight) {
+      return chatMain;
+    }
+
+    // Default to self
+    return this;
   }
 
   /**
@@ -303,25 +623,36 @@ export class HeroChat extends HeroComponent {
   }
 
   /**
-   * Scroll to bottom if near bottom (auto-follow).
+   * Scroll to bottom if user hasn't scrolled away.
    */
   scrollToBottom() {
-    if (this.isNearBottom()) {
-      this.forceScrollToBottom();
+    if (!this.#userScrolledAway) {
+      this._executeScroll();
     }
   }
 
   /**
-   * Force scroll to bottom.
+   * Force scroll to bottom immediately.
+   * Use for explicit user actions (send message, load session, click scroll button).
    */
   forceScrollToBottom() {
-    requestAnimationFrame(() => {
-      let container = this._getScrollContainer();
-      if (container) {
-        container.scrollTop = container.scrollHeight;
-      }
-      this._updateScrollButton();
-    });
+    // User explicitly wants to go to bottom → resume auto-scrolling
+    this.#userScrolledAway = false;
+    this._executeScroll();
+  }
+
+  /**
+   * Actually perform the scroll operation.
+   */
+  _executeScroll() {
+    const container = this._getScrollContainer();
+    if (container) {
+      container.scrollTop = container.scrollHeight;
+      // Update tracked positions
+      this.#lastScrollTop = container.scrollTop;
+      this.#lastScrollHeight = container.scrollHeight;
+    }
+    this._updateScrollButton();
   }
 
   /**
@@ -360,6 +691,7 @@ export class HeroChat extends HeroComponent {
 
   /**
    * Actual render implementation.
+   * Scroll is handled by ResizeObserver, not timers.
    */
   _doRender() {
     this.#renderPending = false;
@@ -374,13 +706,16 @@ export class HeroChat extends HeroComponent {
     }
 
     this.render();
+
+    // ResizeObserver will handle scrolling when content size changes
   }
 
   /**
    * Render the component.
+   * Uses ID-based reconciliation to preserve elements across renders.
    */
   render() {
-    let session = this.session;
+    const session = this.session;
 
     if (!session) {
       // Render empty state
@@ -393,44 +728,236 @@ export class HeroChat extends HeroComponent {
       return;
     }
 
-    let messagesHtml = this.visibleMessages.map((m) => this._renderMessage(m)).join('');
+    // Ensure styles and container exist
+    this._ensureStructure();
 
-    // Add streaming message if present
-    let streamingHtml = '';
-    if (this.#streamingMessage) {
-      streamingHtml = this._renderStreamingMessage();
+    const container = this.shadowRoot.querySelector('.messages-container');
+    if (!container) return;
+
+    // Get current messages
+    const messages = this.visibleMessages;
+
+    // ID-based reconciliation: preserve existing elements
+    this._reconcileMessages(container, messages);
+
+    // Handle phantom frame (streaming)
+    this._reconcilePhantom(container);
+
+    // Update scroll button visibility after DOM settles
+    requestAnimationFrame(() => {
+      this._updateScrollButton();
+    });
+  }
+
+  /**
+   * Ensure shadow DOM has base structure (styles, container, scroll button).
+   */
+  _ensureStructure() {
+    // Check if structure exists
+    const container = this.shadowRoot.querySelector('.messages-container');
+    if (container) {
+      // Remove any .no-session element left over from empty state
+      const noSession = container.querySelector('.no-session');
+      if (noSession) {
+        noSession.remove();
+      }
+      return;
     }
 
-    // Render to shadow DOM
+    // Create initial structure
     this.shadowRoot.innerHTML = `
       ${this._getStyles()}
-      <div class="messages messages-container">
-        ${messagesHtml}
-        ${streamingHtml}
-      </div>
+      <div class="messages messages-container"></div>
       <button class="scroll-to-bottom" style="display: none">↓</button>
     `;
 
-    // Bind scroll button click
-    let scrollBtn = this.shadowRoot.querySelector('.scroll-to-bottom');
+    // Bind scroll button
+    const scrollBtn = this.shadowRoot.querySelector('.scroll-to-bottom');
     if (scrollBtn) {
       scrollBtn.onclick = () => this.forceScrollToBottom();
     }
 
-    // Manually trigger render on hml-prompt elements (connectedCallback may not fire in shadow DOM)
+    // Ensure ResizeObserver is watching the new container
+    const newContainer = this.shadowRoot.querySelector('.messages-container');
+    if (newContainer && this.#resizeObserver) {
+      this.#resizeObserver.observe(newContainer);
+    }
+  }
+
+  /**
+   * Reconcile messages using ID-based DOM preservation.
+   * Preserves existing elements, only creates new ones as needed.
+   * @param {HTMLElement} container
+   * @param {Array} messages
+   */
+  _reconcileMessages(container, messages) {
+    // Build map of existing elements by frame ID
+    const existing = new Map();
+    container.querySelectorAll('[data-frame-id]').forEach((el) => {
+      existing.set(el.dataset.frameId, el);
+    });
+
+    // Track which IDs we've seen
+    const seenIds = new Set();
+
+    // Process each message in order
+    let insertionPoint = container.firstChild;
+
+    for (const message of messages) {
+      const frameId = message.frameId || message.id;
+      if (!frameId) continue;
+
+      seenIds.add(frameId);
+
+      let element = existing.get(frameId);
+
+      if (element) {
+        // Existing element - update content if needed
+        this._updateMessageElement(element, message);
+
+        // Ensure correct position
+        if (element !== insertionPoint) {
+          container.insertBefore(element, insertionPoint);
+        }
+        insertionPoint = element.nextSibling;
+      } else {
+        // New element - create and insert
+        element = this._createMessageElement(message, frameId);
+        container.insertBefore(element, insertionPoint);
+        insertionPoint = element.nextSibling;
+      }
+    }
+
+    // Remove elements that no longer exist in messages
+    existing.forEach((el, id) => {
+      if (!seenIds.has(id)) {
+        el.remove();
+      }
+    });
+  }
+
+  /**
+   * Create a message element from scratch.
+   * @param {object} message
+   * @param {string} frameId
+   * @returns {HTMLElement}
+   */
+  _createMessageElement(message, frameId) {
+    const html = this._renderMessage(message);
+    const template = document.createElement('template');
+    template.innerHTML = html.trim();
+    const element = template.content.firstChild;
+
+    // Ensure data-frame-id is set
+    if (element && !element.dataset.frameId) {
+      element.dataset.frameId = frameId;
+    }
+
+    // Initialize hml-prompt elements inside
     queueMicrotask(() => {
-      let hmlPrompts = this.shadowRoot.querySelectorAll('hml-prompt');
-      hmlPrompts.forEach((prompt) => {
-        if (typeof prompt.render === 'function' && prompt.shadowRoot) {
-          // Only render if shadow root is empty (not already rendered)
-          if (!prompt.shadowRoot.innerHTML) {
+      if (element) {
+        element.querySelectorAll('hml-prompt').forEach((prompt) => {
+          if (typeof prompt.render === 'function' && prompt.shadowRoot && !prompt.shadowRoot.innerHTML) {
             prompt._renderCount = 0;
             prompt._isRendering = false;
             prompt.render();
           }
+        });
+      }
+    });
+
+    return element;
+  }
+
+  /**
+   * Update an existing message element's content.
+   * Preserves hml-prompt elements with IDs.
+   * @param {HTMLElement} element
+   * @param {object} message
+   */
+  _updateMessageElement(element, message) {
+    const bubble = element.querySelector('.message-bubble');
+    if (!bubble) return;
+
+    const contentDiv = bubble.querySelector('.message-content');
+    if (!contentDiv) return;
+
+    // Preserve hml-prompt elements by ID before update
+    const preservedPrompts = new Map();
+    contentDiv.querySelectorAll('hml-prompt[id]').forEach((p) => {
+      preservedPrompts.set(p.id, p);
+    });
+
+    // Get new content HTML
+    const newContent = this._renderContent(message);
+
+    // Only update if content changed
+    if (contentDiv.innerHTML !== newContent) {
+      // Parse new content
+      const template = document.createElement('template');
+      template.innerHTML = newContent;
+
+      // Restore preserved prompts before inserting
+      template.content.querySelectorAll('hml-prompt[id]').forEach((placeholder) => {
+        const preserved = preservedPrompts.get(placeholder.id);
+        if (preserved) {
+          placeholder.replaceWith(preserved);
         }
       });
-    });
+
+      // Replace content
+      contentDiv.innerHTML = '';
+      contentDiv.appendChild(template.content);
+    }
+  }
+
+  /**
+   * Reconcile phantom frame element.
+   * @param {HTMLElement} container
+   */
+  _reconcilePhantom(container) {
+    const phantom = this.getPhantomFrame();
+    let phantomEl = container.querySelector('#phantom-frame');
+
+    if (phantom) {
+      if (phantomEl) {
+        // Update existing phantom
+        const contentDiv = phantomEl.querySelector('.message-content');
+        if (contentDiv) {
+          const newContent = this._renderMarkup(phantom.payload?.content || '');
+          if (contentDiv.innerHTML !== newContent) {
+            contentDiv.innerHTML = newContent;
+          }
+        }
+        // Update complete class
+        if (phantom.complete) {
+          phantomEl.classList.remove('streaming');
+          phantomEl.classList.add('complete');
+        } else {
+          phantomEl.classList.remove('complete');
+          phantomEl.classList.add('streaming');
+        }
+      } else {
+        // Create phantom element
+        const html = this._renderPhantomFrame(phantom);
+        const template = document.createElement('template');
+        template.innerHTML = html.trim();
+        container.appendChild(template.content.firstChild);
+      }
+    } else if (this.#streamingMessage) {
+      // Legacy streaming message support
+      if (!phantomEl) {
+        const html = this._renderStreamingMessage();
+        const template = document.createElement('template');
+        template.innerHTML = html.trim();
+        container.appendChild(template.content.firstChild);
+      }
+    } else {
+      // Remove phantom if no longer needed
+      if (phantomEl) {
+        phantomEl.remove();
+      }
+    }
   }
 
   /**
@@ -442,7 +969,8 @@ export class HeroChat extends HeroComponent {
       :host {
         display: block;
         flex: 1;
-        overflow-y: auto;
+        /* Let parent .chat-main handle scrolling */
+        overflow-y: visible;
         position: relative;
       }
 
@@ -605,10 +1133,18 @@ export class HeroChat extends HeroComponent {
         overflow-y: auto;
       }
 
+      .typing-indicator {
+        display: none;
+      }
+
       .streaming .typing-indicator {
         display: flex;
         gap: 4px;
         padding-top: 8px;
+      }
+
+      .complete .typing-indicator {
+        display: none;
       }
 
       .typing-indicator span {
@@ -648,6 +1184,163 @@ export class HeroChat extends HeroComponent {
       }
 
       .scroll-to-bottom:hover { transform: scale(1.1); }
+
+      /* REQUEST frame styles */
+      .message-request {
+        align-self: flex-start;
+        max-width: 85%;
+      }
+
+      .request-frame {
+        background: var(--bg-tertiary, #2a2a3e);
+        border: 1px solid var(--border-color, #3d3d5c);
+        border-radius: var(--radius-sm, 8px);
+        padding: 10px 14px;
+      }
+
+      .request-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 600;
+        font-size: 13px;
+        color: var(--text-primary, #e0e0e0);
+      }
+
+      .request-icon {
+        font-size: 16px;
+      }
+
+      .request-label {
+        color: var(--accent, #f472b6);
+      }
+
+      .request-content {
+        margin-top: 8px;
+        font-size: 13px;
+        color: var(--text-secondary, #a0a0b0);
+        font-family: monospace;
+        word-break: break-all;
+      }
+
+      /* RESULT frame styles */
+      .message-result {
+        align-self: flex-start;
+        max-width: 85%;
+        margin-left: 24px;  /* Indent to show hierarchy */
+      }
+
+      .result-frame {
+        background: var(--bg-secondary, #1a1a2e);
+        border: 1px solid var(--border-color, #3d3d5c);
+        border-radius: var(--radius-sm, 8px);
+        padding: 10px 14px;
+      }
+
+      .result-success .result-frame {
+        border-left: 3px solid var(--success, #10b981);
+      }
+
+      .result-error .result-frame {
+        border-left: 3px solid var(--error, #f87171);
+      }
+
+      .result-header {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        font-weight: 500;
+        margin-bottom: 6px;
+      }
+
+      .result-success .result-header {
+        color: var(--success, #10b981);
+      }
+
+      .result-error .result-header {
+        color: var(--error, #f87171);
+      }
+
+      .result-icon {
+        font-size: 14px;
+      }
+
+      .result-content {
+        font-size: 12px;
+        color: var(--text-secondary, #a0a0b0);
+      }
+
+      .result-content pre {
+        margin: 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-family: monospace;
+        background: rgba(0, 0, 0, 0.2);
+        padding: 8px;
+        border-radius: 4px;
+        max-height: 200px;
+        overflow-y: auto;
+      }
+
+      .result-error-text {
+        color: var(--error, #f87171);
+      }
+
+      /* COMPACT frame styles (compaction summary divider) */
+      .message-compact {
+        align-self: stretch;
+        max-width: 100%;
+      }
+
+      .compact-frame {
+        border: 1px dashed var(--border-color, #3d3d5c);
+        border-radius: var(--radius-sm, 8px);
+        overflow: hidden;
+      }
+
+      .compact-details summary {
+        cursor: pointer;
+        list-style: none;
+      }
+
+      .compact-details summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .compact-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 14px;
+        font-size: 12px;
+        color: var(--text-muted, #6b7280);
+      }
+
+      .compact-icon {
+        font-size: 14px;
+      }
+
+      .compact-label {
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .compact-time {
+        margin-left: auto;
+        font-size: 11px;
+      }
+
+      .compact-content {
+        padding: 10px 14px;
+        font-size: 12px;
+        color: var(--text-secondary, #a0a0b0);
+        line-height: 1.5;
+        border-top: 1px dashed var(--border-color, #3d3d5c);
+        max-height: 300px;
+        overflow-y: auto;
+      }
     </style>`;
   }
 
@@ -657,39 +1350,176 @@ export class HeroChat extends HeroComponent {
    * @returns {string}
    */
   _renderMessage(message) {
-    let roleClass   = (message.role === 'user') ? 'message-user' : 'message-assistant';
-    let roleLabel   = (message.role === 'user') ? 'You' : this.agentName;
-    let messageId   = message.id || '';
-    let queuedClass = (message.queued) ? ' message-queued' : '';
-    let hiddenClass = (message.hidden) ? ' message-hidden' : '';
-    let errorClass  = (message.type === 'error') ? ' message-error' : '';
+    // Handle COMPACT frames (compaction summary divider)
+    if (message.type === 'compact') {
+      return this._renderCompactFrame(message);
+    }
+
+    // Handle REQUEST frames (interaction requests like websearch)
+    if (message.type === 'request') {
+      return this._renderRequestFrame(message);
+    }
+
+    // Handle RESULT frames (interaction results)
+    if (message.type === 'result') {
+      return this._renderResultFrame(message);
+    }
+
+    const roleClass   = (message.role === 'user') ? 'message-user' : 'message-assistant';
+    const roleLabel   = (message.role === 'user') ? 'You' : this.agentName;
+    const messageId   = message.id || '';
+    const frameId     = message.frameId || messageId;
+    const queuedClass = (message.queued) ? ' message-queued' : '';
+    const hiddenClass = (message.hidden) ? ' message-hidden' : '';
+    const errorClass  = (message.type === 'error') ? ' message-error' : '';
 
     // Type badge for hidden messages
     let typeBadge = '';
     if (message.hidden && message.type) {
-      let typeLabels = { system: 'System', interaction: 'Interaction', feedback: 'Feedback' };
-      let label = typeLabels[message.type] || message.type;
+      const typeLabels = { system: 'System', interaction: 'Interaction', feedback: 'Feedback' };
+      const label = typeLabels[message.type] || message.type;
       typeBadge = `<span class="type-badge type-${message.type}">${label}</span>`;
     }
 
-    let queuedBadge = (message.queued) ? '<span class="queued-badge">Queued</span>' : '';
+    const queuedBadge = (message.queued) ? '<span class="queued-badge">Queued</span>' : '';
 
     // Render content
-    let contentHtml = this._renderContent(message);
+    const contentHtml = this._renderContent(message);
 
     // Token estimate
-    let tokenEstimate = this._estimateTokens(message);
-    let timestampHtml = this._renderTimestamp(message, tokenEstimate);
+    const tokenEstimate = this._estimateTokens(message);
+    const timestampHtml = this._renderTimestamp(message, tokenEstimate);
 
     return `
       <div class="message ${roleClass}${queuedClass}${hiddenClass}${errorClass}"
            data-message-id="${messageId}"
+           data-frame-id="${frameId}"
            id="${(messageId) ? `message-${messageId}` : ''}">
         <div class="message-header">${roleLabel} ${queuedBadge}${typeBadge}</div>
         <div class="message-bubble">
-          ${contentHtml}
+          <div class="message-content">${contentHtml}</div>
         </div>
         ${timestampHtml}
+      </div>
+    `;
+  }
+
+  /**
+   * Render a REQUEST frame (interaction request like websearch).
+   * @param {object} message
+   * @returns {string}
+   */
+  _renderRequestFrame(message) {
+    let action = message.action || 'action';
+    let data   = message.data || {};
+
+    // Get display label based on action type
+    let actionLabels = {
+      websearch:    'Web Search',
+      read_file:    'Read File',
+      write_file:   'Write File',
+      bash:         'Command',
+      ask_user:     'Question',
+    };
+    let actionLabel = actionLabels[action] || action;
+
+    // Get icon based on action type
+    let actionIcons = {
+      websearch:    '🔍',
+      read_file:    '📄',
+      write_file:   '✏️',
+      bash:         '💻',
+      ask_user:     '❓',
+    };
+    let icon = actionIcons[action] || '⚡';
+
+    // Get display content (query, filename, etc.)
+    let displayContent = data.query || data.url || data.path || data.command || '';
+    if (displayContent.length > 100) {
+      displayContent = displayContent.slice(0, 100) + '...';
+    }
+
+    return `
+      <div class="message message-request" data-message-id="${message.id}" data-frame-id="${message.frameId}">
+        <div class="request-frame">
+          <div class="request-header">
+            <span class="request-icon">${icon}</span>
+            <span class="request-label">${escapeHtml(actionLabel)}</span>
+          </div>
+          ${(displayContent) ? `<div class="request-content">${escapeHtml(displayContent)}</div>` : ''}
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * Render a RESULT frame (interaction result).
+   * @param {object} message
+   * @returns {string}
+   */
+  _renderResultFrame(message) {
+    let result = message.result || {};
+    let status = result.status || 'completed';
+    let data   = result.data || result;
+
+    // Determine if success or failure
+    let isSuccess = (status === 'completed');
+    let statusIcon = (isSuccess) ? '✓' : '✗';
+    let statusClass = (isSuccess) ? 'result-success' : 'result-error';
+
+    // Format the result content
+    let contentHtml = '';
+    if (typeof data === 'string') {
+      contentHtml = escapeHtml(data);
+    } else if (data.content) {
+      // Truncate long content
+      let content = data.content;
+      if (content.length > 500) {
+        content = content.slice(0, 500) + '\n... [truncated]';
+      }
+      contentHtml = escapeHtml(content);
+    } else if (data.error) {
+      contentHtml = `<span class="result-error-text">Error: ${escapeHtml(data.error)}</span>`;
+    } else {
+      // Show summary for complex results
+      contentHtml = escapeHtml(JSON.stringify(data, null, 2).slice(0, 300));
+    }
+
+    return `
+      <div class="message message-result ${statusClass}" data-message-id="${message.id}" data-frame-id="${message.frameId}">
+        <div class="result-frame">
+          <div class="result-header">
+            <span class="result-icon">${statusIcon}</span>
+            <span class="result-status">${(isSuccess) ? 'Completed' : 'Failed'}</span>
+          </div>
+          <div class="result-content"><pre>${contentHtml}</pre></div>
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * Render a COMPACT frame (compaction summary divider).
+   * Shows a collapsible card so the user knows compaction happened.
+   * @param {object} message
+   * @returns {string}
+   */
+  _renderCompactFrame(message) {
+    const context = message.context || '';
+    const timeStr = (message.createdAt) ? formatRelativeDate(message.createdAt) : '';
+
+    return `
+      <div class="message message-compact" data-message-id="${message.id}" data-frame-id="${message.frameId}">
+        <div class="compact-frame">
+          <details class="compact-details">
+            <summary class="compact-header">
+              <span class="compact-icon">&#x1F5DC;&#xFE0F;</span>
+              <span class="compact-label">Conversation compacted</span>
+              ${(timeStr) ? `<span class="compact-time">${timeStr}</span>` : ''}
+            </summary>
+            <div class="compact-content">${escapeHtml(context).replace(/\n/g, '<br>')}</div>
+          </details>
+        </div>
       </div>
     `;
   }
@@ -702,7 +1532,7 @@ export class HeroChat extends HeroComponent {
   _renderContent(message) {
     // Error messages
     if (message.type === 'error') {
-      let errorText = (typeof message.content === 'string') ? message.content : 'An error occurred';
+      const errorText = (typeof message.content === 'string') ? message.content : 'An error occurred';
       return `
         <div class="streaming-error">
           <span class="error-icon">⚠</span>
@@ -711,17 +1541,35 @@ export class HeroChat extends HeroComponent {
       `;
     }
 
-    // String content
-    if (typeof message.content === 'string') {
-      return `<div class="message-content">${this._renderMarkup(message.content)}</div>`;
+    // User messages: ESCAPE HTML (don't parse/sanitize)
+    // User's own messages should display exactly as typed, with < > & etc escaped
+    if (message.role === 'user') {
+      if (typeof message.content === 'string') {
+        return escapeHtml(message.content).replace(/\n/g, '<br>');
+      }
+      if (Array.isArray(message.content)) {
+        let html = '';
+        for (const block of message.content) {
+          if (block.type === 'text') {
+            html += escapeHtml(block.text).replace(/\n/g, '<br>');
+          }
+        }
+        return html;
+      }
+      return '';
     }
 
-    // Array content
+    // Assistant/system messages: parse as HTML/HML markup
+    if (typeof message.content === 'string') {
+      return this._renderMarkup(message.content);
+    }
+
+    // Array content (Claude API format)
     if (Array.isArray(message.content)) {
       let html = '';
-      for (let block of message.content) {
+      for (const block of message.content) {
         if (block.type === 'text') {
-          html += `<div class="message-content">${this._renderMarkup(block.text)}</div>`;
+          html += this._renderMarkup(block.text);
         } else if (block.type === 'tool_use') {
           html += this._renderToolUse(block);
         } else if (block.type === 'tool_result') {
@@ -789,7 +1637,7 @@ export class HeroChat extends HeroComponent {
   }
 
   /**
-   * Render streaming message.
+   * Render streaming message (legacy support).
    * @returns {string}
    */
   _renderStreamingMessage() {
@@ -800,6 +1648,32 @@ export class HeroChat extends HeroComponent {
         <div class="message-header">${this.agentName}</div>
         <div class="message-bubble">
           <div class="message-content">${this._renderMarkup(streaming.content || '')}</div>
+          <div class="typing-indicator">
+            <span></span><span></span><span></span>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * Render phantom frame (in-progress streaming message).
+   * @param {object} phantom - The phantom frame
+   * @returns {string}
+   */
+  _renderPhantomFrame(phantom) {
+    if (!phantom) return '';
+
+    const content = phantom.payload?.content || '';
+    const isComplete = phantom.complete || false;
+    const completeClass = (isComplete) ? 'complete' : 'streaming';
+
+    // Always render typing indicator - CSS hides it when .complete class is present
+    return `
+      <div class="message message-assistant ${completeClass}" id="phantom-frame">
+        <div class="message-header">${this.agentName}</div>
+        <div class="message-bubble">
+          <div class="message-content">${this._renderMarkup(content)}</div>
           <div class="typing-indicator">
             <span></span><span></span><span></span>
           </div>
@@ -836,14 +1710,15 @@ export class HeroChat extends HeroComponent {
    * @returns {string}
    */
   _renderTimestamp(message, tokenEstimate) {
-    if (message.createdAt) {
-      let timeStr  = formatRelativeDate(message.createdAt);
-      let tokenStr = formatTokenCount(tokenEstimate);
-      return `<div class="message-timestamp">${timeStr} · ~${tokenStr} tokens</div>`;
-    } else if (tokenEstimate > 0) {
-      let tokenStr = formatTokenCount(tokenEstimate);
-      return `<div class="message-timestamp">~${tokenStr} tokens</div>`;
+    let timeStr  = (message.createdAt) ? formatRelativeDate(message.createdAt) : 'just now';
+    let tokenStr = formatTokenCount(tokenEstimate);
+
+    if (tokenEstimate > 0) {
+      return `<div class="message-timestamp">${timeStr} / ~${tokenStr} tokens</div>`;
+    } else if (message.createdAt) {
+      return `<div class="message-timestamp">${timeStr}</div>`;
     }
+
     return '';
   }
 }

@@ -10,6 +10,10 @@ hero-status-bar {
   z-index: 800;
 }
 
+hero-status-bar.hidden {
+  display: none;
+}
+
 .status-bar {
   display: flex;
   align-items: center;
