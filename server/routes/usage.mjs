@@ -3,6 +3,7 @@
 import { Router } from 'express';
 import { getDatabase } from '../database.mjs';
 import { requireAuth } from '../middleware/auth.mjs';
+import { loadSessionWithAgent } from '../lib/participants/index.mjs';
 
 const router = Router();
 
@@ -89,13 +90,8 @@ router.get('/session/:sessionId', (req, res) => {
   let db = getDatabase();
   let sessionId = parseInt(req.params.sessionId, 10);
 
-  // Get session and its agent
-  let session = db.prepare(`
-    SELECT s.id, s.agent_id, a.encrypted_api_key, a.user_id
-    FROM sessions s
-    JOIN agents a ON s.agent_id = a.id
-    WHERE s.id = ? AND s.user_id = ?
-  `).get(sessionId, req.user.id);
+  // Get session and its agent (via participants, falls back to legacy agent_id)
+  let session = loadSessionWithAgent(sessionId, req.user.id, db);
 
   if (!session) {
     return res.status(404).json({ error: 'Session not found' });

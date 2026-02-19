@@ -12,6 +12,7 @@ import {
   createAgentMessageFrame,
 } from '../frames/broadcast.mjs';
 import { isCommand, parseCommand, executeCommand } from '../commands/index.mjs';
+import { loadSessionWithAgent } from '../participants/index.mjs';
 
 /**
  * Check if content is a command and execute it if so.
@@ -34,13 +35,8 @@ export async function handleCommandInterception({ content, sessionId, userId, da
   let parsed = parseCommand(content);
   let db     = getDatabase();
 
-  // Get session info for command context
-  let session = db.prepare(`
-    SELECT s.id, s.name, a.id as agent_id
-    FROM sessions s
-    JOIN agents a ON s.agent_id = a.id
-    WHERE s.id = ? AND s.user_id = ?
-  `).get(sessionId, userId);
+  // Get session info for command context (via participants, falls back to legacy agent_id)
+  let session = loadSessionWithAgent(sessionId, userId, db);
 
   if (!session) {
     return { handled: true, error: 'Session not found', status: 404 };

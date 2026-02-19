@@ -455,6 +455,70 @@ function getMigrations() {
         CREATE INDEX idx_token_charges_created_at ON token_charges(created_at);
       `,
     },
+    {
+      name: '018_session_participants',
+      sql:  `
+        -- Multi-party sessions: participants join table
+        -- Sessions can have 0-N agents and 0-N users as participants.
+        -- Each participant has a role: owner, coordinator, or member.
+        --   owner:       The user who created the session
+        --   coordinator: The agent that responds to unaddressed messages
+        --   member:      A participant addressed via @mention
+
+        CREATE TABLE session_participants (
+          id               INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_id       INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+          participant_type TEXT NOT NULL CHECK(participant_type IN ('user', 'agent')),
+          participant_id   INTEGER NOT NULL,
+          role             TEXT DEFAULT 'member' CHECK(role IN ('owner', 'coordinator', 'member')),
+          joined_at        TEXT DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(session_id, participant_type, participant_id)
+        );
+
+        CREATE INDEX idx_session_participants_session ON session_participants(session_id);
+        CREATE INDEX idx_session_participants_type ON session_participants(participant_type);
+        CREATE INDEX idx_session_participants_role ON session_participants(role);
+
+        -- Populate from existing sessions: user_id becomes owner, agent_id becomes coordinator
+        INSERT INTO session_participants (session_id, participant_type, participant_id, role)
+        SELECT id, 'user', user_id, 'owner' FROM sessions;
+
+        INSERT INTO session_participants (session_id, participant_type, participant_id, role)
+        SELECT id, 'agent', agent_id, 'coordinator' FROM sessions WHERE agent_id IS NOT NULL;
+
+        -- Make agent_id nullable: recreate sessions table without NOT NULL on agent_id
+        -- SQLite doesn't support ALTER COLUMN, so we recreate.
+
+        CREATE TABLE sessions_new (
+          id                INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id           INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          agent_id          INTEGER REFERENCES agents(id) ON DELETE SET NULL,
+          name              TEXT NOT NULL,
+          system_prompt     TEXT,
+          archived          INTEGER DEFAULT 0,
+          status            TEXT DEFAULT NULL,
+          parent_session_id INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
+          input_tokens      INTEGER DEFAULT 0,
+          output_tokens     INTEGER DEFAULT 0,
+          created_at        TEXT DEFAULT CURRENT_TIMESTAMP,
+          updated_at        TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+        INSERT INTO sessions_new
+        SELECT id, user_id, agent_id, name, system_prompt, archived, status,
+               parent_session_id, input_tokens, output_tokens, created_at, updated_at
+        FROM sessions;
+
+        DROP TABLE sessions;
+        ALTER TABLE sessions_new RENAME TO sessions;
+
+        CREATE INDEX idx_sessions_user_id ON sessions(user_id);
+        CREATE INDEX idx_sessions_agent_id ON sessions(agent_id);
+        CREATE INDEX idx_sessions_archived ON sessions(user_id, archived);
+        CREATE INDEX idx_sessions_status ON sessions(user_id, status);
+        CREATE INDEX idx_sessions_parent ON sessions(parent_session_id);
+      `,
+    },
   ];
 }
 

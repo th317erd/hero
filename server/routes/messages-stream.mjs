@@ -33,6 +33,7 @@ import {
 } from '../lib/frames/broadcast.mjs';
 import { handleCommandInterception } from '../lib/messaging/command-handler.mjs';
 import { setupSessionAgent } from '../lib/messaging/session-setup.mjs';
+import { loadSessionWithAgent } from '../lib/participants/index.mjs';
 import {
   stripInteractionTags,
   replaceInteractionTagsWithNote,
@@ -143,27 +144,17 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
   // END COMMAND INTERCEPTION - Continue with normal message processing
   // =========================================================================
 
-  // Get session with agent info
-  let session = db.prepare(`
-    SELECT
-      s.id,
-      s.name as session_name,
-      s.system_prompt,
-      a.id as agent_id,
-      a.name as agent_name,
-      a.type as agent_type,
-      a.api_url as agent_api_url,
-      a.encrypted_api_key,
-      a.encrypted_config,
-      a.default_processes
-    FROM sessions s
-    JOIN agents a ON s.agent_id = a.id
-    WHERE s.id = ? AND s.user_id = ?
-  `).get(req.params.sessionId, req.user.id);
+  // Load session with coordinator agent from participants
+  let session = loadSessionWithAgent(parseInt(req.params.sessionId, 10), req.user.id, db);
 
   if (!session) {
     debug('Session not found');
     return res.status(404).json({ error: 'Session not found' });
+  }
+
+  if (!session.agent_id) {
+    debug('Session has no agent');
+    return res.status(400).json({ error: 'Session has no agent configured' });
   }
 
   debug('Session found', { id: session.id, agentType: session.agent_type, agentName: session.agent_name });

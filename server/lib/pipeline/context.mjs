@@ -2,6 +2,7 @@
 
 import { getDatabase } from '../../database.mjs';
 import { decryptWithKey } from '../../encryption.mjs';
+import { loadSessionWithAgent } from '../participants/index.mjs';
 
 /**
  * Build a rich context object for pipeline execution.
@@ -22,26 +23,14 @@ export function buildContext(options) {
 
   let db = getDatabase();
 
-  // Get session with full agent info
-  let session = db.prepare(`
-    SELECT
-      s.id as session_id,
-      s.name as session_name,
-      s.system_prompt,
-      a.id as agent_id,
-      a.name as agent_name,
-      a.type as agent_type,
-      a.api_url as agent_api_url,
-      a.encrypted_api_key,
-      a.encrypted_config,
-      a.default_processes
-    FROM sessions s
-    JOIN agents a ON s.agent_id = a.id
-    WHERE s.id = ? AND s.user_id = ?
-  `).get(sessionId, req.user.id);
+  // Get session with full agent info (via participants, falls back to legacy agent_id)
+  let session = loadSessionWithAgent(sessionId, req.user.id, db);
 
   if (!session)
     throw new Error('Session not found');
+
+  if (!session.agent_id)
+    throw new Error('Session has no agent configured');
 
   // Decrypt agent config
   let agentConfig = {};
@@ -102,7 +91,7 @@ export function buildContext(options) {
 
     // Session State
     session: {
-      id:           session.session_id,
+      id:           session.id,
       name:         session.session_name,
       systemPrompt: session.system_prompt,
     },

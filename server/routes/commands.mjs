@@ -5,6 +5,7 @@ import { getDatabase } from '../database.mjs';
 import { requireAuth } from '../middleware/auth.mjs';
 import { getStartupAbilities } from '../lib/abilities/registry.mjs';
 import { forceCompaction } from '../lib/compaction.mjs';
+import { loadSessionWithAgent } from '../lib/participants/index.mjs';
 
 const router = Router();
 
@@ -121,14 +122,9 @@ router.post('/compact', async (req, res) => {
     });
   }
 
-  // Get agent for the session
+  // Get agent for the session (via participants, falls back to legacy agent_id)
   let db      = getDatabase();
-  let session = db.prepare(`
-    SELECT s.id, a.id as agent_id, a.type, a.encrypted_api_key, a.encrypted_config
-    FROM sessions s
-    JOIN agents a ON s.agent_id = a.id
-    WHERE s.id = ? AND s.user_id = ?
-  `).get(sessionId, req.user.id);
+  let session = loadSessionWithAgent(sessionId, req.user.id, db);
 
   if (!session) {
     return res.status(404).json({
@@ -141,7 +137,7 @@ router.post('/compact', async (req, res) => {
     // Create minimal agent object for compaction
     let agent = {
       id:   session.agent_id,
-      type: session.type,
+      type: session.agent_type,
     };
 
     let result = await forceCompaction(sessionId, req.user.id, agent);

@@ -3,6 +3,13 @@
 import { Router } from 'express';
 import { getDatabase } from '../database.mjs';
 import { requireAuth } from '../middleware/auth.mjs';
+import {
+  loadSessionWithAgent,
+  createSessionWithParticipants,
+  getSessionParticipants,
+  addParticipant,
+  removeParticipant,
+} from '../lib/participants/index.mjs';
 
 const router = Router();
 
@@ -43,16 +50,13 @@ router.get('/', (req, res) => {
       s.name,
       s.system_prompt,
       s.status,
+      s.agent_id,
       s.parent_session_id,
       s.created_at,
       s.updated_at,
-      a.id as agent_id,
-      a.name as agent_name,
-      a.type as agent_type,
       (SELECT COUNT(*) FROM frames WHERE session_id = s.id AND type = 'message') as message_count,
       (SELECT payload FROM frames WHERE session_id = s.id AND type = 'message' ORDER BY timestamp DESC LIMIT 1) as last_message
     FROM sessions s
-    JOIN agents a ON s.agent_id = a.id
     WHERE ${whereClause}
     ORDER BY s.updated_at DESC
   `).all(...params);
@@ -111,6 +115,24 @@ router.get('/', (req, res) => {
         }
       }
 
+      // Load participants for this session
+      let participants = getSessionParticipants(s.id, db);
+      let coordinatorParticipant = participants.find((p) => p.participantType === 'agent' && p.role === 'coordinator');
+      let agentInfo = null;
+
+      if (coordinatorParticipant) {
+        let agent = db.prepare('SELECT id, name, type FROM agents WHERE id = ?').get(coordinatorParticipant.participantId);
+        if (agent)
+          agentInfo = { id: agent.id, name: agent.name, type: agent.type };
+      }
+
+      // Fall back to legacy agent_id if no participants
+      if (!agentInfo && s.agent_id) {
+        let agent = db.prepare('SELECT id, name, type FROM agents WHERE id = ?').get(s.agent_id);
+        if (agent)
+          agentInfo = { id: agent.id, name: agent.name, type: agent.type };
+      }
+
       return {
         id:              s.id,
         name:            s.name,
@@ -120,11 +142,13 @@ router.get('/', (req, res) => {
         depth:           s._depth || 0,
         // Legacy support
         archived:        s.status === 'archived',
-        agent:           {
-          id:   s.agent_id,
-          name: s.agent_name,
-          type: s.agent_type,
-        },
+        agent:           agentInfo || { id: null, name: null, type: null },
+        participants:    participants.map((p) => ({
+          id:              p.id,
+          participantType: p.participantType,
+          participantId:   p.participantId,
+          role:            p.role,
+        })),
         messageCount: s.message_count,
         preview:      preview,
         createdAt:    s.created_at,
@@ -137,20 +161,30 @@ router.get('/', (req, res) => {
 /**
  * POST /api/sessions
  * Create a new session.
+ *
+ * Accepts either:
+ *   - agentId: single agent (backwards compatible)
+ *   - agentIds: array of agents (first is coordinator, rest are members)
  */
 router.post('/', (req, res) => {
-  let { name, agentId, systemPrompt, status, parentSessionId } = req.body;
+  let { name, agentId, agentIds, systemPrompt, status, parentSessionId } = req.body;
 
-  if (!name || !agentId)
-    return res.status(400).json({ error: 'Name and agentId are required' });
+  // Normalize to agentIds array
+  let resolvedAgentIds = agentIds || (agentId ? [agentId] : []);
+
+  if (!name || resolvedAgentIds.length === 0)
+    return res.status(400).json({ error: 'Name and at least one agentId are required' });
 
   let db = getDatabase();
 
-  // Verify agent exists and belongs to user
-  let agent = db.prepare('SELECT id, name, type FROM agents WHERE id = ? AND user_id = ?').get(agentId, req.user.id);
-
-  if (!agent)
-    return res.status(404).json({ error: 'Agent not found' });
+  // Verify all agents exist and belong to user
+  let agents = [];
+  for (let id of resolvedAgentIds) {
+    let agent = db.prepare('SELECT id, name, type FROM agents WHERE id = ? AND user_id = ?').get(id, req.user.id);
+    if (!agent)
+      return res.status(404).json({ error: `Agent ${id} not found` });
+    agents.push(agent);
+  }
 
   // Verify parent session exists if provided
   if (parentSessionId) {
@@ -160,13 +194,19 @@ router.post('/', (req, res) => {
   }
 
   try {
-    let result = db.prepare(`
-      INSERT INTO sessions (user_id, agent_id, name, system_prompt, status, parent_session_id)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(req.user.id, agentId, name, systemPrompt || null, status || null, parentSessionId || null);
+    let session = createSessionWithParticipants({
+      userId:          req.user.id,
+      name,
+      agentIds:        resolvedAgentIds,
+      systemPrompt,
+      status,
+      parentSessionId,
+    }, db);
+
+    let primaryAgent = agents[0];
 
     return res.status(201).json({
-      id:              result.lastInsertRowid,
+      id:              session.id,
       name:            name,
       systemPrompt:    systemPrompt || null,
       status:          status || null,
@@ -174,10 +214,16 @@ router.post('/', (req, res) => {
       depth:           0,
       archived:        status === 'archived',
       agent:           {
-        id:   agent.id,
-        name: agent.name,
-        type: agent.type,
+        id:   primaryAgent.id,
+        name: primaryAgent.name,
+        type: primaryAgent.type,
       },
+      participants:    session.participants.map((p) => ({
+        id:              p.id,
+        participantType: p.participantType,
+        participantId:   p.participantId,
+        role:            p.role,
+      })),
       messageCount: 0,
       createdAt:    new Date().toISOString(),
       updatedAt:    new Date().toISOString(),
@@ -186,9 +232,8 @@ router.post('/', (req, res) => {
     console.error('Create session error:', error);
 
     // Handle duplicate session name
-    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE')
       return res.status(409).json({ error: 'A session with this name already exists' });
-    }
 
     return res.status(500).json({ error: 'Failed to create session' });
   }
@@ -200,24 +245,7 @@ router.post('/', (req, res) => {
  */
 router.get('/:id', (req, res) => {
   let db      = getDatabase();
-  let session = db.prepare(`
-    SELECT
-      s.id,
-      s.name,
-      s.system_prompt,
-      s.status,
-      s.parent_session_id,
-      s.input_tokens,
-      s.output_tokens,
-      s.created_at,
-      s.updated_at,
-      a.id as agent_id,
-      a.name as agent_name,
-      a.type as agent_type
-    FROM sessions s
-    JOIN agents a ON s.agent_id = a.id
-    WHERE s.id = ? AND s.user_id = ?
-  `).get(req.params.id, req.user.id);
+  let session = loadSessionWithAgent(parseInt(req.params.id, 10), req.user.id, db);
 
   if (!session)
     return res.status(404).json({ error: 'Session not found' });
@@ -245,9 +273,12 @@ router.get('/:id', (req, res) => {
     };
   });
 
+  // Load participants
+  let participants = getSessionParticipants(session.id, db);
+
   return res.json({
     id:              session.id,
-    name:            session.name,
+    name:            session.session_name,
     systemPrompt:    session.system_prompt,
     status:          session.status,
     parentSessionId: session.parent_session_id,
@@ -257,6 +288,12 @@ router.get('/:id', (req, res) => {
       name: session.agent_name,
       type: session.agent_type,
     },
+    participants: participants.map((p) => ({
+      id:              p.id,
+      participantType: p.participantType,
+      participantId:   p.participantId,
+      role:            p.role,
+    })),
     cost: {
       inputTokens:  session.input_tokens || 0,
       outputTokens: session.output_tokens || 0,
@@ -394,6 +431,64 @@ router.put('/:id/status', (req, res) => {
   `).run(status || null, req.params.id, req.user.id);
 
   return res.json({ success: true, status: status || null });
+});
+
+/**
+ * POST /api/sessions/:id/participants
+ * Add a participant to a session.
+ */
+router.post('/:id/participants', (req, res) => {
+  let { participantType, participantId, role } = req.body;
+
+  if (!participantType || !participantId)
+    return res.status(400).json({ error: 'participantType and participantId are required' });
+
+  let db      = getDatabase();
+  let session = db.prepare('SELECT id FROM sessions WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+
+  if (!session)
+    return res.status(404).json({ error: 'Session not found' });
+
+  try {
+    let participant = addParticipant(
+      parseInt(req.params.id, 10),
+      participantType,
+      participantId,
+      role || 'member',
+      db
+    );
+
+    return res.status(201).json({ participant });
+  } catch (error) {
+    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE')
+      return res.status(409).json({ error: 'Participant already exists in this session' });
+
+    return res.status(500).json({ error: 'Failed to add participant' });
+  }
+});
+
+/**
+ * DELETE /api/sessions/:id/participants/:participantType/:participantId
+ * Remove a participant from a session.
+ */
+router.delete('/:id/participants/:participantType/:participantId', (req, res) => {
+  let db      = getDatabase();
+  let session = db.prepare('SELECT id FROM sessions WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+
+  if (!session)
+    return res.status(404).json({ error: 'Session not found' });
+
+  let removed = removeParticipant(
+    parseInt(req.params.id, 10),
+    req.params.participantType,
+    parseInt(req.params.participantId, 10),
+    db
+  );
+
+  if (!removed)
+    return res.status(404).json({ error: 'Participant not found' });
+
+  return res.json({ success: true });
 });
 
 export default router;

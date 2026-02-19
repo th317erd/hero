@@ -22,6 +22,7 @@ import {
 } from '../lib/frames/broadcast.mjs';
 import { handleCommandInterception } from '../lib/messaging/command-handler.mjs';
 import { setupSessionAgent } from '../lib/messaging/session-setup.mjs';
+import { loadSessionWithAgent } from '../lib/participants/index.mjs';
 
 const router = Router();
 
@@ -140,24 +141,14 @@ router.post('/:sessionId/messages', async (req, res) => {
   let db = getDatabase();
   let sessionId = parseInt(req.params.sessionId, 10);
 
-  // Get session with agent info
-  let session = db.prepare(`
-    SELECT
-      s.id,
-      s.system_prompt,
-      a.id as agent_id,
-      a.type as agent_type,
-      a.api_url as agent_api_url,
-      a.encrypted_api_key,
-      a.encrypted_config,
-      a.default_processes
-    FROM sessions s
-    JOIN agents a ON s.agent_id = a.id
-    WHERE s.id = ? AND s.user_id = ?
-  `).get(sessionId, req.user.id);
+  // Load session with coordinator agent from participants
+  let session = loadSessionWithAgent(sessionId, req.user.id, db);
 
   if (!session)
     return res.status(404).json({ error: 'Session not found' });
+
+  if (!session.agent_id)
+    return res.status(400).json({ error: 'Session has no agent configured' });
 
   try {
     let dataKey = getDataKey(req);

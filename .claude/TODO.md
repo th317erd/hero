@@ -1,56 +1,105 @@
-# Hero Project Todo
+# Hero V1 Implementation
 
-## COMPLETED: Agent Reflection Separation (2026-02-18)
+## Phase 0: Complete Frame Migration
+> Status: VERIFYING — assessing completion state
 
-- [x] Update: `server/lib/processes/__onstart_.md` — instruct agent to use `<hml-thinking title="Reflection">` for ALL internal reasoning
-- [x] Fix: `markup.js` — change `<details>` to collapsed by default (remove `open` attribute)
-- [x] Fix: `messages.mjs` — extract text from Claude API content block arrays (pre-existing bug)
-- [x] Verify: E2E test with real agent — reflection wraps in collapsible section, collapsed by default
+- [ ] Audit legacy `new_message`/`message_append` emissions — confirm dead or kill them
+- [ ] Lock in compiled frame payload shapes as formal contracts (type definitions)
+- [ ] Write tests verifying no legacy event paths remain
+- [ ] Verify interaction frames (request/result) work end-to-end in streaming route
 
-### Future (NOT now)
-- Lazy-load pre-compact messages on scroll-up
-- Extended thinking API integration
+## Phase 1: Multi-party Sessions
+> Status: PENDING — blocked by Phase 0
+> Risk: HIGH — DB schema change cascades through every route
 
----
+- [ ] Create `session_participants` table migration
+- [ ] Populate from existing `agent_id` + `user_id` data
+- [ ] Make `agent_id` nullable on sessions (backwards compat)
+- [ ] Create participant CRUD helpers (add, remove, list, update role)
+- [ ] Rewrite `sessions.mjs` routes to use participants
+- [ ] Rewrite `messages-stream.mjs` to load agent from participants
+- [ ] Rewrite `messages.mjs` to load agent from participants
+- [ ] Rewrite `pipeline/context.mjs` to read from participants
+- [ ] Rewrite `session-setup.mjs` to load from participants
+- [ ] Update WebSocket broadcast to target all session participants
+- [ ] Update session creation modal for multi-agent selection
+- [ ] Add participant list sidebar in chat view
+- [ ] Add `@mention` autocomplete from participant list
+- [ ] Write unit tests for participant CRUD
+- [ ] Write integration tests for multi-participant sessions
+- [ ] Write E2E tests
 
-## COMPLETED: Compact Frame Display + /compact Command Fix (2026-02-18)
+## Phase 2: Permissions System
+> Status: PENDING — blocked by Phase 1
+> Risk: MEDIUM-HIGH — security-critical
 
-- [x] Write tests: compaction snapshot population (`spec/lib/compaction-spec.mjs`) — 12 tests
-- [x] Implement: `session-frames-provider.js` — include compact frames in getVisibleFrames
-- [x] Implement: `hero-chat.js` — add `_renderCompactFrame()` for summary card rendering
-- [x] Implement: `hero-chat.js` — CSS for compact summary card
-- [x] Implement: `compaction.mjs` — populate snapshot with compiled message payloads
-- [x] Implement: `api.js` — framesToMessages marks compact frames visible with context
-- [x] Fix: `/compact` command — `agent.sendMessage is not a function`
-  - Thread `dataKey` from auth middleware through command-handler to command context
-  - Use `setupSessionAgent()` to create real agent instance with API credentials
-  - Files: `commands/index.mjs`, `command-handler.mjs`, `messages-stream.mjs`, `messages.mjs`
-- [x] Verify: all 1178 tests pass
-- [x] Verify: E2E test — compact frame renders as collapsible summary card in browser
-- [x] Verify: E2E test — `/compact` command creates compact frame with AI-generated summary
+- [ ] Create `permission_rules` table migration
+- [ ] Build permission engine (`server/lib/permissions/`)
+- [ ] Implement `evaluate(subject, resource, context)` → allow/deny/prompt
+- [ ] Implement specificity-based resolution (most specific wins)
+- [ ] Wire into BEFORE_COMMAND/BEFORE_TOOL hooks
+- [ ] Integrate with existing `abilities/approval.mjs`
+- [ ] Build permission prompt UX (`<hml-prompt>`)
+- [ ] Implement meta-permissions (who can modify rules)
+- [ ] Structured command arguments for all commands
+- [ ] Write exhaustive unit tests (100% branch coverage target)
+- [ ] Write integration tests
+- [ ] Write property-based tests for deterministic resolution
 
-## COMPLETED: Scroll Fix During Streaming (2026-02-18)
+## Phase 3: Agent Roles & Coordination
+> Status: PENDING — blocked by Phase 1 + 2
 
-- [x] Root cause: global `scrollToBottom()` called `heroChat.forceScrollToBottom()` (resets intent)
-- [x] Fix: global `scrollToBottom()` now calls `heroChat.scrollToBottom()` (respects intent)
-- [x] Fix: global `forceScrollToBottom()` now properly calls `heroChat.forceScrollToBottom()`
-- [x] File: `public/js/approvals.js` lines 358-372
-- [x] All 1166 tests pass
+- [ ] Implement coordinator/member roles on session_participants
+- [ ] Build inter-agent messaging (async, via frames)
+- [ ] Add command interaction type to detector
+- [ ] Implement recursion depth enforcement (max 10 exchanges)
+- [ ] Build coordinator context vs member context
+- [ ] Tests for role assignment, routing, loop detection
 
-## COMPLETED: hml-prompt Persistence + Message Display Fix (2026-02-18)
+## Phase 4: Commands + Plugin Hardening
+> Status: PENDING — blocked by Phase 2
 
-- [x] Fix `fromCompact` parameter check in `server/routes/frames.mjs` (truthy, not `=== 'true'`)
-- [x] Fix GlobalState → window.state reverse-sync in `public/js/components/index.js`
-- [x] Fix race condition in `session-frames-provider.js` `_loadSession()`
-- [x] Auto-assign IDs to hml-prompt tags in `server/lib/frames/broadcast.mjs`
-- [x] Question-based fallback matching in `server/lib/interactions/functions/prompt-update.mjs`
-- [x] All 1166 tests pass, E2E verified
+- [ ] New commands: /participants, /invite, /kick, /history, /export
+- [ ] Plugin hot-reload (fs.watch + unload/load)
+- [ ] Plugin dependency declaration and resolution
+- [ ] npm package plugin support
+- [ ] Internal plugins directory (`server/plugins/`)
+- [ ] Formalize plugin API shape
+- [ ] Tests for all
 
-## COMPLETED: Previous Work
+## Phase 5: HML Forms + Infinite Scroll
+> Status: PENDING — can start alongside Phase 3/4
 
-(See git history for full details)
-- State Consolidation + Server Extraction (2026-02-17)
-- Codebase Hardening & Cleanup (2026-02-17)
-- Server-Side Command Engine (2026-02-17)
-- Deterministic Frame-Based UI System (2026-02-17)
-- Markdown → HTML Migration (2026-02-16)
+- [ ] Group prompts per message with Submit/Ignore
+- [ ] Batch submission for multiple prompts
+- [ ] Paginated frames API (`GET /frames?before=<ts>&limit=50`)
+- [ ] Client infinite scroll on scroll-to-top
+- [ ] Cross-session search endpoint
+- [ ] Tests
+
+## Phase 6: Auth Enhancement + User Settings
+> Status: PENDING — blocked by Phase 2
+
+- [ ] Magic link token table + endpoints (stubbed email)
+- [ ] JWT API keys table + endpoints
+- [ ] Auth middleware: accept Bearer API keys
+- [ ] User settings UI component (profile, account, API keys, permissions, billing)
+- [ ] Tests
+
+## Phase 7: Server-Authoritative Hardening
+> Status: PENDING — blocked by Phases 0-3
+
+- [ ] Audit all approval response paths
+- [ ] Frame creation server-only enforcement
+- [ ] sender_id enforcement in bus.mjs
+- [ ] Approval frame command hash + replay prevention
+- [ ] Chained command permissions UX
+- [ ] Security tests
+
+## Phase 8: Polish & Future Features
+> Status: PENDING — independent
+
+- [ ] File uploads (drag-and-drop)
+- [ ] Agent avatars
+- [ ] Rich content extension points
+- [ ] Message visibility / screenshots (plugin)

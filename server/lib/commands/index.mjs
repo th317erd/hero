@@ -15,6 +15,7 @@ import {
   createSystemMessageFrame,
   createAgentMessageFrame,
 } from '../frames/broadcast.mjs';
+import { loadSessionWithAgent } from '../participants/index.mjs';
 
 // ============================================================================
 // Command Pattern Matching
@@ -265,27 +266,19 @@ registerCommand('compact', 'Compact conversation history into a summary', async 
   let db = context.db || getDatabase();
 
   // Get session with full agent info (needed to instantiate agent with API key)
-  let session = db.prepare(`
-    SELECT
-      s.id,
-      s.name as session_name,
-      s.system_prompt,
-      a.id as agent_id,
-      a.name as agent_name,
-      a.type as agent_type,
-      a.api_url as agent_api_url,
-      a.encrypted_api_key,
-      a.encrypted_config,
-      a.default_processes
-    FROM sessions s
-    JOIN agents a ON s.agent_id = a.id
-    WHERE s.id = ? AND s.user_id = ?
-  `).get(context.sessionId, context.userId);
+  let session = loadSessionWithAgent(context.sessionId, context.userId, db);
 
   if (!session) {
     return {
       success: false,
       error:   'Session not found.',
+    };
+  }
+
+  if (!session.agent_id) {
+    return {
+      success: false,
+      error:   'Session has no agent configured.',
     };
   }
 
