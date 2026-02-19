@@ -120,3 +120,34 @@ select {
   border-top: 1px solid var(--border-color);
   margin: 6px 0;
 }
+
+/* Label hints (inline de-emphasized text) */
+.label-hint {
+  font-weight: normal;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Agent checkbox list (for multi-agent session creation) */
+.agent-checkboxes {
+  max-height: 120px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 6px;
+  background: var(--bg-primary);
+}
+
+.agent-checkbox {
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.agent-checkbox:hover {
+  background: var(--bg-tertiary);
+}
+
+.agent-checkbox .agent-type {
+  font-size: 11px;
+  color: var(--text-muted);
+}

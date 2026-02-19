@@ -65,7 +65,15 @@ const API = {
     },
 
     get:     (id) => api('GET', `/sessions/${id}`),
-    create:  (name, agentId, systemPrompt) => api('POST', '/sessions', { name, agentId, systemPrompt }),
+    create:  (name, agentId, systemPrompt) => {
+      // Support both single agentId and agentIds array
+      let body = { name, systemPrompt };
+      if (Array.isArray(agentId))
+        body.agentIds = agentId;
+      else
+        body.agentId = agentId;
+      return api('POST', '/sessions', body);
+    },
     update:  (id, updates) => api('PUT', `/sessions/${id}`, updates),
     delete:  (id) => api('DELETE', `/sessions/${id}`),
     archive: (id) => api('POST', `/sessions/${id}/archive`),
@@ -224,7 +232,13 @@ async function fetchSession(id) {
 }
 
 async function createSession(name, agentId, systemPrompt) {
-  return await api('POST', '/sessions', { name, agentId, systemPrompt });
+  // Support both single agentId and agentIds array
+  let body = { name, systemPrompt };
+  if (Array.isArray(agentId))
+    body.agentIds = agentId;
+  else
+    body.agentId = agentId;
+  return await api('POST', '/sessions', body);
 }
 
 async function sendMessage(sessionId, content) {
