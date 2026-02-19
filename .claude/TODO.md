@@ -123,13 +123,39 @@
 - [x] Tests (12 pagination + 17 search + 13 route = 42 new tests)
 
 ## Phase 6: Auth Enhancement + User Settings
-> Status: PENDING — blocked by Phase 2
+> Status: **CORE COMPLETE** — UI pending
 
-- [ ] Magic link token table + endpoints (stubbed email)
-- [ ] JWT API keys table + endpoints
-- [ ] Auth middleware: accept Bearer API keys
-- [ ] User settings UI component (profile, account, API keys, permissions, billing)
-- [ ] Tests
+### DB Migrations (020) — DONE
+- [x] `magic_link_tokens` table (token, user_id, email, expires_at, used_at)
+- [x] `api_keys` table (key_hash, key_prefix, user_id, name, scopes, expires_at, last_used_at)
+- [x] Add `email` and `display_name` columns to `users` table
+
+### Magic Link Auth — DONE
+- [x] `POST /api/users/auth/magic-link/request` — generate token, call `sendEmail()` stub
+- [x] `GET /api/users/auth/magic-link/verify?token=<token>` — validate, issue JWT (limited session)
+- [x] Tokens single-use, 15-minute expiry
+- [x] `sendEmail()` stub logs to console
+
+### API Keys — DONE
+- [x] `POST /api/users/me/api-keys` — create key, return plaintext once
+- [x] `GET /api/users/me/api-keys` — list keys (no plaintext, show last_used_at)
+- [x] `DELETE /api/users/me/api-keys/:id` — revoke key
+- [x] Auth middleware extended: accepts `Authorization: Bearer <api-key>` header
+
+### User Profile API — DONE
+- [x] `GET /api/users/me/profile` — full profile (display_name, email, created_at, usage stats)
+- [x] `PUT /api/users/me/profile` — update display_name, email (duplicate email check)
+- [x] `PUT /api/users/me/password` — change password (re-issues JWT)
+
+### Tests — DONE
+- [x] 22 magic link unit tests (generation, validation, expiry, replay, cleanup, email stub)
+- [x] 29 API key unit tests (creation, hash storage, listing, revocation, validation, expiry, scopes)
+- [x] 12 user route tests (profile CRUD, usage stats, API keys, magic links, password change)
+- [x] All 1595 tests passing
+
+### Pending (deferred)
+- [ ] User settings UI component (hero-settings page)
+- [ ] API key scope enforcement in middleware
 
 ## Phase 7: Server-Authoritative Hardening
 > Status: PENDING — blocked by Phases 0-3

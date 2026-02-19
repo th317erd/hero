@@ -16,6 +16,7 @@ import helpRoutes from './help.mjs';
 import usageRoutes from './usage.mjs';
 import permissionsRoutes from './permissions.mjs';
 import searchRoutes from './search.mjs';
+import usersRoutes from './users.mjs';
 
 const router = Router();
 
@@ -35,6 +36,7 @@ router.use('/help', helpRoutes);
 router.use('/usage', usageRoutes);
 router.use('/permissions', permissionsRoutes);
 router.use('/search', searchRoutes);
+router.use('/users', usersRoutes);
 
 // Health check
 router.get('/health', (req, res) => {

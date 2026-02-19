@@ -1,45 +1,91 @@
 'use strict';
 
-import { verifyToken } from '../auth.mjs';
+import { verifyToken, getUserById } from '../auth.mjs';
+import { validateApiKey } from '../lib/auth/api-keys.mjs';
 import config from '../config.mjs';
 
 /**
+ * Try to authenticate via API key from Authorization header.
+ *
+ * @param {object} req - Express request
+ * @returns {{id: number, username: string, secret: null, authMethod: string} | null}
+ */
+function authenticateApiKey(req) {
+  let authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer '))
+    return null;
+
+  let key    = authHeader.substring(7);
+  let result = validateApiKey(key);
+  if (!result)
+    return null;
+
+  let user = getUserById(result.userId);
+  if (!user)
+    return null;
+
+  return {
+    id:         user.id,
+    username:   user.username,
+    secret:     null, // API key auth has no decrypted secret
+    authMethod: 'api-key',
+    apiKey:     { name: result.name, scopes: result.scopes },
+  };
+}
+
+/**
+ * Try to authenticate via JWT cookie.
+ *
+ * @param {object} req - Express request
+ * @param {object} res - Express response
+ * @returns {{id: number, username: string, secret: object, authMethod: string} | null}
+ */
+function authenticateJwt(req, res) {
+  let token = req.cookies?.token;
+  if (!token)
+    return null;
+
+  let decoded = verifyToken(token);
+  if (!decoded) {
+    res.clearCookie('token', { path: config.basePath });
+    return null;
+  }
+
+  return {
+    id:         decoded.sub,
+    username:   decoded.username,
+    secret:     decoded.secret,
+    authMethod: 'jwt',
+  };
+}
+
+/**
  * Middleware to require authentication.
- * Extracts JWT from cookie and attaches user to request.
+ * Checks API key (Authorization: Bearer) first, then JWT cookie.
  *
  * For API routes: returns 401 JSON response if not authenticated.
  * For page routes: redirects to login page.
  */
 export function requireAuth(req, res, next) {
-  let token = req.cookies?.token;
-
-  if (!token) {
-    if (req.path.startsWith('/api/'))
-      return res.status(401).json({ error: 'Authentication required' });
-
-    return res.redirect('/login');
+  // Try API key first
+  let apiKeyUser = authenticateApiKey(req);
+  if (apiKeyUser) {
+    req.user = apiKeyUser;
+    return next();
   }
 
-  let decoded = verifyToken(token);
-
-  if (!decoded) {
-    // Clear invalid token
-    res.clearCookie('token', { path: config.basePath });
-
-    if (req.path.startsWith('/api/'))
-      return res.status(401).json({ error: 'Invalid or expired token' });
-
-    return res.redirect('/login');
+  // Try JWT cookie
+  let jwtUser = authenticateJwt(req, res);
+  if (jwtUser) {
+    req.user = jwtUser;
+    return next();
   }
 
-  // Attach user info to request
-  req.user = {
-    id:       decoded.sub,
-    username: decoded.username,
-    secret:   decoded.secret,
-  };
+  // Not authenticated
+  if (req.path.startsWith('/api/'))
+    return res.status(401).json({ error: 'Authentication required' });
 
-  next();
+  return res.redirect('/login');
 }
 
 /**
@@ -47,16 +93,21 @@ export function requireAuth(req, res, next) {
  * If authenticated, attaches user to request. Otherwise, continues.
  */
 export function optionalAuth(req, res, next) {
-  let token = req.cookies?.token;
+  let apiKeyUser = authenticateApiKey(req);
+  if (apiKeyUser) {
+    req.user = apiKeyUser;
+    return next();
+  }
 
+  let token = req.cookies?.token;
   if (token) {
     let decoded = verifyToken(token);
-
     if (decoded) {
       req.user = {
-        id:       decoded.sub,
-        username: decoded.username,
-        secret:   decoded.secret,
+        id:         decoded.sub,
+        username:   decoded.username,
+        secret:     decoded.secret,
+        authMethod: 'jwt',
       };
     }
   }

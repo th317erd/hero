@@ -253,14 +253,56 @@ All modal components migrated to split HTML/JS pattern:
 - `spec/lib/frames/search-spec.mjs` — 17 tests for search + count
 - `spec/routes/search-spec.mjs` — 13 tests for route-level search + pagination
 
+### Phase 6 — Auth Enhancement + User Settings (2026-02-18)
+
+**DB Migration 020:**
+- `magic_link_tokens` table (token, user_id, email, expires_at, used_at)
+- `api_keys` table (key_hash, key_prefix, user_id, name, scopes, expires_at, last_used_at)
+- Added `email` and `display_name` columns to `users` table
+
+**Magic Links:** `server/lib/auth/magic-links.mjs`
+- `generateMagicLink(email, db)` — creates token, links to user by email, 15-min expiry
+- `verifyMagicLink(token, db)` — single-use verification, marks as used
+- `cleanExpiredTokens(db)` — removes expired/used tokens
+- `sendEmail(to, subject, body)` — stub (logs to console)
+- Limited JWT session (no decrypted secret) — can't decrypt agent API keys
+
+**API Keys:** `server/lib/auth/api-keys.mjs`
+- `createApiKey(userId, name, options, db)` — returns plaintext `hero_XXXX...` once, stores SHA-256 hash
+- `listApiKeys(userId, db)` — returns prefix + metadata, never plaintext
+- `revokeApiKey(userId, keyId, db)` — ownership-enforced deletion
+- `validateApiKey(key, db)` — hash lookup, expiry check, updates last_used_at
+
+**Auth Middleware:** `server/middleware/auth.mjs`
+- Extended to accept `Authorization: Bearer <api-key>` header
+- API key auth checked BEFORE JWT cookie
+- `authenticateApiKey(req)` → helper extracting Bearer token
+- API key auth sets `authMethod: 'api-key'`, `secret: null`
+
+**Routes:** `server/routes/users.mjs`
+- `GET /api/users/me/profile` — profile + usage stats (via agents join on token_charges)
+- `PUT /api/users/me/profile` — update displayName, email (duplicate check, email normalization)
+- `PUT /api/users/me/password` — change password, re-issues JWT
+- `GET /api/users/me/api-keys` — list keys
+- `POST /api/users/me/api-keys` — create key (201)
+- `DELETE /api/users/me/api-keys/:id` — revoke key
+- `POST /api/users/auth/magic-link/request` — generate magic link
+- `GET /api/users/auth/magic-link/verify` — verify token, issue session
+
+**Tests Added:**
+- `spec/lib/auth/magic-links-spec.mjs` — 22 tests
+- `spec/lib/auth/api-keys-spec.mjs` — 29 tests
+- `spec/routes/users-spec.mjs` — 12 tests
+
 ### Test Suite
 - Runner: `find spec -name '*-spec.mjs' | xargs node --test --test-force-exit`
-- Current: **1424 tests, 0 failures**
+- Current: **1595 tests, 0 failures**
 
 ### Pending
 - Phase 3 advanced: Inter-agent streaming, multi-coordinator discussion, @mention routing
 - Phase 4 remaining: npm package plugin support, fs.watch auto-start in server
-- Phase 6-8: Auth enhancement, server hardening, polish
+- Phase 6 remaining: User settings UI, API key scope enforcement
+- Phase 7-8: Server hardening, polish
 
 ---
 

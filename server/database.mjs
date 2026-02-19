@@ -557,6 +557,45 @@ function getMigrations() {
         CREATE INDEX idx_permission_rules_resource ON permission_rules(resource_type, resource_name);
       `,
     },
+
+    {
+      name: '020_auth_enhancement',
+      sql:  `
+        -- User profile fields
+        ALTER TABLE users ADD COLUMN email TEXT;
+        ALTER TABLE users ADD COLUMN display_name TEXT;
+
+        -- Magic link tokens for passwordless auth
+        CREATE TABLE magic_link_tokens (
+          id         INTEGER PRIMARY KEY AUTOINCREMENT,
+          token      TEXT UNIQUE NOT NULL,
+          user_id    INTEGER REFERENCES users(id) ON DELETE CASCADE,
+          email      TEXT NOT NULL,
+          expires_at TEXT NOT NULL,
+          used_at    TEXT,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX idx_magic_link_tokens_token ON magic_link_tokens(token);
+        CREATE INDEX idx_magic_link_tokens_email ON magic_link_tokens(email);
+
+        -- API keys for programmatic access
+        CREATE TABLE api_keys (
+          id           INTEGER PRIMARY KEY AUTOINCREMENT,
+          key_hash     TEXT UNIQUE NOT NULL,
+          key_prefix   TEXT NOT NULL,
+          user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          name         TEXT NOT NULL,
+          scopes       TEXT DEFAULT '[]',
+          expires_at   TEXT,
+          last_used_at TEXT,
+          created_at   TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX idx_api_keys_hash ON api_keys(key_hash);
+        CREATE INDEX idx_api_keys_user ON api_keys(user_id);
+      `,
+    },
   ];
 }
 
