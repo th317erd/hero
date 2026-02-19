@@ -2,6 +2,7 @@
 
 import { getDatabase } from '../../database.mjs';
 import { decryptWithKey } from '../../encryption.mjs';
+import { loadSessionWithAgent, getSessionParticipants } from '../participants/index.mjs';
 
 /**
  * Build a rich context object for pipeline execution.
@@ -22,37 +23,35 @@ export function buildContext(options) {
 
   let db = getDatabase();
 
-  // Get session with full agent info
-  let session = db.prepare(`
-    SELECT
-      s.id as session_id,
-      s.name as session_name,
-      s.system_prompt,
-      a.id as agent_id,
-      a.name as agent_name,
-      a.type as agent_type,
-      a.api_url as agent_api_url,
-      a.encrypted_api_key,
-      a.encrypted_config,
-      a.default_processes
-    FROM sessions s
-    JOIN agents a ON s.agent_id = a.id
-    WHERE s.id = ? AND s.user_id = ?
-  `).get(sessionId, req.user.id);
+  // Get session with full agent info (via participants, falls back to legacy agent_id)
+  let session = loadSessionWithAgent(sessionId, req.user.id, db);
 
   if (!session)
     throw new Error('Session not found');
+
+  if (!session.agent_id)
+    throw new Error('Session has no agent configured');
 
   // Decrypt agent config
   let agentConfig = {};
 
   if (session.encrypted_config) {
-    let decrypted = decryptWithKey(session.encrypted_config, dataKey);
-    agentConfig   = JSON.parse(decrypted);
+    try {
+      let decrypted = decryptWithKey(session.encrypted_config, dataKey);
+      agentConfig   = JSON.parse(decrypted);
+    } catch (error) {
+      console.error(`Failed to decrypt/parse agent config for session ${sessionId}:`, error.message);
+      agentConfig = {};
+    }
   }
 
   // Parse default processes
-  let defaultProcesses = JSON.parse(session.default_processes || '[]');
+  let defaultProcesses = [];
+  try {
+    defaultProcesses = JSON.parse(session.default_processes || '[]');
+  } catch (error) {
+    console.error(`Failed to parse default_processes for session ${sessionId}:`, error.message);
+  }
 
   // Build model info from agent config
   let model = {
@@ -69,6 +68,28 @@ export function buildContext(options) {
 
   if (agentConfig.topK !== undefined)
     model.topK = agentConfig.topK;
+
+  // Load session participants for coordination awareness
+  let participants = getSessionParticipants(parseInt(sessionId, 10), db);
+
+  // Enrich agent participants with names from the agents table
+  let enrichedParticipants = participants.map((participant) => {
+    let enriched = { ...participant };
+
+    if (participant.participantType === 'agent') {
+      let agentRow = db.prepare('SELECT name, type FROM agents WHERE id = ?').get(participant.participantId);
+      if (agentRow) {
+        enriched.name = agentRow.name;
+        enriched.agentType = agentRow.type;
+      }
+    } else if (participant.participantType === 'user') {
+      let userRow = db.prepare('SELECT username FROM users WHERE id = ?').get(participant.participantId);
+      if (userRow)
+        enriched.name = userRow.username;
+    }
+
+    return enriched;
+  });
 
   return {
     // User & Auth
@@ -92,10 +113,16 @@ export function buildContext(options) {
 
     // Session State
     session: {
-      id:           session.session_id,
+      id:           session.id,
       name:         session.session_name,
       systemPrompt: session.system_prompt,
     },
+
+    // Session Participants (for coordination)
+    participants: enrichedParticipants,
+
+    // Delegation depth tracking (for recursion prevention)
+    delegationDepth: 0,
 
     // Abort Signal
     signal: signal || null,

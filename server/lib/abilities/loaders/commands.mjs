@@ -362,7 +362,7 @@ async function executeSessionCommand(params, context) {
       let sessions = db.prepare(`
         SELECT s.id, s.name, s.status, a.name as agent_name
         FROM sessions s
-        JOIN agents a ON s.agent_id = a.id
+        LEFT JOIN agents a ON s.agent_id = a.id
         WHERE s.user_id = ? AND (s.status IS NULL OR s.status != 'archived')
         ORDER BY s.updated_at DESC
         LIMIT 20

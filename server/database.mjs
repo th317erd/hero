@@ -417,6 +417,209 @@ function getMigrations() {
         DROP TABLE IF EXISTS messages;
       `,
     },
+    {
+      name: '016_remove_ability_permissions',
+      sql:  `
+        -- Remove permission columns from abilities table
+        -- Permissions (auto_approve, danger_level) will only apply to functions/commands, not abilities
+        ALTER TABLE abilities DROP COLUMN auto_approve;
+        ALTER TABLE abilities DROP COLUMN auto_approve_policy;
+        ALTER TABLE abilities DROP COLUMN danger_level;
+      `,
+    },
+    {
+      name: '017_fix_token_charges_fk',
+      sql:  `
+        -- Fix token_charges table: remove FK reference to deleted messages table
+        -- SQLite doesn't support ALTER TABLE DROP CONSTRAINT, so recreate the table
+
+        CREATE TABLE token_charges_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          agent_id INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+          session_id INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
+          message_id INTEGER,
+          input_tokens INTEGER DEFAULT 0,
+          output_tokens INTEGER DEFAULT 0,
+          cost_cents INTEGER DEFAULT 0,
+          charge_type TEXT DEFAULT 'usage',
+          description TEXT,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+        INSERT INTO token_charges_new SELECT * FROM token_charges;
+        DROP TABLE token_charges;
+        ALTER TABLE token_charges_new RENAME TO token_charges;
+
+        CREATE INDEX idx_token_charges_agent_id ON token_charges(agent_id);
+        CREATE INDEX idx_token_charges_session_id ON token_charges(session_id);
+        CREATE INDEX idx_token_charges_created_at ON token_charges(created_at);
+      `,
+    },
+    {
+      name: '018_session_participants',
+      sql:  `
+        -- Multi-party sessions: participants join table
+        -- Sessions can have 0-N agents and 0-N users as participants.
+        -- Each participant has a role: owner, coordinator, or member.
+        --   owner:       The user who created the session
+        --   coordinator: The agent that responds to unaddressed messages
+        --   member:      A participant addressed via @mention
+
+        CREATE TABLE session_participants (
+          id               INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_id       INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+          participant_type TEXT NOT NULL CHECK(participant_type IN ('user', 'agent')),
+          participant_id   INTEGER NOT NULL,
+          role             TEXT DEFAULT 'member' CHECK(role IN ('owner', 'coordinator', 'member')),
+          joined_at        TEXT DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(session_id, participant_type, participant_id)
+        );
+
+        CREATE INDEX idx_session_participants_session ON session_participants(session_id);
+        CREATE INDEX idx_session_participants_type ON session_participants(participant_type);
+        CREATE INDEX idx_session_participants_role ON session_participants(role);
+
+        -- Populate from existing sessions: user_id becomes owner, agent_id becomes coordinator
+        INSERT INTO session_participants (session_id, participant_type, participant_id, role)
+        SELECT id, 'user', user_id, 'owner' FROM sessions;
+
+        INSERT INTO session_participants (session_id, participant_type, participant_id, role)
+        SELECT id, 'agent', agent_id, 'coordinator' FROM sessions WHERE agent_id IS NOT NULL;
+
+        -- Make agent_id nullable: recreate sessions table without NOT NULL on agent_id
+        -- SQLite doesn't support ALTER COLUMN, so we recreate.
+
+        CREATE TABLE sessions_new (
+          id                INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id           INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          agent_id          INTEGER REFERENCES agents(id) ON DELETE SET NULL,
+          name              TEXT NOT NULL,
+          system_prompt     TEXT,
+          archived          INTEGER DEFAULT 0,
+          status            TEXT DEFAULT NULL,
+          parent_session_id INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
+          input_tokens      INTEGER DEFAULT 0,
+          output_tokens     INTEGER DEFAULT 0,
+          created_at        TEXT DEFAULT CURRENT_TIMESTAMP,
+          updated_at        TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+        INSERT INTO sessions_new
+        SELECT id, user_id, agent_id, name, system_prompt, archived, status,
+               parent_session_id, input_tokens, output_tokens, created_at, updated_at
+        FROM sessions;
+
+        DROP TABLE sessions;
+        ALTER TABLE sessions_new RENAME TO sessions;
+
+        CREATE INDEX idx_sessions_user_id ON sessions(user_id);
+        CREATE INDEX idx_sessions_agent_id ON sessions(agent_id);
+        CREATE INDEX idx_sessions_archived ON sessions(user_id, archived);
+        CREATE INDEX idx_sessions_status ON sessions(user_id, status);
+        CREATE INDEX idx_sessions_parent ON sessions(parent_session_id);
+      `,
+    },
+    {
+      name: '019_permission_rules',
+      sql:  `
+        -- Permission rules: default-deny policy engine
+        -- Controls what subjects (users, agents, plugins) can do with
+        -- what resources (commands, tools, abilities).
+        --
+        -- Resolution order: most specific rule wins.
+        -- Specificity: exact subject+resource > subject wildcard > resource wildcard > global.
+        -- At equal specificity, explicit deny beats allow.
+        -- When no rule matches, default is 'prompt' (ask the user).
+        --
+        -- Scopes:
+        --   permanent: rule persists until explicitly deleted
+        --   session:   rule applies only within a session (requires session_id)
+        --   once:      rule consumed after first evaluation
+
+        CREATE TABLE permission_rules (
+          id             INTEGER PRIMARY KEY AUTOINCREMENT,
+          owner_id       INTEGER REFERENCES users(id) ON DELETE CASCADE,
+          session_id     INTEGER REFERENCES sessions(id) ON DELETE CASCADE,
+          subject_type   TEXT NOT NULL CHECK(subject_type IN ('user', 'agent', 'plugin', '*')),
+          subject_id     INTEGER,
+          resource_type  TEXT NOT NULL CHECK(resource_type IN ('command', 'tool', 'ability', '*')),
+          resource_name  TEXT,
+          action         TEXT NOT NULL CHECK(action IN ('allow', 'deny', 'prompt')),
+          scope          TEXT DEFAULT 'permanent' CHECK(scope IN ('once', 'session', 'permanent')),
+          conditions     TEXT,
+          priority       INTEGER DEFAULT 0,
+          created_at     TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX idx_permission_rules_owner ON permission_rules(owner_id);
+        CREATE INDEX idx_permission_rules_session ON permission_rules(session_id);
+        CREATE INDEX idx_permission_rules_subject ON permission_rules(subject_type, subject_id);
+        CREATE INDEX idx_permission_rules_resource ON permission_rules(resource_type, resource_name);
+      `,
+    },
+
+    {
+      name: '020_auth_enhancement',
+      sql:  `
+        -- User profile fields
+        ALTER TABLE users ADD COLUMN email TEXT;
+        ALTER TABLE users ADD COLUMN display_name TEXT;
+
+        -- Magic link tokens for passwordless auth
+        CREATE TABLE magic_link_tokens (
+          id         INTEGER PRIMARY KEY AUTOINCREMENT,
+          token      TEXT UNIQUE NOT NULL,
+          user_id    INTEGER REFERENCES users(id) ON DELETE CASCADE,
+          email      TEXT NOT NULL,
+          expires_at TEXT NOT NULL,
+          used_at    TEXT,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX idx_magic_link_tokens_token ON magic_link_tokens(token);
+        CREATE INDEX idx_magic_link_tokens_email ON magic_link_tokens(email);
+
+        -- API keys for programmatic access
+        CREATE TABLE api_keys (
+          id           INTEGER PRIMARY KEY AUTOINCREMENT,
+          key_hash     TEXT UNIQUE NOT NULL,
+          key_prefix   TEXT NOT NULL,
+          user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          name         TEXT NOT NULL,
+          scopes       TEXT DEFAULT '[]',
+          expires_at   TEXT,
+          last_used_at TEXT,
+          created_at   TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX idx_api_keys_hash ON api_keys(key_hash);
+        CREATE INDEX idx_api_keys_user ON api_keys(user_id);
+      `,
+    },
+
+    {
+      name: '021_uploads_and_avatars',
+      sql:  `
+        -- Agent avatars
+        ALTER TABLE agents ADD COLUMN avatar_url TEXT;
+
+        -- File uploads
+        CREATE TABLE uploads (
+          id           INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          session_id   INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
+          filename     TEXT NOT NULL,
+          original_name TEXT NOT NULL,
+          mime_type    TEXT NOT NULL,
+          size_bytes   INTEGER NOT NULL,
+          storage_path TEXT NOT NULL,
+          created_at   TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX idx_uploads_user ON uploads(user_id);
+        CREATE INDEX idx_uploads_session ON uploads(session_id);
+      `,
+    },
   ];
 }
 

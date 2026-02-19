@@ -6,378 +6,169 @@
   <title>Hero</title>
   <base href="/hero/">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
-  <link rel="stylesheet" href="css/styles.css">
-  <link rel="stylesheet" href="css/markdown.css">
+  <link rel="stylesheet" href="css/styles.css?v=3">
+  <link rel="stylesheet" href="css/buttons.css">
+  <link rel="stylesheet" href="css/content.css">
   <link rel="stylesheet" href="css/abilities.css">
+  <link rel="stylesheet" href="css/modals.css?v=3">
+
+  <!-- Import map for Mythix UI CDN-style imports -->
+  <script type="importmap">
+  {
+    "imports": {
+      "@cdn/mythix-ui-core@1": "/mythix-ui/mythix-ui-core/dist/index.js?v=3",
+      "@cdn/mythix-ui-modal@1": "/mythix-ui/mythix-ui-modal/dist/mythix-ui-modal.js?v=3",
+      "@cdn/mythix-ui-for-each@1": "/mythix-ui/mythix-ui-for-each/dist/mythix-ui-for-each.js",
+      "@hero/api": "/hero/js/api.js",
+      "@hero/base": "/hero/js/components/hero-base.js",
+      "@hero/state": "/hero/js/state.js",
+      "@hero/utils": "/hero/js/utils.js"
+    }
+  }
+  </script>
+
+  <!-- Mythix UI URL Resolver for component lazy loading -->
+  <script>
+    const mythixUI = (globalThis.mythixUI = (globalThis.mythixUI || {}));
+
+    // Disable strict mode to allow complex template expressions (requires unsafe-eval CSP)
+    mythixUI.strictMode = false;
+
+    // Resolver for <mythix-require> component loading
+    mythixUI.urlResolver = ({ src, path, fileName }) => {
+      // Handle @cdn/hero-* pattern for hero components
+      let heroMatch = src.match(/^@cdn\/(hero-[\w-]+)(@[\d.]+)?$/);
+      if (heroMatch) {
+        return `/hero/js/components/${heroMatch[1]}/${heroMatch[1]}.html`;
+      }
+
+      // Handle @cdn/hml-* pattern for HML components
+      let hmlMatch = src.match(/^@cdn\/(hml-[\w-]+)(@[\d.]+)?$/);
+      if (hmlMatch) {
+        return `/hero/js/components/${hmlMatch[1]}/${hmlMatch[1]}.html`;
+      }
+
+      // Handle @cdn/session-frames-provider pattern
+      if (src.match(/^@cdn\/session-frames-provider(@[\d.]+)?$/)) {
+        return `/hero/js/components/session-frames-provider/session-frames-provider.html`;
+      }
+
+      // Handle @cdn/mythix-* pattern for mythix-ui components
+      let mythixMatch = src.match(/^@cdn\/(mythix-[\w-]+)(@[\d.]+)?$/);
+      if (mythixMatch) {
+        return `/mythix-ui/${mythixMatch[1]}/dist/${mythixMatch[1]}.html`;
+      }
+
+      return src;
+    };
+  </script>
+
+  <!-- Load mythix-ui-core to register MythixUIRequire custom element -->
+  <!-- This MUST happen before <mythix-require> elements in body are parsed -->
+  <script type="module">
+    import '@cdn/mythix-ui-core@1';
+  </script>
 </head>
 <body>
-  <div id="app">
+  <!-- Shadow DOM components loaded via mythix-require (need HTML templates) -->
+  <mythix-require src="@cdn/mythix-ui-for-each@1"></mythix-require>
+  <mythix-require src="@cdn/mythix-ui-modal@1"></mythix-require>
+  <mythix-require src="@cdn/hero-modal@1" cache="no-store"></mythix-require>
+  <mythix-require src="@cdn/hero-header@1"></mythix-require>
+  <mythix-require src="@cdn/hero-status-bar@1" cache="no-store"></mythix-require>
+  <mythix-require src="@cdn/hero-main-controls@1"></mythix-require>
+  <mythix-require src="@cdn/hero-sessions-list@1"></mythix-require>
+  <mythix-require src="@cdn/hero-chat@1"></mythix-require>
+  <mythix-require src="@cdn/hero-input@1"></mythix-require>
+  <mythix-require src="@cdn/hml-prompt@1"></mythix-require>
+  <mythix-require src="@cdn/session-frames-provider@1"></mythix-require>
+
+  <hero-app id="app">
+    <!-- WebSocket handler -->
+    <hero-websocket></hero-websocket>
+
+    <!-- Status bar (bottom) - starts hidden, revealed by JS when authenticated -->
+    <hero-status-bar id="status-bar" class="hidden"></hero-status-bar>
+
+    <!-- Modal components -->
+    <hero-modal-create-session id="new-session-component" style="display: none;"></hero-modal-create-session>
+    <hero-modal-create-agent id="new-agent-component" style="display: none;"></hero-modal-create-agent>
+    <hero-modal-configure-ability id="ability-component" style="display: none;"></hero-modal-configure-ability>
+    <hero-modal-abilities id="abilities-component" style="display: none;"></hero-modal-abilities>
+    <hero-modal-agents id="agents-component" style="display: none;"></hero-modal-agents>
+    <hero-modal-agent-settings id="agent-config-component" style="display: none;"></hero-modal-agent-settings>
+
     <!-- Login View -->
-    <div id="login-view" class="view" style="display: none;">
+    <div id="login-view" class="view" data-view="login" style="display: none;">
       <div class="login-container">
         <div class="login-title">
           <img src="assets/images/hero-cape.svg?v=1" alt="Hero" class="logo logo-lg">
           <h1>Hero</h1>
         </div>
         <p class="login-subtitle">AI Agent Chat Interface</p>
-        <form id="login-form">
+        <form id="login-form" autocomplete="off">
           <div class="form-group">
             <label for="username">Username</label>
-            <input type="text" id="username" name="username" required autocomplete="username">
+            <input type="text" id="username" name="username" required autocomplete="off">
           </div>
           <div class="form-group">
             <label for="password">Password</label>
-            <input type="password" id="password" name="password" required autocomplete="current-password">
+            <input type="password" id="password" name="password" required autocomplete="off">
           </div>
           <div id="login-error" class="error-message"></div>
-          <button type="submit" class="btn btn-primary btn-block">Log In</button>
+          <button type="submit" class="button button-primary button-block">Log In</button>
         </form>
       </div>
     </div>
 
     <!-- Sessions List View -->
-    <div id="sessions-view" class="view" style="display: none;">
-      <header class="header">
-        <div class="header-left">
-          <img src="assets/images/hero-cape.svg?v=1" alt="Hero" class="logo">
-          <h1>Hero</h1>
-        </div>
-        <div class="header-usage" id="header-usage-sessions">
-          <div class="usage-item" title="Total usage across all agents">
-            <span class="usage-label">Global Spend:</span>
-            <span class="usage-cost" id="global-cost-sessions">$0.00</span>
-          </div>
-        </div>
-        <div class="header-actions">
-          <button id="agents-btn" class="btn btn-secondary">Agents</button>
-          <button id="abilities-btn" class="btn btn-secondary">Abilities</button>
-          <button id="new-session-btn" class="btn btn-primary">New Session</button>
-          <button id="logout-btn" class="btn btn-secondary">Logout</button>
-        </div>
-      </header>
+    <div id="sessions-view" class="view" data-view="sessions" style="display: none;">
+      <hero-header id="sessions-header"></hero-header>
       <main class="sessions-main">
-        <div class="sessions-content">
-          <div class="sessions-header">
-            <h2>Your Sessions</h2>
-            <div class="sessions-toolbar">
-              <div class="search-box">
-                <input type="text" id="session-search" placeholder="Search sessions..." autocomplete="off">
-              </div>
-              <button id="toggle-archived" class="btn btn-icon" title="Show/hide archived sessions">
-                <span class="icon-eye">👁</span>
-              </button>
-            </div>
-          </div>
-          <div id="sessions-list" class="sessions-list">
-            <div class="loading">Loading sessions...</div>
-          </div>
-        </div>
+        <hero-sessions-list id="sessions-list"></hero-sessions-list>
       </main>
     </div>
 
     <!-- Chat View -->
-    <div id="chat-view" class="view" style="display: none;">
-      <header class="header">
-        <div class="header-left">
-          <button id="back-btn" class="btn btn-icon" title="Back to sessions">&larr;</button>
-          <h1 id="session-title">Session</h1>
-        </div>
-        <div class="header-usage" id="header-usage-chat">
-          <div class="usage-item" title="Total usage across all agents">
-            <span class="usage-label">Global Spend:</span>
-            <span class="usage-cost" id="global-cost-chat">$0.00</span>
-          </div>
-          <div class="usage-item usage-service" title="Usage for this API key/service">
-            <span class="usage-label">Service Spend:</span>
-            <span class="usage-cost" id="service-cost-chat">$0.00</span>
-          </div>
-          <div class="usage-item usage-session" title="Usage in this session">
-            <span class="usage-label">Session Spend:</span>
-            <span class="usage-cost" id="session-cost-chat">$0.00</span>
-          </div>
-        </div>
-        <div class="header-actions">
-          <label class="checkbox-label">
-            <input type="checkbox" id="show-hidden-toggle">
-            <span>Show hidden</span>
-          </label>
-          <select id="session-select" class="session-select">
-            <option value="">Switch session...</option>
-          </select>
-          <button id="clear-btn" class="btn btn-secondary">Clear</button>
-          <button id="chat-logout-btn" class="btn btn-secondary">Logout</button>
-        </div>
-      </header>
-      <main class="chat-main">
-        <div id="messages" class="messages-container"></div>
-        <button id="scroll-to-bottom" class="scroll-to-bottom-btn" title="Scroll to bottom" style="display: none;">
-          <span class="chevron-down">&#8964;</span>
-        </button>
-      </main>
-      <footer class="chat-footer">
-        <div class="input-container">
-          <textarea id="message-input" placeholder="Type a message... (Enter to send, Shift+Enter for new line)" rows="1"></textarea>
-          <button id="send-btn" class="btn btn-primary">Send</button>
-        </div>
-      </footer>
-    </div>
-
-    <!-- New Session Modal -->
-    <div id="new-session-modal" class="modal-overlay" style="display: none;">
-      <div class="modal">
-        <h3>New Session</h3>
-        <form id="new-session-form">
-          <div class="form-group">
-            <label for="session-name">Session Name</label>
-            <input type="text" id="session-name" name="name" required placeholder="e.g., project-x">
-          </div>
-          <div class="form-group">
-            <label for="agent-select">Agent</label>
-            <select id="agent-select" name="agentId" required>
-              <option value="">Select an agent...</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label for="system-prompt">System Prompt (optional)</label>
-            <textarea id="system-prompt" name="systemPrompt" rows="3" placeholder="Instructions for the AI agent..."></textarea>
-          </div>
-          <div id="new-session-error" class="error-message"></div>
-          <div class="modal-actions">
-            <button type="button" id="cancel-new-session" class="btn btn-secondary">Cancel</button>
-            <button type="submit" class="btn btn-primary">Create</button>
-          </div>
-        </form>
-      </div>
-    </div>
-
-    <!-- New Agent Modal -->
-    <div id="new-agent-modal" class="modal-overlay" style="display: none;">
-      <div class="modal">
-        <h3>Add Agent</h3>
-        <form id="new-agent-form">
-          <div class="form-row">
-            <div class="form-group form-group-half">
-              <label for="agent-name">Agent Name</label>
-              <input type="text" id="agent-name" name="name" required placeholder="e.g., My Claude">
-            </div>
-            <div class="form-group form-group-half">
-              <label for="agent-type">Base Type</label>
-              <select id="agent-type" name="type" required>
-                <option value="claude">Claude (Anthropic)</option>
-                <option value="openai">OpenAI</option>
-              </select>
-            </div>
-          </div>
-          <div class="form-row">
-            <div class="form-group form-group-half">
-              <label for="agent-model">Model</label>
-              <select id="agent-model" name="model">
-                <option value="">Default</option>
-                <optgroup label="Claude" id="claude-models">
-                  <option value="claude-sonnet-4-20250514">Claude Sonnet 4</option>
-                  <option value="claude-opus-4-20250514">Claude Opus 4</option>
-                  <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
-                  <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku</option>
-                </optgroup>
-                <optgroup label="OpenAI" id="openai-models">
-                  <option value="gpt-4o">GPT-4o</option>
-                  <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                  <option value="gpt-4">GPT-4</option>
-                  <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
-                </optgroup>
-              </select>
-            </div>
-            <div class="form-group form-group-half">
-              <label for="agent-api-url">API URL (optional)</label>
-              <input type="url" id="agent-api-url" name="apiUrl" placeholder="Custom endpoint...">
-            </div>
-          </div>
-          <div class="form-group">
-            <label for="agent-api-key">API Key</label>
-            <input type="password" id="agent-api-key" name="apiKey" required placeholder="sk-...">
-          </div>
-          <div class="form-group">
-            <label>Default Abilities</label>
-            <div id="agent-abilities-list" class="checkbox-list"></div>
-          </div>
-          <div id="new-agent-error" class="error-message"></div>
-          <div class="modal-actions">
-            <button type="button" id="cancel-new-agent" class="btn btn-secondary">Cancel</button>
-            <button type="submit" class="btn btn-primary">Add Agent</button>
-          </div>
-        </form>
-      </div>
-    </div>
-
-    <!-- Abilities Modal -->
-    <div id="abilities-modal" class="modal-overlay" style="display: none;">
-      <div class="modal modal-lg">
-        <div class="modal-header-tabs">
-          <h3>Abilities</h3>
-          <div class="modal-tabs">
-            <button type="button" class="tab-btn active" data-tab="system">System</button>
-            <button type="button" class="tab-btn" data-tab="user">My Abilities</button>
-          </div>
-          <button type="button" id="close-abilities-modal" class="btn btn-icon">&times;</button>
-        </div>
-        <div id="abilities-tab-system" class="tab-content active">
-          <div class="tab-spacer"></div>
-          <div id="system-abilities-list" class="abilities-list"></div>
-        </div>
-        <div id="abilities-tab-user" class="tab-content">
-          <div class="abilities-actions">
-            <button type="button" id="new-ability-btn" class="btn btn-primary">New Ability</button>
-          </div>
-          <div id="user-abilities-list" class="abilities-list"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Edit Ability Modal -->
-    <div id="edit-ability-modal" class="modal-overlay" style="display: none;">
-      <div class="modal modal-lg">
-        <h3 id="edit-ability-title">New Ability</h3>
-        <form id="edit-ability-form">
-          <div class="form-group">
-            <label for="ability-name">Name</label>
-            <input type="text" id="ability-name" name="name" required placeholder="e.g., my_custom_ability">
-            <small class="form-hint">Use lowercase letters, numbers, and underscores only.</small>
-          </div>
-          <div class="form-group">
-            <label for="ability-description">Description (optional)</label>
-            <input type="text" id="ability-description" name="description" placeholder="Brief description of this ability">
-          </div>
-          <div class="form-group">
-            <label for="edit-ability-applies">When to Use</label>
-            <input type="text" id="edit-ability-applies" name="applies" placeholder="e.g., when user asks about coding, for file operations, always">
-            <small class="form-hint">Describe the context or trigger for this ability (helps the agent know when to apply it)</small>
-          </div>
-          <div class="form-group">
-            <label for="ability-content">Content (Markdown)</label>
-            <textarea id="ability-content" name="content" required rows="12" placeholder="Instructions for the AI agent..."></textarea>
-          </div>
-          <div id="edit-ability-error" class="error-message"></div>
-          <div class="modal-actions">
-            <button type="button" id="cancel-edit-ability" class="btn btn-secondary">Cancel</button>
-            <button type="submit" class="btn btn-primary">Save</button>
-          </div>
-        </form>
-      </div>
-    </div>
-
-    <!-- Agents List Modal -->
-    <div id="agents-modal" class="modal-overlay" style="display: none;">
-      <div class="modal modal-lg">
-        <div class="modal-header-tabs">
-          <h3>Agents</h3>
-          <button type="button" id="close-agents-modal" class="btn btn-icon">&times;</button>
-        </div>
-        <div class="agents-content">
-          <div class="agents-actions">
-            <button type="button" id="add-agent-from-list" class="btn btn-primary">Add Agent</button>
-          </div>
-          <div id="agents-list" class="agents-list"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Agent Config Modal -->
-    <div id="agent-config-modal" class="modal-overlay" style="display: none;">
-      <div class="modal modal-lg">
-        <h3>Agent Configuration</h3>
-        <p class="config-description">
-          This JSON is merged into every API call for this agent.
-          Common fields: model, maxTokens, temperature, etc.
-        </p>
-        <form id="agent-config-form">
-          <input type="hidden" id="agent-config-id">
-          <div class="form-group">
-            <label for="agent-config-json">Configuration (JSON)</label>
-            <textarea id="agent-config-json" name="config" rows="15" class="config-editor"
-              placeholder='{ "model": "claude-sonnet-4-20250514", "maxTokens": 4096 }'></textarea>
-          </div>
-          <div id="agent-config-error" class="error-message"></div>
-          <div class="modal-actions">
-            <button type="button" id="cancel-agent-config" class="btn btn-secondary">Cancel</button>
-            <button type="submit" class="btn btn-primary">Save</button>
-          </div>
-        </form>
-      </div>
-    </div>
-
-    <!-- Ability Modal (Create/Edit) -->
-    <div id="ability-modal" class="modal-overlay" style="display: none;">
-      <div class="modal modal-lg">
-        <h3 id="ability-modal-title">Create Ability</h3>
-        <form id="ability-form">
-          <input type="hidden" id="ability-edit-id">
-          <div class="form-row">
-            <div class="form-group form-group-half">
-              <label for="ability-name">Name</label>
-              <input type="text" id="ability-name" name="name" required pattern="[a-z][a-z0-9_]*" placeholder="my_ability">
-              <small class="form-hint">Lowercase letters, numbers, underscores only.</small>
-            </div>
-            <div class="form-group form-group-half">
-              <label for="ability-category">Category</label>
-              <input type="text" id="ability-category" name="category" placeholder="custom">
-            </div>
-          </div>
-          <div class="form-group">
-            <label for="ability-description">Description</label>
-            <input type="text" id="ability-description" name="description" placeholder="Brief description of this ability">
-          </div>
-          <div class="form-group">
-            <label for="ability-applies">When to Use</label>
-            <input type="text" id="ability-applies" name="applies" placeholder="e.g., when user asks about coding, for file operations, always">
-            <small class="form-hint">Describe the context or trigger for this ability (helps the agent know when to apply it)</small>
-          </div>
-          <div class="form-group">
-            <label for="ability-content">Content (Markdown)</label>
-            <textarea id="ability-content" name="content" required rows="12" placeholder="Instructions for the AI agent..."></textarea>
-            <small class="skill-template-hint">Template variables: {{DATE}}, {{TIME}}, {{USER_NAME}}, {{SESSION_NAME}}</small>
-          </div>
-          <div class="form-group">
-            <label>Permissions</label>
-            <div class="checkbox-list">
-              <label class="checkbox-item">
-                <input type="checkbox" id="ability-auto-approve" name="autoApprove">
-                <span>Auto-approve (skip confirmation)</span>
-              </label>
-            </div>
-            <select id="ability-danger-level" name="dangerLevel" class="form-select" style="margin-top: 8px;">
-              <option value="safe">Safe - Low risk</option>
-              <option value="moderate">Moderate - Some risk</option>
-              <option value="dangerous">Dangerous - High risk</option>
-            </select>
-          </div>
-          <div id="ability-modal-error" class="error-message"></div>
-          <div class="modal-actions">
-            <button type="button" id="cancel-ability-modal" class="btn btn-secondary">Cancel</button>
-            <button type="submit" class="btn btn-primary">Save</button>
-          </div>
-        </form>
-      </div>
+    <div id="chat-view" class="view" data-view="chat" style="display: none;">
+      <hero-header id="chat-header"></hero-header>
+      <session-frames-provider id="session-frames">
+        <main class="chat-main">
+          <hero-chat id="chat"></hero-chat>
+        </main>
+        <footer class="chat-footer">
+          <hero-input id="chat-input"></hero-input>
+        </footer>
+      </session-frames-provider>
     </div>
 
     <!-- Running Operations Panel -->
     <div id="operations-panel" class="operations-panel" style="display: none;">
       <div class="operations-header">
         <span>Running Operations</span>
-        <button type="button" id="toggle-operations" class="btn btn-icon">&#8722;</button>
+        <button type="button" id="toggle-operations" class="button button-icon">&#8722;</button>
       </div>
       <div id="operations-list" class="operations-list"></div>
     </div>
-  </div>
+  </hero-app>
 
-  <script src="https://cdn.jsdelivr.net/npm/markdown-it@14.1.0/dist/markdown-it.min.js"></script>
-  <script src="js/components/hml-prompt.js?v=9"></script>
+  <!-- Component imports (ES modules) -->
+  <script type="module">
+    // Hero components (includes Mythix-UI dependency)
+    import './js/components/index.js?v=5';
+  </script>
+
+  <script src="js/stores/session-store.js?v=1"></script>
   <script src="js/markup.js?v=3"></script>
   <script src="js/state.js?v=5"></script>
   <script src="js/utils.js?v=2"></script>
   <script src="js/debug.js?v=2"></script>
-  <script src="js/api.js?v=7"></script>
+  <script src="js/api.js?v=8"></script>
   <script src="js/routing.js?v=3"></script>
   <script src="js/sessions.js?v=2"></script>
-  <script src="js/app.js?v=9"></script>
+  <script src="js/approvals.js?v=1"></script>
+  <script src="js/streaming.js?v=1"></script>
+  <script src="js/commands.js?v=1"></script>
+  <script src="js/app.js?v=10"></script>
 </body>
 </html>

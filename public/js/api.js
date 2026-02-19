@@ -4,6 +4,9 @@
 // API Functions
 // ============================================================================
 
+/**
+ * Base API request function.
+ */
 async function api(method, path, body) {
   let options = {
     method:      method,
@@ -25,11 +28,259 @@ async function api(method, path, body) {
   return data;
 }
 
+// ============================================================================
+// API Namespace
+// ============================================================================
+
+/**
+ * Organized API namespace for cleaner code.
+ *
+ * Usage:
+ *   await API.sessions.list()
+ *   await API.sessions.archive(sessionId)
+ *   await API.agents.list()
+ */
+const API = {
+  // --------------------------------------------------------------------------
+  // Auth
+  // --------------------------------------------------------------------------
+  auth: {
+    login:  (username, password) => api('POST', '/login', { username, password }),
+    logout: () => api('POST', '/logout'),
+    me:     () => api('GET', '/me'),
+  },
+
+  // --------------------------------------------------------------------------
+  // Sessions
+  // --------------------------------------------------------------------------
+  sessions: {
+    list: async (options = {}) => {
+      let params = new URLSearchParams();
+      if (options.showHidden) params.append('showHidden', '1');
+      if (options.search) params.append('search', options.search);
+      let queryString = params.toString();
+      let path = (queryString) ? `/sessions?${queryString}` : '/sessions';
+      let data = await api('GET', path);
+      return data.sessions;
+    },
+
+    get:     (id) => api('GET', `/sessions/${id}`),
+    create:  (name, agentId, systemPrompt) => {
+      // Support both single agentId and agentIds array
+      let body = { name, systemPrompt };
+      if (Array.isArray(agentId))
+        body.agentIds = agentId;
+      else
+        body.agentId = agentId;
+      return api('POST', '/sessions', body);
+    },
+    update:  (id, updates) => api('PUT', `/sessions/${id}`, updates),
+    delete:  (id) => api('DELETE', `/sessions/${id}`),
+    archive: (id) => api('POST', `/sessions/${id}/archive`),
+    unarchive: (id) => api('POST', `/sessions/${id}/unarchive`),
+    setStatus: (id, status) => api('PUT', `/sessions/${id}/status`, { status }),
+  },
+
+  // --------------------------------------------------------------------------
+  // Messages
+  // --------------------------------------------------------------------------
+  messages: {
+    list:   (sessionId) => api('GET', `/sessions/${sessionId}/messages`),
+    send:   (sessionId, content) => api('POST', `/sessions/${sessionId}/messages`, { content }),
+    clear:  (sessionId) => api('DELETE', `/sessions/${sessionId}/messages`),
+    // stream is handled separately due to its complexity
+  },
+
+  // --------------------------------------------------------------------------
+  // Agents
+  // --------------------------------------------------------------------------
+  agents: {
+    list: async () => {
+      let data = await api('GET', '/agents');
+      return data.agents;
+    },
+    get:       (id) => api('GET', `/agents/${id}`),
+    create:    (name, type, apiKey, apiUrl, defaultAbilities, config) =>
+      api('POST', '/agents', { name, type, apiKey, apiUrl, defaultAbilities, config }),
+    update:    (id, updates) => api('PUT', `/agents/${id}`, updates),
+    delete:    (id) => api('DELETE', `/agents/${id}`),
+    getConfig: async (id) => {
+      let data = await api('GET', `/agents/${id}/config`);
+      return data.config;
+    },
+    updateConfig: (id, config) => api('PUT', `/agents/${id}/config`, { config }),
+  },
+
+  // --------------------------------------------------------------------------
+  // Abilities
+  // --------------------------------------------------------------------------
+  abilities: {
+    list: async () => {
+      let data = await api('GET', '/abilities');
+      let system = data.abilities.filter((a) => a.source === 'system' || a.source === 'builtin');
+      let user = data.abilities.filter((a) => a.source === 'user');
+      return { system, user, all: data.abilities };
+    },
+    get:    (id) => api('GET', `/abilities/${id}`),
+    create: (data) => {
+      let { name, category, description, applies, content } = data;
+      return api('POST', '/abilities', { name, category, description, applies, content, type: 'process' });
+    },
+    update: (id, data) => {
+      let { name, category, description, applies, content } = data;
+      return api('PUT', `/abilities/${id}`, { name, category, description, applies, content });
+    },
+    delete: (id) => api('DELETE', `/abilities/${id}`),
+  },
+
+  // --------------------------------------------------------------------------
+  // Usage / Billing
+  // --------------------------------------------------------------------------
+  usage: {
+    global:     () => api('GET', '/usage'),
+    session:    (sessionId) => api('GET', `/usage/session/${sessionId}`),
+    charge:     (data) => api('POST', '/usage/charge', data),
+    correction: (data) => api('POST', '/usage/correction', data),
+  },
+
+  // --------------------------------------------------------------------------
+  // Frames (Interaction Frames System)
+  // --------------------------------------------------------------------------
+  frames: {
+    /**
+     * List frames for a session.
+     * @param {number} sessionId - Session ID
+     * @param {object} [options] - Query options
+     * @param {string} [options.fromTimestamp] - Get frames after this timestamp
+     * @param {string} [options.before] - Get frames before this timestamp (backward pagination)
+     * @param {boolean} [options.fromCompact] - Start from most recent compact frame
+     * @param {string[]} [options.types] - Filter by frame types
+     * @param {number} [options.limit] - Maximum frames to return
+     * @returns {Promise<{frames: object[], count: number, hasMore: boolean}>}
+     */
+    list: async (sessionId, options = {}) => {
+      let params = new URLSearchParams();
+      if (options.fromTimestamp) params.append('fromTimestamp', options.fromTimestamp);
+      if (options.before) params.append('before', options.before);
+      if (options.fromCompact) params.append('fromCompact', '1');
+      if (options.types) params.append('types', options.types.join(','));
+      if (options.limit) params.append('limit', String(options.limit));
+      let queryString = params.toString();
+      let path = (queryString)
+        ? `/sessions/${sessionId}/frames?${queryString}`
+        : `/sessions/${sessionId}/frames`;
+      return api('GET', path);
+    },
+
+    /**
+     * Get a single frame by ID.
+     * @param {number} sessionId - Session ID
+     * @param {string} frameId - Frame ID
+     * @returns {Promise<object>}
+     */
+    get: (sessionId, frameId) => api('GET', `/sessions/${sessionId}/frames/${frameId}`),
+
+    /**
+     * Get frame statistics for a session.
+     * @param {number} sessionId - Session ID
+     * @returns {Promise<object>}
+     */
+    stats: (sessionId) => api('GET', `/sessions/${sessionId}/frames/stats`),
+  },
+
+  // --------------------------------------------------------------------------
+  // Search
+  // --------------------------------------------------------------------------
+  search: {
+    /**
+     * Search frame content across sessions.
+     * @param {string} query - Search text
+     * @param {object} [options] - Search options
+     * @param {number} [options.sessionId] - Limit to specific session
+     * @param {string[]} [options.types] - Frame types to search
+     * @param {number} [options.limit] - Max results
+     * @param {number} [options.offset] - Pagination offset
+     * @returns {Promise<{results: object[], total: number, hasMore: boolean}>}
+     */
+    frames: async (query, options = {}) => {
+      let params = new URLSearchParams();
+      params.append('query', query);
+      if (options.sessionId) params.append('sessionId', String(options.sessionId));
+      if (options.types) params.append('types', options.types.join(','));
+      if (options.limit) params.append('limit', String(options.limit));
+      if (options.offset) params.append('offset', String(options.offset));
+      return api('GET', `/search?${params.toString()}`);
+    },
+  },
+
+  // --------------------------------------------------------------------------
+  // Uploads
+  // --------------------------------------------------------------------------
+  uploads: {
+    /**
+     * Upload files to a session.
+     * @param {number} sessionId - Session ID
+     * @param {File[]} files - Files to upload
+     * @returns {Promise<{uploads: object[]}>}
+     */
+    upload: async (sessionId, files) => {
+      let formData = new FormData();
+      for (let file of files) {
+        formData.append('files', file);
+      }
+
+      let basePath = window.__BASE_PATH || '/hero/';
+      let response = await fetch(`${basePath}api/sessions/${sessionId}/uploads`, {
+        method:      'POST',
+        body:        formData,
+        credentials: 'same-origin',
+      });
+
+      if (!response.ok) {
+        let error = await response.json().catch(() => ({ error: 'Upload failed' }));
+        throw new Error(error.error || 'Upload failed');
+      }
+
+      return response.json();
+    },
+
+    /**
+     * List uploads for a session.
+     * @param {number} sessionId - Session ID
+     * @returns {Promise<{uploads: object[]}>}
+     */
+    list: async (sessionId) => {
+      return api('GET', `/sessions/${sessionId}/uploads`);
+    },
+
+    /**
+     * Delete an upload.
+     * @param {number} uploadId - Upload ID
+     * @returns {Promise<{success: boolean}>}
+     */
+    delete: async (uploadId) => {
+      return api('DELETE', `/uploads/${uploadId}`);
+    },
+  },
+};
+
+// Make API available globally
+window.API = API;
+
 async function login(username, password) {
-  return await api('POST', '/login', { username, password });
+  let result = await api('POST', '/login', { username, password });
+
+  // Save token to localStorage for WebSocket authentication
+  if (result && result.token) {
+    localStorage.setItem('token', result.token);
+  }
+
+  return result;
 }
 
 async function logout() {
+  // Clear token from localStorage
+  localStorage.removeItem('token');
   return await api('POST', '/logout');
 }
 
@@ -58,7 +309,13 @@ async function fetchSession(id) {
 }
 
 async function createSession(name, agentId, systemPrompt) {
-  return await api('POST', '/sessions', { name, agentId, systemPrompt });
+  // Support both single agentId and agentIds array
+  let body = { name, systemPrompt };
+  if (Array.isArray(agentId))
+    body.agentIds = agentId;
+  else
+    body.agentId = agentId;
+  return await api('POST', '/sessions', body);
 }
 
 async function sendMessage(sessionId, content) {
@@ -98,6 +355,26 @@ async function sendMessageStream(sessionId, content, callbacks = {}) {
         let error = await response.json().catch(() => ({ error: 'Stream failed' }));
         debug('API', 'Stream error response:', error);
         reject(new Error(error.error || 'Stream failed'));
+        return;
+      }
+
+      // Check if this is a command response (JSON) vs streaming response (SSE)
+      let contentType = response.headers.get('Content-Type') || '';
+      if (contentType.includes('application/json')) {
+        // Command response - parse JSON and call appropriate callback
+        let commandResult = await response.json();
+        debug('API', 'Command response received:', commandResult);
+
+        // Call the command callback if provided
+        if (callbacks.onCommand) {
+          callbacks.onCommand(commandResult);
+        }
+
+        // Resolve with command result
+        resolve({
+          isCommand: true,
+          ...commandResult,
+        });
         return;
       }
 
@@ -351,12 +628,14 @@ async function fetchAbility(id) {
   return await api('GET', `/abilities/${id}`);
 }
 
-async function createAbility(name, description, applies, content) {
-  return await api('POST', '/abilities', { name, description, applies, content, type: 'process' });
+async function createAbility(data) {
+  let { name, category, description, applies, content } = data;
+  return await api('POST', '/abilities', { name, category, description, applies, content, type: 'process' });
 }
 
-async function updateAbility(id, name, description, applies, content) {
-  return await api('PUT', `/abilities/${id}`, { name, description, applies, content });
+async function updateAbility(id, data) {
+  let { name, category, description, applies, content } = data;
+  return await api('PUT', `/abilities/${id}`, { name, category, description, applies, content });
 }
 
 async function deleteAbility(id) {
@@ -391,3 +670,161 @@ async function recordCharge(data) {
 async function createUsageCorrection(data) {
   return await api('POST', '/usage/correction', data);
 }
+
+// ============================================================================
+// Session Archive Functions (new)
+// ============================================================================
+
+async function archiveSession(id) {
+  return await api('POST', `/sessions/${id}/archive`);
+}
+
+async function unarchiveSession(id) {
+  return await api('POST', `/sessions/${id}/unarchive`);
+}
+
+// ============================================================================
+// Frame Functions
+// ============================================================================
+
+/**
+ * Fetch frames for a session.
+ * @param {number} sessionId - Session ID
+ * @param {object} [options] - Query options
+ * @returns {Promise<{frames: object[], count: number, hasMore: boolean}>}
+ */
+async function fetchFrames(sessionId, options = {}) {
+  return await API.frames.list(sessionId, options);
+}
+
+/**
+ * Fetch a single frame by ID.
+ * @param {number} sessionId - Session ID
+ * @param {string} frameId - Frame ID
+ * @returns {Promise<object>}
+ */
+async function fetchFrame(sessionId, frameId) {
+  return await API.frames.get(sessionId, frameId);
+}
+
+/**
+ * Convert frames to message-like objects for rendering.
+ * This bridges the old message-based UI with the new frame system.
+ *
+ * @param {object[]} frames - Array of frames
+ * @param {object} compiled - Compiled frame payloads
+ * @returns {object[]} Array of message-like objects
+ */
+function framesToMessages(frames, compiled = null) {
+  let messages = [];
+
+  for (let frame of frames) {
+    // Get the current payload (may be updated by UPDATE frames)
+    // Support both Map (from session-frames-provider) and plain object
+    let payload;
+    if (compiled instanceof Map) {
+      payload = compiled.get(frame.id) || frame.payload;
+    } else if (compiled && compiled[frame.id]) {
+      payload = compiled[frame.id];
+    } else {
+      payload = frame.payload;
+    }
+
+    if (frame.type === 'message') {
+      messages.push({
+        id:         frame.id,
+        role:       payload.role || (frame.authorType === 'user' ? 'user' : 'assistant'),
+        content:    payload.content || '',
+        hidden:     payload.hidden || false,
+        type:       frame.type,
+        authorType: frame.authorType,
+        timestamp:  frame.timestamp,
+        frameId:    frame.id,
+      });
+    } else if (frame.type === 'request') {
+      // Request frames (like websearch) can be rendered as special messages
+      messages.push({
+        id:         frame.id,
+        role:       'assistant',
+        content:    '',
+        hidden:     false,
+        type:       'request',
+        action:     payload.action,
+        data:       payload,
+        authorType: frame.authorType,
+        timestamp:  frame.timestamp,
+        frameId:    frame.id,
+        parentId:   frame.parentId,
+      });
+    } else if (frame.type === 'result') {
+      // Result frames can be nested under their parent request
+      messages.push({
+        id:         frame.id,
+        role:       'system',
+        content:    '',
+        hidden:     false,
+        type:       'result',
+        result:     payload,
+        authorType: frame.authorType,
+        timestamp:  frame.timestamp,
+        frameId:    frame.id,
+        parentId:   frame.parentId,
+      });
+    } else if (frame.type === 'compact') {
+      // Compact frames render as visible summary dividers
+      messages.push({
+        id:         frame.id,
+        role:       'system',
+        context:    payload.context || '',
+        hidden:     false,
+        type:       'compact',
+        authorType: frame.authorType,
+        timestamp:  frame.timestamp,
+        frameId:    frame.id,
+        createdAt:  frame.timestamp,
+      });
+    }
+    // UPDATE frames don't create new messages, they modify existing ones
+  }
+
+  return messages;
+}
+
+// ============================================================================
+// ES Module Exports
+// ============================================================================
+
+// ============================================================================
+// Global Window Exports
+// ============================================================================
+// These exports maintain compatibility with existing code that uses window.functionName
+// New code should use API.namespace.method() instead
+
+window.archiveSession     = archiveSession;
+window.unarchiveSession   = unarchiveSession;
+window.fetchSessions      = fetchSessions;
+window.fetchSession       = fetchSession;
+window.createSession      = createSession;
+window.sendMessage        = sendMessage;
+window.sendMessageStream  = sendMessageStream;
+window.clearMessages      = clearMessages;
+window.fetchAgents        = fetchAgents;
+window.createAgent        = createAgent;
+window.fetchAbilities     = fetchAbilities;
+window.fetchAbility       = fetchAbility;
+window.createAbility      = createAbility;
+window.updateAbility      = updateAbility;
+window.deleteAbility      = deleteAbility;
+window.fetchAgentConfig   = fetchAgentConfig;
+window.updateAgentConfig  = updateAgentConfig;
+window.deleteAgent        = deleteAgent;
+window.fetchUsage         = fetchUsage;
+window.fetchSessionUsage  = fetchSessionUsage;
+window.recordCharge       = recordCharge;
+window.createUsageCorrection = createUsageCorrection;
+window.login              = login;
+window.logout             = logout;
+window.fetchMe            = fetchMe;
+window.fetchFrames        = fetchFrames;
+window.fetchFrame         = fetchFrame;
+window.framesToMessages   = framesToMessages;

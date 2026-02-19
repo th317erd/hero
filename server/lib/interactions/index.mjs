@@ -17,6 +17,8 @@ import { initializeSystemFunction as _initializeSystemFunction, registerFunction
 import { WebSearchFunction } from './functions/websearch.mjs';
 import { HelpFunction } from './functions/help.mjs';
 import { PromptUpdateFunction } from './functions/prompt-update.mjs';
+import { DelegateFunction } from './functions/delegate.mjs';
+import { ExecuteCommandFunction } from './functions/execute-command.mjs';
 
 // Re-export base class and permission constants
 export { InteractionFunction, PERMISSION } from './function.mjs';
@@ -100,6 +102,12 @@ export { HelpFunction } from './functions/help.mjs';
 // Re-export prompt update function
 export { PromptUpdateFunction } from './functions/prompt-update.mjs';
 
+// Re-export delegate function
+export { DelegateFunction } from './functions/delegate.mjs';
+
+// Re-export execute command function
+export { ExecuteCommandFunction } from './functions/execute-command.mjs';
+
 /**
  * Initialize the interactions system.
  * Call this during server startup.
@@ -118,6 +126,8 @@ export function initializeInteractions(options = {}) {
   _registerFunctionClass(WebSearchFunction);
   _registerFunctionClass(HelpFunction);
   _registerFunctionClass(PromptUpdateFunction);
+  _registerFunctionClass(DelegateFunction);
+  _registerFunctionClass(ExecuteCommandFunction);
 
   // Set up handlers if provided
   if (options.onUserInteraction) {

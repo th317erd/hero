@@ -1,0 +1,559 @@
+/* Hero Components - Document-scope styles */
+/* These styles apply to custom elements in the Light DOM */
+/* Generated from component HTML files' <style data-for="..."> blocks */
+
+/* ===========================================
+   hero-app
+   =========================================== */
+hero-app {
+  display: block;
+  min-height: 100vh;
+}
+
+/* ===========================================
+   hero-header
+   =========================================== */
+hero-header {
+  display: block;
+  position: sticky;
+  top: 0;
+  z-index: 900;
+}
+
+/* ===========================================
+   hero-status-bar
+   =========================================== */
+hero-status-bar {
+  display: block;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 800;
+}
+
+hero-status-bar.hidden {
+  display: none;
+}
+
+/* ===========================================
+   hero-main-controls
+   =========================================== */
+hero-main-controls {
+  display: contents;
+}
+
+/* ===========================================
+   hero-input
+   =========================================== */
+hero-input {
+  display: block;
+}
+
+/* ===========================================
+   hero-chat
+   =========================================== */
+hero-chat {
+  display: block;
+  flex: 1;
+  overflow-y: auto;
+  position: relative;
+}
+
+/* ===========================================
+   session-frames-provider
+   =========================================== */
+session-frames-provider {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;  /* Required for flex children to shrink properly */
+  overflow: hidden;
+}
+
+/* ===========================================
+   hero-sessions-list
+   =========================================== */
+hero-sessions-list {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ===========================================
+   hml-prompt
+   =========================================== */
+hml-prompt {
+  display: inline;
+  vertical-align: baseline;
+}
+
+/* ===========================================
+   hero-step (declarative step container)
+   =========================================== */
+hero-step {
+  display: block;
+}
+
+/* ===========================================
+   hero-modal (all variants)
+   =========================================== */
+/* Hide modal components until opened */
+hero-modal,
+hero-modal-create-session,
+hero-modal-create-agent,
+hero-modal-configure-ability,
+hero-modal-abilities,
+hero-modal-agents,
+hero-modal-agent-settings,
+hero-step-modal {
+  display: none;
+}
+
+/* Hero Modal styles using mythix-modal ::part() selectors */
+hero-modal,
+hero-modal-create-session,
+hero-modal-create-agent,
+hero-modal-configure-ability,
+hero-modal-abilities,
+hero-modal-agents,
+hero-modal-agent-settings,
+hero-step-modal {
+  /* Component display */
+}
+
+/* Dialog styling via ::part() */
+hero-modal::part(dialog),
+hero-modal-create-session::part(dialog),
+hero-modal-create-agent::part(dialog),
+hero-modal-configure-ability::part(dialog),
+hero-modal-abilities::part(dialog),
+hero-modal-agents::part(dialog),
+hero-modal-agent-settings::part(dialog),
+hero-step-modal::part(dialog) {
+  max-width: min(90vw, calc(100vw - 32px));
+  max-height: 90vh;
+  border: 1px solid var(--border-color, #2d2d2d);
+  border-radius: var(--radius-lg, 8px);
+  background: var(--bg-secondary, #1a1a2e);
+  color: var(--text-primary, #e0e0e0);
+  box-sizing: border-box;
+}
+
+/* Header styling */
+hero-modal::part(header),
+hero-modal-create-session::part(header),
+hero-modal-create-agent::part(header),
+hero-modal-configure-ability::part(header),
+hero-modal-abilities::part(header),
+hero-modal-agents::part(header),
+hero-modal-agent-settings::part(header),
+hero-step-modal::part(header) {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-color, #2d2d2d);
+  background: var(--bg-tertiary, #2a2a3e);
+}
+
+/* Caption styling */
+hero-modal::part(caption),
+hero-modal-create-session::part(caption),
+hero-modal-create-agent::part(caption),
+hero-modal-configure-ability::part(caption),
+hero-modal-abilities::part(caption),
+hero-modal-agents::part(caption),
+hero-modal-agent-settings::part(caption),
+hero-step-modal::part(caption) {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+/* Main content styling */
+hero-modal::part(main),
+hero-modal-create-session::part(main),
+hero-modal-create-agent::part(main),
+hero-modal-configure-ability::part(main),
+hero-modal-abilities::part(main),
+hero-modal-agents::part(main),
+hero-modal-agent-settings::part(main),
+hero-step-modal::part(main) {
+  padding: 20px;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Footer styling */
+hero-modal::part(footer),
+hero-modal-create-session::part(footer),
+hero-modal-create-agent::part(footer),
+hero-modal-configure-ability::part(footer),
+hero-modal-abilities::part(footer),
+hero-modal-agents::part(footer),
+hero-modal-agent-settings::part(footer),
+hero-step-modal::part(footer) {
+  padding: 16px 20px;
+  border-top: 1px solid var(--border-color, #2d2d2d);
+  background: var(--bg-tertiary, #2a2a3e);
+}
+
+/* Tab content areas - fill available space and enable scrolling */
+hero-modal-abilities .tab-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+hero-modal-abilities .tab-content:not(.active) {
+  display: none;
+}
+
+/* List containers - let modal main handle scrolling */
+hero-modal-abilities .abilities-list,
+hero-modal-agents .agents-list {
+  flex: 1;
+  min-height: 0;
+  /* No max-height or overflow - modal main scrolls instead */
+}
+
+/* Agents content wrapper */
+hero-modal-agents .agents-content {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Shared modal styles using :is() selector */
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) .error-message {
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: var(--radius-sm, 4px);
+  background: rgba(248, 113, 113, 0.1);
+  color: var(--error, #f87171);
+  font-size: 14px;
+}
+
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) .error-message:empty {
+  display: none;
+}
+
+/* Form elements */
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) .form-group {
+  margin-bottom: 16px;
+}
+
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) .form-row {
+  display: flex;
+  gap: 16px;
+}
+
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) .form-group-half {
+  flex: 1;
+}
+
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) :is(input, select, textarea) {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color, #2d2d2d);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--bg-tertiary, #2a2a3e);
+  color: var(--text-primary, #e0e0e0);
+  font-family: inherit;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) :is(input, select, textarea):focus {
+  outline: none;
+  border-color: var(--accent, #f472b6);
+}
+
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) .form-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-muted, #6b7280);
+}
+
+/* Checkbox list */
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) .checkbox-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) .checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) .checkbox-item input {
+  width: auto;
+}
+
+/* Tab styles */
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) .modal-header-tabs {
+  flex-shrink: 0;
+  margin-bottom: 16px;
+}
+
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) .modal-tabs {
+  display: flex;
+  gap: 0;
+}
+
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) .tab-button {
+  padding: 10px 20px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary, #9ca3af);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) .tab-button:hover {
+  color: var(--text-primary, #e0e0e0);
+}
+
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) .tab-button.active {
+  background: transparent;
+  color: var(--accent, #f472b6);
+  border-bottom-color: var(--accent, #f472b6);
+}
+
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) .tab-content {
+  display: none;
+}
+
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) .tab-content.active {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/* List items - abilities (column layout: info on top, description below) */
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) .ability-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--border-color, #2d2d2d);
+  border-radius: var(--radius-sm, 4px);
+  margin-bottom: 8px;
+  background: var(--bg-tertiary, #2a2a3e);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+/* List items - agents (row layout: info and actions side by side) */
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) .agent-item {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border-color, #2d2d2d);
+  border-radius: var(--radius-sm, 4px);
+  margin-bottom: 8px;
+  background: var(--bg-tertiary, #2a2a3e);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) :is(.ability-item, .agent-item):hover {
+  background: var(--hover-bg, #3a3a4e);
+  border-color: var(--accent, #f472b6);
+}
+
+/* Ability info row - contains name, category, and possibly actions */
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) .ability-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* Agent info - left side with name, type, model */
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) .agent-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) :is(.ability-category, .agent-type, .agent-model) {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--bg-primary, #0f0f1a);
+  color: var(--text-muted, #6b7280);
+}
+
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) :is(.ability-info, .agent-info) > strong {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 250px;
+}
+
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) .ability-description {
+  margin: 4px 0 0 0;
+  font-size: 13px;
+  color: var(--text-secondary, #9ca3af);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) :is(.ability-actions, .agent-actions) {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) .empty-state {
+  color: var(--text-muted, #6b7280);
+  font-style: italic;
+  text-align: center;
+  padding: 20px;
+}
+
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) .button-icon-action {
+  padding: 8px 12px;
+  font-size: 18px;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm, 4px);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: background 0.15s, border-color 0.15s;
+}
+
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) .button-icon-action:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) :is(.abilities-actions, .agents-actions) {
+  margin-top: 16px;
+  margin-bottom: 16px;
+  flex-shrink: 0;
+}
+
+/* Config editor */
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) .config-editor {
+  font-family: monospace;
+  font-size: 13px;
+  resize: vertical;
+  max-height: 50vh;
+}
+
+/* Agent config modal - make it wider for code editing */
+body > dialog[data-modal-name="agent-settings"] {
+  width: min(600px, calc(100vw - 32px));
+}
+
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) .config-description {
+  margin-top: 0;
+  color: var(--text-secondary, #9ca3af);
+  font-size: 14px;
+}
+
+/* ===========================================
+   Modal Scrollbar Styling
+   =========================================== */
+/* Custom scrollbar for modal content */
+:is(hero-modal, hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+:is(hero-modal, hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) ::-webkit-scrollbar-track {
+  background: var(--bg-primary, #0f0f1a);
+  border-radius: 4px;
+}
+
+:is(hero-modal, hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) ::-webkit-scrollbar-thumb {
+  background: var(--border-color, #2d2d2d);
+  border-radius: 4px;
+}
+
+:is(hero-modal, hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) ::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted, #6b7280);
+}
+
+/* Firefox scrollbar styling */
+:is(hero-modal, hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-color, #2d2d2d) var(--bg-primary, #0f0f1a);
+}
+
+/* ===========================================
+   Form Validation Styling
+   =========================================== */
+/* Invalid field styling */
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) .field-invalid {
+  border-color: var(--error, #f87171) !important;
+  box-shadow: 0 0 0 1px var(--error, #f87171);
+}
+
+:is(hero-modal-create-session, hero-modal-create-agent, hero-modal-configure-ability, hero-modal-abilities, hero-modal-agents, hero-modal-agent-settings, hero-step-modal) .field-invalid:focus {
+  border-color: var(--error, #f87171) !important;
+  box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.3);
+}
+
+/* ===========================================
+   Step Modal Styling
+   =========================================== */
+/* Step progress dots in header */
+hero-step-modal .step-progress,
+hero-modal-configure-ability .step-progress {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted, #6b7280);
+  margin-left: 8px;
+}
+
+hero-step-modal .step-dot,
+hero-modal-configure-ability .step-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border-color, #2d2d2d);
+  transition: background 0.2s;
+}
+
+hero-step-modal .step-dot.active,
+hero-modal-configure-ability .step-dot.active {
+  background: var(--accent, #f472b6);
+}
+
+hero-step-modal .step-dot.completed,
+hero-modal-configure-ability .step-dot.completed {
+  background: var(--success, #4ade80);
+}

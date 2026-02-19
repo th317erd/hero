@@ -33,8 +33,10 @@ router.post('/login', async (req, res) => {
       maxAge:   30 * 24 * 60 * 60 * 1000, // 30 days
     });
 
+    // Return token in body so client can store in localStorage for WebSocket
     return res.json({
       success: true,
+      token,
       user:    {
         id:       user.id,
         username: user.username,

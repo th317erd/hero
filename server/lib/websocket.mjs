@@ -140,17 +140,23 @@ export function initWebSocket(server) {
           // Ability approval responses
           case 'ability_approval_response':
             if (message.executionId) {
-              handleApprovalResponse(
+              // Pass security context: authenticated userId + optional request hash
+              let approvalResult = handleApprovalResponse(
                 message.executionId,
                 message.approved,
                 message.reason,
-                message.rememberForSession
+                message.rememberForSession,
+                {
+                  userId:      userId,
+                  requestHash: message.requestHash || null,
+                }
               );
 
               ws.send(JSON.stringify({
                 type:        'ability_approval_result',
                 executionId: message.executionId,
-                success:     true,
+                success:     approvalResult?.success ?? true,
+                error:       approvalResult?.error || null,
               }));
             }
             break;
@@ -199,7 +205,8 @@ export function initWebSocket(server) {
               let resolved = bus.respond(
                 message.interactionId,
                 message.payload,
-                message.success !== false
+                message.success !== false,
+                { userId: userId } // Pass authenticated user for verification
               );
 
               ws.send(JSON.stringify({

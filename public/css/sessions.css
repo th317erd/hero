@@ -34,6 +34,33 @@
   gap: 12px;
 }
 
+/* Sidebar header (hero-sidebar component) */
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.sidebar-header .session-search {
+  flex: 1;
+  padding: 8px 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.sidebar-header .session-search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.sidebar-header .session-search::placeholder {
+  color: var(--text-muted);
+}
+
 .search-box {
   position: relative;
 }
@@ -57,14 +84,23 @@
   color: var(--text-muted);
 }
 
-#toggle-archived {
+.toggle-archived {
   font-size: 18px;
   padding: 6px 10px;
   opacity: 0.5;
   transition: opacity 0.2s;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
 }
 
-#toggle-archived.active {
+.toggle-archived:hover {
+  opacity: 0.8;
+  background: var(--bg-tertiary);
+}
+
+.toggle-archived.active {
   opacity: 1;
   background: var(--bg-tertiary);
 }
@@ -225,7 +261,7 @@
   flex-shrink: 0;
 }
 
-.session-archive-btn {
+.session-archive-button {
   padding: 6px 8px;
   font-size: 14px;
   background: transparent;
@@ -235,27 +271,27 @@
   transition: opacity 0.2s, color 0.2s;
 }
 
-.session-archive-btn:hover {
+.session-archive-button:hover {
   opacity: 1;
   color: var(--error);
 }
 
-.session-row.archived .session-archive-btn {
+.session-row.archived .session-archive-button {
   opacity: 0.8;
   color: var(--success);
 }
 
-.session-row.archived .session-archive-btn:hover {
+.session-row.archived .session-archive-button:hover {
   opacity: 1;
   color: var(--success);
 }
 
 /* Agent sessions get a different archive button style */
-.session-row.agent-session .session-archive-btn {
+.session-row.agent-session .session-archive-button {
   opacity: 0.6;
 }
 
-.session-row.agent-session .session-archive-btn:hover {
+.session-row.agent-session .session-archive-button:hover {
   opacity: 1;
 }
 
@@ -271,10 +307,49 @@
   text-decoration: underline;
 }
 
+/* Floating Action Button - New Session (mobile only) */
+.fab-new-session {
+  display: none;  /* Hidden on desktop */
+  position: fixed;
+  bottom: 52px;  /* Above status bar (32px) + spacing */
+  right: 20px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: white;
+  font-size: 32px;
+  font-weight: 300;
+  line-height: 1;
+  border: none;
+  box-shadow: var(--shadow-lg);
+  cursor: pointer;
+  z-index: 850;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.fab-new-session:hover {
+  transform: scale(1.05);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.5);
+}
+
+.fab-new-session:active {
+  transform: scale(0.95);
+}
+
 /* Responsive */
 @media (max-width: 640px) {
+  /* Show FAB on mobile */
+  .fab-new-session {
+    display: flex;
+  }
+
+  /* Add padding at bottom for status bar + FAB */
   .sessions-main {
     padding: 16px;
+    padding-bottom: 120px;  /* Room for FAB + status bar */
   }
 
   .sessions-header {

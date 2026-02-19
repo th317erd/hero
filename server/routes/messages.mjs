@@ -9,21 +9,21 @@
 import { randomUUID } from 'crypto';
 import { Router } from 'express';
 import { getDatabase } from '../database.mjs';
-import { decryptWithKey } from '../encryption.mjs';
 import { requireAuth, getDataKey } from '../middleware/auth.mjs';
-import { createAgent } from '../lib/agents/index.mjs';
-import { getSystemProcess, isSystemProcess, injectProcesses } from '../lib/processes/index.mjs';
 import { detectInteractions, executeInteractions, formatInteractionFeedback } from '../lib/interactions/index.mjs';
 import { buildContext } from '../lib/pipeline/context.mjs';
 import { processMarkup, hasExecutableElements } from '../lib/markup/index.mjs';
 import { getStartupAbilities } from '../lib/abilities/registry.mjs';
-import { loadUserAbilities } from '../lib/abilities/loaders/user.mjs';
 import { loadFramesForContext } from '../lib/frames/context.mjs';
 import {
   createUserMessageFrame,
   createAgentMessageFrame,
   createSystemMessageFrame,
 } from '../lib/frames/broadcast.mjs';
+import { handleCommandInterception } from '../lib/messaging/command-handler.mjs';
+import { setupSessionAgent } from '../lib/messaging/session-setup.mjs';
+import { loadSessionWithAgent } from '../lib/participants/index.mjs';
+import { beforeUserMessage, afterAgentResponse } from '../lib/plugins/hooks.mjs';
 
 const router = Router();
 
@@ -68,76 +68,109 @@ router.get('/:sessionId/messages', (req, res) => {
 /**
  * POST /api/sessions/:sessionId/messages
  * Send a message and get the agent's response (non-streaming).
+ *
+ * If `hidden: true` is passed in the body, the message is stored as a hidden
+ * system message and no agent response is generated. This is used by commands
+ * like /reload to inject instructions without triggering a response.
  */
 router.post('/:sessionId/messages', async (req, res) => {
-  let { content } = req.body;
+  let { content, hidden } = req.body;
 
   if (!content || typeof content !== 'string')
     return res.status(400).json({ error: 'Message content required' });
 
+  // =========================================================================
+  // COMMAND INTERCEPTION: Check if this is a command before involving agent
+  // =========================================================================
+  let commandResult = await handleCommandInterception({
+    content,
+    sessionId: parseInt(req.params.sessionId, 10),
+    userId:    req.user.id,
+    dataKey:   (req.user && req.user.secret) ? req.user.secret.dataKey : null,
+  });
+
+  if (commandResult.handled) {
+    if (commandResult.error && !commandResult.result) {
+      return res.status(commandResult.status || 500).json({ error: commandResult.error });
+    }
+    return res.json(commandResult.result);
+  }
+  // =========================================================================
+  // END COMMAND INTERCEPTION
+  // =========================================================================
+
+  // Run BEFORE_USER_MESSAGE hook (plugins can modify content)
+  try {
+    content = await beforeUserMessage(content, {
+      sessionId: parseInt(req.params.sessionId, 10),
+      userId:    req.user.id,
+    });
+  } catch (error) {
+    console.error('[Messages] beforeUserMessage hook error:', error.message);
+  }
+
+  // If hidden flag is set, store as hidden and optionally show acknowledgment
+  if (hidden) {
+    let db = getDatabase();
+    let sessionId = parseInt(req.params.sessionId, 10);
+
+    // Verify session exists and belongs to user
+    let session = db.prepare('SELECT id FROM sessions WHERE id = ? AND user_id = ?').get(sessionId, req.user.id);
+
+    if (!session)
+      return res.status(404).json({ error: 'Session not found' });
+
+    // Store as hidden system message (agent can see this in context)
+    createSystemMessageFrame({
+      sessionId: sessionId,
+      userId:    req.user.id,
+      content:   content,
+      hidden:    true,
+    });
+
+    // Create visible acknowledgment if requested
+    if (req.body.showAcknowledgment) {
+      createAgentMessageFrame({
+        sessionId: sessionId,
+        userId:    req.user.id,
+        agentId:   null,
+        content:   '<p><em>System instructions have been refreshed.</em></p>',
+        hidden:    false,
+        skipSanitize: true,
+      });
+    }
+
+    // Update session timestamp
+    db.prepare('UPDATE sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(sessionId);
+
+    return res.json({
+      success: true,
+      message: 'Hidden message stored',
+    });
+  }
+
   let db = getDatabase();
   let sessionId = parseInt(req.params.sessionId, 10);
 
-  // Get session with agent info
-  let session = db.prepare(`
-    SELECT
-      s.id,
-      s.system_prompt,
-      a.id as agent_id,
-      a.type as agent_type,
-      a.api_url as agent_api_url,
-      a.encrypted_api_key,
-      a.encrypted_config,
-      a.default_processes
-    FROM sessions s
-    JOIN agents a ON s.agent_id = a.id
-    WHERE s.id = ? AND s.user_id = ?
-  `).get(sessionId, req.user.id);
+  // Load session with coordinator agent from participants
+  let session = loadSessionWithAgent(sessionId, req.user.id, db);
 
   if (!session)
     return res.status(404).json({ error: 'Session not found' });
 
+  if (!session.agent_id)
+    return res.status(400).json({ error: 'Session has no agent configured' });
+
   try {
     let dataKey = getDataKey(req);
 
-    // Load user abilities
-    loadUserAbilities(req.user.id, dataKey);
-
-    // Decrypt agent credentials
-    let apiKey      = (session.encrypted_api_key) ? decryptWithKey(session.encrypted_api_key, dataKey) : null;
-    let agentConfig = (session.encrypted_config) ? JSON.parse(decryptWithKey(session.encrypted_config, dataKey)) : {};
-
-    // Build process map for injection
-    let defaultProcesses = JSON.parse(session.default_processes || '[]');
-    let processMap       = new Map();
-
-    // Load system processes
-    for (let processName of defaultProcesses) {
-      if (isSystemProcess(processName)) {
-        let processContent = getSystemProcess(processName);
-        if (processContent)
-          processMap.set(processName, processContent);
-      }
-    }
-
-    // Load user processes
-    let userProcessNames = defaultProcesses.filter((n) => !isSystemProcess(n));
-    if (userProcessNames.length > 0) {
-      let placeholders  = userProcessNames.map(() => '?').join(',');
-      let userProcesses = db.prepare(`
-        SELECT name, encrypted_content
-        FROM processes
-        WHERE user_id = ? AND name IN (${placeholders})
-      `).all(req.user.id, ...userProcessNames);
-
-      for (let p of userProcesses) {
-        let decryptedContent = decryptWithKey(p.encrypted_content, dataKey);
-        processMap.set(p.name, decryptedContent);
-      }
-    }
-
-    // Inject processes into user message content
-    let processedContent = injectProcesses(content, processMap);
+    // Set up agent with decrypted credentials, processes, and content injection
+    let { agent, processedContent } = setupSessionAgent({
+      session,
+      userId:  req.user.id,
+      dataKey,
+      content,
+    });
 
     // Check if this is the first message
     let frameCount = db.prepare(`
@@ -202,14 +235,6 @@ router.post('/:sessionId/messages', async (req, res) => {
     // Add user message to history (with processes injected for AI)
     messages.push({ role: 'user', content: processedContent });
 
-    // Create agent and send message
-    let agent = createAgent(session.agent_type, {
-      apiKey:  apiKey,
-      apiUrl:  session.agent_api_url,
-      system:  session.system_prompt,
-      ...agentConfig,
-    });
-
     let response = await agent.sendMessage(messages);
 
     // Interaction execution loop
@@ -233,10 +258,12 @@ router.post('/:sessionId/messages', async (req, res) => {
         hidden:    true,
       });
 
-      // Build context and execute interactions
+      // Build context for agent-originated interactions
+      // NOTE: No senderId — these are agent interactions, not user-authorized
       let interactionContext = {
         sessionId: sessionId,
         userId:    req.user.id,
+        agentId:   session.agent_id,
         dataKey:   dataKey,
       };
 
@@ -261,8 +288,14 @@ router.post('/:sessionId/messages', async (req, res) => {
       response = await agent.sendMessage(messages);
     }
 
-    // Process HML markup elements
+    // Extract text content from response (Claude API returns array of content blocks)
     let finalContent = response.content;
+    if (Array.isArray(finalContent)) {
+      finalContent = finalContent
+        .filter((block) => block.type === 'text')
+        .map((block) => block.text)
+        .join('');
+    }
 
     if (typeof finalContent === 'string' && hasExecutableElements(finalContent)) {
       let hmlContext = buildContext({
@@ -276,6 +309,18 @@ router.post('/:sessionId/messages', async (req, res) => {
 
       if (markupResult.modified)
         finalContent = markupResult.text;
+    }
+
+    // Run AFTER_AGENT_RESPONSE hook (plugins can modify final content)
+    try {
+      let hookResult = await afterAgentResponse(
+        { content: finalContent, agentId: session.agent_id },
+        { sessionId, userId: req.user.id },
+      );
+      if (hookResult && typeof hookResult.content === 'string')
+        finalContent = hookResult.content;
+    } catch (error) {
+      console.error('[Messages] afterAgentResponse hook error:', error.message);
     }
 
     // Store final assistant response as frame
@@ -297,23 +342,6 @@ router.post('/:sessionId/messages', async (req, res) => {
     console.error('Message error:', error);
     return res.status(500).json({ error: 'Failed to process message' });
   }
-});
-
-/**
- * DELETE /api/sessions/:sessionId/messages
- * Clear all frames in a session.
- */
-router.delete('/:sessionId/messages', (req, res) => {
-  let db      = getDatabase();
-  let session = db.prepare('SELECT id FROM sessions WHERE id = ? AND user_id = ?').get(req.params.sessionId, req.user.id);
-
-  if (!session)
-    return res.status(404).json({ error: 'Session not found' });
-
-  db.prepare('DELETE FROM frames WHERE session_id = ?').run(req.params.sessionId);
-  db.prepare('UPDATE sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(req.params.sessionId);
-
-  return res.json({ success: true });
 });
 
 export default router;

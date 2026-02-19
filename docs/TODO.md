@@ -1,6 +1,7 @@
 # Hero Project Todo
 
 ## Completed
+[x] Markdown → HTML migration - Agent outputs HTML, server-side sanitization (105 tests)
 [x] Startup abilities (`_onstart_*` pattern) - implemented and working
 [x] Abilities system consolidation (processes + functions = abilities)
 [x] Hidden messages feature - startup messages hidden from UI but sent to AI
@@ -22,12 +23,105 @@
 
 ## In Progress
 
+### Interaction Frames Implementation
+
+**Phase 1: Database Foundation** ✅ COMPLETE
+- [x] Create `frames` table with new schema (migration 014)
+- [x] Drop old `messages` table (migration 015)
+- [x] Write frame CRUD functions (server/lib/frames/index.mjs)
+- [x] Tests for frame operations (36 tests passing)
+
+**Phase 2: Frame Core Library** ✅ COMPLETE
+- [x] `createFrame()`, `getFrames()`, `getFramesBySession()` - implemented
+- [x] `compileFrames()` — replay/compilation logic - implemented
+- [x] Target ID parsing utilities - implemented (prefix:id format)
+- [x] Tests for compilation - 36 tests covering all scenarios
+
+**Phase 3: Server-Side Frame Loop** ✅ COMPLETE
+- [x] Refactor `messages-stream.mjs` to create frames
+- [x] Frame-based context builder for agent calls - `server/lib/frames/context.mjs`
+  - `loadFramesForContext()` - Load frames for AI context
+  - `getFramesForDisplay()` - Get frames with compiled state
+  - `buildConversationForCompaction()` - Format for summarization
+  - `countMessagesSinceCompact()` - Count messages for compaction trigger
+- [x] API endpoint: `GET /api/sessions/:id/frames` - implemented
+  - GET /sessions/:id/frames - List frames with filters
+  - GET /sessions/:id/frames/stats - Frame statistics
+  - GET /sessions/:id/frames/:frameId - Single frame
+- [x] Frame broadcast helpers - `server/lib/frames/broadcast.mjs`
+  - `createAndBroadcastFrame()` - Core function
+  - `createUserMessageFrame()`, `createAgentMessageFrame()`, `createSystemMessageFrame()`
+  - `createRequestFrame()`, `createResultFrame()`, `createCompactFrame()`, `createUpdateFrame()`
+- [x] Updated `compaction.mjs` to use frames
+- [x] Updated `sessions.mjs` to use frames for message counts and previews
+- [x] Updated `messages.mjs` (non-streaming) to use frames
+- [x] Updated `conditional.mjs` to use frames for prompt detection
+- [x] Updated `prompt-update.mjs` to update frame payloads
+- [x] Tests for frame broadcast helpers (12 tests)
+
+**Phase 4: WebSocket Protocol** (Pending - client update deferred)
+- [ ] Change WS to emit frames (including phantoms)
+- [ ] Fetch frames via API on load, WS for real-time
+- [ ] Tests for frame streaming
+
+**Phase 5: Interactions & Commands** (Pending - client update deferred)
+- [ ] Refactor websearch to emit request/result frames
+- [ ] Other commands follow same pattern
+- [ ] Parent/child frame relationships
+- [ ] Tests for interaction chains
+
+**Phase 6: Compaction** ✅ COMPLETE
+- [x] Trigger compaction logic (using `countMessagesSinceCompact`)
+- [x] Agent generates compact frame (using `createCompactFrame`)
+- [x] Load-from-compact logic (using `loadFramesForContext`)
+- [x] Compaction module fully migrated to frames
+
+**Notes:**
+- Client updates deferred (big plans coming)
+- Keep code plugin-ready (modular, clean interfaces)
+- Code in `server/lib/frames/`
+
+---
+
+## Architecture: Interaction Frames
+
+### Problem Statement
+The application has grown complex. The hml-prompt implementation struggles because there are too many moving parts between frontend rendering, server-side state, and persistence that don't compose well. We need to tighten up the agent layer with better separation of concerns.
+
+### Core Idea: Event Sourcing for Conversations
+All conversation activity becomes immutable "interaction frames" — like git commits or database binlog entries. The current state is *derived* by replaying frames from the beginning (or from a checkpoint).
+
+**Principles:**
+1. Server-side is 100% self-contained, can run headless
+2. Frontend is just a frame renderer/subscriber
+3. Single source of truth — replay frames = exact state
+4. The "agent loop" is tight and isolated
+
+**Analogy:** Git for conversations. Each frame is a commit. State is built by replaying commits.
+
+---
 
 ## Pending
 [ ] Debug "Show hidden messages" checkbox - debug logging added, needs user testing to verify behavior
 [ ] Add token scalar setting for adjusting cost calculation ratio (mentioned in update_usage requirements)
 
+## Recently Completed (2026-02-08)
+[x] Mythix-UI Component Refactoring - Phase 2 complete
+    - Created `hero-main-controls.js` - consolidates header action buttons (horizontal/vertical layouts)
+    - Created `HeroModalAbilities` - abilities list with System/User tabs
+    - Created `HeroModalAgents` - agents list with edit/delete
+    - Created `HeroModalAgentConfig` - JSON configuration editor for agents
+    - Updated `hero-header.js` to use `<hero-main-controls>` component
+    - Removed ~235 lines of old modal HTML from index.html
+    - Cleaned up state.js (~62 lines of modal element references removed)
+    - Cleaned up app.js (~350 lines of modal functions removed)
+    - Fixed event naming: `show-modal` for consistency across components
+
 ## Recently Completed (2026-02-07)
+[x] Nginx config: Added /mythix-ui/ location block for mythix-ecosystem libraries
+[x] Client-side cleanup: Moved cost utilities (formatTokenCount, calculateCost, formatCost) to utils.js
+[x] Client-side cleanup: Converted debug TRACE statements to use debug() function in app.js and api.js
+[x] Client-side cleanup: Added showSystemMessage() helper, reduced app.js by 116 lines (27 patterns consolidated)
 [x] `<hml-prompt>` Web Component - full-featured inline user prompts
     - All input types: text, number, color, checkbox, checkboxes, radio, select, range
     - JSON options via `<data>` element for select/radio/checkboxes

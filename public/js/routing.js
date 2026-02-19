@@ -4,6 +4,14 @@
 // Routing
 // ============================================================================
 
+/**
+ * Wait for custom elements to be defined.
+ */
+async function waitForComponents() {
+  let components = ['hero-header', 'hero-sessions-list', 'hero-input'];
+  await Promise.all(components.map((name) => customElements.whenDefined(name)));
+}
+
 function getRoute() {
   let path = window.location.pathname;
 
@@ -33,6 +41,9 @@ function navigate(path) {
 
 async function handleRoute() {
   let route = getRoute();
+
+  // Wait for components to be ready before rendering views
+  await waitForComponents();
 
   // Check auth for non-login routes
   if (route.view !== 'login') {
@@ -79,4 +90,9 @@ function showView(viewName) {
   elements.loginView.style.display    = (viewName === 'login') ? 'flex' : 'none';
   elements.sessionsView.style.display = (viewName === 'sessions') ? 'flex' : 'none';
   elements.chatView.style.display     = (viewName === 'chat') ? 'flex' : 'none';
+
+  // Notify hero-header components of view change
+  document.dispatchEvent(new CustomEvent('viewchange', {
+    detail: { view: viewName },
+  }));
 }

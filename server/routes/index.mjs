@@ -14,6 +14,10 @@ import toolsRoutes from './tools.mjs';
 import abilitiesRoutes from './abilities.mjs';
 import helpRoutes from './help.mjs';
 import usageRoutes from './usage.mjs';
+import permissionsRoutes from './permissions.mjs';
+import searchRoutes from './search.mjs';
+import usersRoutes from './users.mjs';
+import uploadsRoutes from './uploads.mjs';
 
 const router = Router();
 
@@ -31,6 +35,11 @@ router.use('/tools', toolsRoutes);
 router.use('/abilities', abilitiesRoutes);
 router.use('/help', helpRoutes);
 router.use('/usage', usageRoutes);
+router.use('/permissions', permissionsRoutes);
+router.use('/search', searchRoutes);
+router.use('/users', usersRoutes);
+router.use('/uploads', uploadsRoutes);       // File serving: /uploads/:id
+router.use('/sessions', uploadsRoutes);      // Upload + list: /sessions/:id/uploads
 
 // Health check
 router.get('/health', (req, res) => {

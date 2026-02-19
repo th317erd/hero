@@ -16,7 +16,8 @@
     "change-password": "node server/cli/change-password.mjs",
     "update-user-encryption": "node server/cli/update-user-encryption.mjs",
     "test": "node --test 'spec/**/*-spec.mjs'",
-    "test:interactions": "node --test spec/lib/interactions/interactions-spec.mjs"
+    "test:interactions": "node --test spec/lib/interactions/interactions-spec.mjs",
+    "agent-info": "node scripts/agent-info.mjs"
   },
   "keywords": [
     "ai",
@@ -34,12 +35,15 @@
     "dotenv": "^16.4.0",
     "express": "^4.18.2",
     "jsonwebtoken": "^9.0.2",
+    "multer": "^2.0.2",
+    "mythix-ui-modal": "^1.0.8",
     "puppeteer": "^22.0.0",
     "turndown": "^7.2.2",
     "uuid": "^13.0.0",
     "ws": "^8.19.0"
   },
   "devDependencies": {
-    "jasmine": "^5.1.0"
+    "jasmine": "^5.1.0",
+    "jsdom": "^28.1.0"
   }
 }

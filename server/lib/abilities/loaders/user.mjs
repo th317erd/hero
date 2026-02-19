@@ -30,8 +30,7 @@ export function loadUserAbilities(userId, dataKey) {
   // Load from abilities table
   let abilities = db.prepare(`
     SELECT id, name, type, description, category, tags,
-           encrypted_content, input_schema,
-           auto_approve, auto_approve_policy, danger_level, applies,
+           encrypted_content, input_schema, applies,
            created_at, updated_at
     FROM abilities
     WHERE user_id = ? AND source = 'user'
@@ -53,14 +52,9 @@ export function loadUserAbilities(userId, dataKey) {
         category:    row.category || 'user',
         tags:        (row.tags) ? JSON.parse(row.tags) : [],
         inputSchema: (row.input_schema) ? JSON.parse(row.input_schema) : null,
-        permissions: {
-          autoApprove:       row.auto_approve === 1,
-          autoApprovePolicy: row.auto_approve_policy || 'ask',
-          dangerLevel:       row.danger_level || 'safe',
-        },
-        applies:   row.applies || null,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
+        applies:     row.applies || null,
+        createdAt:   row.created_at,
+        updatedAt:   row.updated_at,
       });
 
       count++;
@@ -95,13 +89,8 @@ export function loadUserAbilities(userId, dataKey) {
         description: row.description || metadata.description || '',
         category:    metadata.properties?.category || 'user',
         tags:        metadata.properties?.tags?.split(',').map((t) => t.trim()) || [],
-        permissions: {
-          autoApprove:       true,  // Processes auto-approve by default
-          autoApprovePolicy: 'always',
-          dangerLevel:       'safe',
-        },
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
+        createdAt:   row.created_at,
+        updatedAt:   row.updated_at,
       });
 
       count++;
@@ -134,9 +123,8 @@ export function saveUserAbility(userId, dataKey, ability) {
   let result = db.prepare(`
     INSERT INTO abilities (
       user_id, name, type, source, description, category, tags,
-      encrypted_content, input_schema,
-      auto_approve, auto_approve_policy, danger_level, applies
-    ) VALUES (?, ?, ?, 'user', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      encrypted_content, input_schema, applies
+    ) VALUES (?, ?, ?, 'user', ?, ?, ?, ?, ?, ?)
   `).run(
     userId,
     ability.name,
@@ -146,9 +134,6 @@ export function saveUserAbility(userId, dataKey, ability) {
     (ability.tags) ? JSON.stringify(ability.tags) : null,
     encryptedContent,
     (ability.inputSchema) ? JSON.stringify(ability.inputSchema) : null,
-    (ability.permissions?.autoApprove) ? 1 : 0,
-    ability.permissions?.autoApprovePolicy || 'ask',
-    ability.permissions?.dangerLevel || 'safe',
     ability.applies || null
   );
 
@@ -198,21 +183,6 @@ export function updateUserAbility(userId, abilityId, dataKey, updates) {
   if (updates.inputSchema !== undefined) {
     fields.push('input_schema = ?');
     values.push(JSON.stringify(updates.inputSchema));
-  }
-
-  if (updates.permissions?.autoApprove !== undefined) {
-    fields.push('auto_approve = ?');
-    values.push((updates.permissions.autoApprove) ? 1 : 0);
-  }
-
-  if (updates.permissions?.autoApprovePolicy !== undefined) {
-    fields.push('auto_approve_policy = ?');
-    values.push(updates.permissions.autoApprovePolicy);
-  }
-
-  if (updates.permissions?.dangerLevel !== undefined) {
-    fields.push('danger_level = ?');
-    values.push(updates.permissions.dangerLevel);
   }
 
   if (updates.applies !== undefined) {

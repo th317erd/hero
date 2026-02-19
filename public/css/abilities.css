@@ -90,23 +90,23 @@
   transform: scale(0.98);
 }
 
-.btn-approve {
+.button-approve {
   background: var(--success);
   color: white;
   border: none;
 }
 
-.btn-approve:hover {
+.button-approve:hover {
   background: color-mix(in srgb, var(--success) 85%, black);
 }
 
-.btn-deny {
+.button-deny {
   background: var(--bg-tertiary);
   color: var(--text-primary);
   border: 1px solid var(--border-color);
 }
 
-.btn-deny:hover {
+.button-deny:hover {
   background: var(--error);
   color: white;
   border-color: var(--error);
@@ -217,13 +217,13 @@
   transform: scale(1.05);
 }
 
-.question-binary .btn-yes:hover {
+.question-binary .button-yes:hover {
   background: var(--success);
   color: white;
   border-color: var(--success);
 }
 
-.question-binary .btn-no:hover {
+.question-binary .button-no:hover {
   background: var(--error);
   color: white;
   border-color: var(--error);

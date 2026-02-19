@@ -16,85 +16,33 @@
 import { randomUUID } from 'crypto';
 import { Router } from 'express';
 import { getDatabase } from '../database.mjs';
-import { decryptWithKey } from '../encryption.mjs';
 import { requireAuth, getDataKey } from '../middleware/auth.mjs';
-import { createAgent } from '../lib/agents/index.mjs';
-import { getSystemProcess, isSystemProcess, injectProcesses } from '../lib/processes/index.mjs';
 import { buildContext } from '../lib/pipeline/context.mjs';
 import { createStreamParser } from '../lib/markup/stream-parser.mjs';
 import { executePipeline } from '../lib/pipeline/index.mjs';
 import { getStartupAbilities } from '../lib/abilities/registry.mjs';
-import { loadUserAbilities } from '../lib/abilities/loaders/user.mjs';
 import { checkConditionalAbilities, formatConditionalInstructions } from '../lib/abilities/index.mjs';
 import { broadcastToUser } from '../lib/websocket.mjs';
-import { detectInteractions, executeInteractions, formatInteractionFeedback, searchWeb, getRegisteredFunctionClass } from '../lib/interactions/index.mjs';
+import { detectInteractions, executeInteractions, formatInteractionFeedback, searchWeb } from '../lib/interactions/index.mjs';
 import { checkCompaction } from '../lib/compaction.mjs';
 import { loadFramesForContext } from '../lib/frames/context.mjs';
 import {
   createUserMessageFrame,
   createAgentMessageFrame,
   createSystemMessageFrame,
-  createRequestFrame,
-  createResultFrame,
 } from '../lib/frames/broadcast.mjs';
+import { handleCommandInterception } from '../lib/messaging/command-handler.mjs';
+import { setupSessionAgent } from '../lib/messaging/session-setup.mjs';
+import { loadSessionWithAgent } from '../lib/participants/index.mjs';
+import { beforeUserMessage, afterAgentResponse } from '../lib/plugins/hooks.mjs';
+import {
+  stripInteractionTags,
+  replaceInteractionTagsWithNote,
+  getFriendlyErrorMessage,
+  getFunctionBannerConfig,
+  elementToAssertion,
+} from '../lib/messaging/content-utils.mjs';
 
-/**
- * Get the banner config for a function by name.
- * Returns null if the function doesn't have a banner config.
- *
- * @param {string} functionName - The function name (targetProperty)
- * @returns {Object|null} Banner config or null
- */
-function getFunctionBannerConfig(functionName) {
-  let FunctionClass = getRegisteredFunctionClass(functionName);
-  if (!FunctionClass) return null;
-
-  try {
-    let reg = FunctionClass.register();
-    return reg.banner || null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Convert raw API error messages to user-friendly messages.
- */
-function getFriendlyErrorMessage(rawMessage) {
-  if (!rawMessage) return 'An unexpected error occurred. Please try again.';
-
-  // Rate limit errors
-  if (rawMessage.includes('429') || rawMessage.includes('rate_limit')) {
-    return 'The AI service is currently busy. Please wait a moment and try again.';
-  }
-
-  // Authentication errors
-  if (rawMessage.includes('401') || rawMessage.includes('authentication') || rawMessage.includes('invalid_api_key')) {
-    return 'There was an authentication issue with the AI service. Please check your API key.';
-  }
-
-  // Overloaded errors
-  if (rawMessage.includes('overloaded') || rawMessage.includes('529')) {
-    return 'The AI service is temporarily overloaded. Please try again in a few moments.';
-  }
-
-  // Timeout errors
-  if (rawMessage.includes('timeout') || rawMessage.includes('ETIMEDOUT')) {
-    return 'The request timed out. Please try again.';
-  }
-
-  // Network errors
-  if (rawMessage.includes('ECONNREFUSED') || rawMessage.includes('network')) {
-    return 'Unable to connect to the AI service. Please check your connection.';
-  }
-
-  // Generic - don't expose raw JSON/technical details
-  if (rawMessage.includes('{') || rawMessage.length > 200) {
-    return 'An error occurred while processing your request. Please try again.';
-  }
-
-  return rawMessage;
-}
 
 const router = Router();
 
@@ -104,68 +52,6 @@ const DEBUG = process.env.DEBUG === 'true' || process.env.DEBUG === '1';
 function debug(...args) {
   if (DEBUG)
     console.log('[Stream]', ...args);
-}
-
-/**
- * Strip <interaction> tags and their content from text.
- * Returns the cleaned text with tags removed and duplicates removed.
- *
- * @param {string} text - Text potentially containing <interaction> tags
- * @returns {string} Text with interaction tags removed
- */
-function stripInteractionTags(text) {
-  if (!text) return text;
-
-  // Match <interaction>...</interaction> including content
-  // Uses non-greedy match and handles multiline
-  let result = text.replace(/<interaction>[\s\S]*?<\/interaction>/g, '');
-
-  // Clean up extra whitespace left behind
-  result = result.replace(/\n{3,}/g, '\n\n').trim();
-
-  // Deduplicate paragraphs (Claude sometimes repeats text before/after interaction)
-  result = deduplicateParagraphs(result);
-
-  return result;
-}
-
-/**
- * Check if content is ONLY interaction tags (no visible text).
- * Used to mark such messages as hidden.
- *
- * @param {string} text - Text to check
- * @returns {boolean} True if content is only interaction tags
- */
-function isInteractionOnly(text) {
-  if (!text) return true;
-
-  let stripped = stripInteractionTags(text);
-  return stripped.trim().length === 0;
-}
-
-/**
- * Deduplicate consecutive identical paragraphs.
- * Claude sometimes repeats text before and after interaction tags.
- *
- * @param {string} text - Text to deduplicate
- * @returns {string} Text with duplicate paragraphs removed
- */
-function deduplicateParagraphs(text) {
-  if (!text) return text;
-
-  let paragraphs = text.split(/\n\n+/);
-  let seen       = new Set();
-  let result     = [];
-
-  for (let para of paragraphs) {
-    let trimmed = para.trim();
-    if (trimmed && !seen.has(trimmed)) {
-      seen.add(trimmed);
-      result.push(para);
-    }
-  }
-
-  return result.join('\n\n');
 }
 
 // All routes require authentication
@@ -238,27 +124,50 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
 
   let db = getDatabase();
 
-  // Get session with agent info
-  let session = db.prepare(`
-    SELECT
-      s.id,
-      s.name as session_name,
-      s.system_prompt,
-      a.id as agent_id,
-      a.name as agent_name,
-      a.type as agent_type,
-      a.api_url as agent_api_url,
-      a.encrypted_api_key,
-      a.encrypted_config,
-      a.default_processes
-    FROM sessions s
-    JOIN agents a ON s.agent_id = a.id
-    WHERE s.id = ? AND s.user_id = ?
-  `).get(req.params.sessionId, req.user.id);
+  // =========================================================================
+  // COMMAND INTERCEPTION: Check if this is a command before involving agent
+  // =========================================================================
+  let commandResult = await handleCommandInterception({
+    content,
+    sessionId: parseInt(req.params.sessionId, 10),
+    userId:    req.user.id,
+    dataKey:   (req.user && req.user.secret) ? req.user.secret.dataKey : null,
+  });
+
+  if (commandResult.handled) {
+    if (commandResult.error && !commandResult.result) {
+      return res.status(commandResult.status || 500).json({ error: commandResult.error });
+    }
+    debug('Command result:', commandResult.result);
+    return res.json(commandResult.result);
+  }
+  // =========================================================================
+  // END COMMAND INTERCEPTION - Continue with normal message processing
+  // =========================================================================
+
+  // Run BEFORE_USER_MESSAGE hook (plugins can modify content)
+  let hookContext = {
+    sessionId: parseInt(req.params.sessionId, 10),
+    userId:    req.user.id,
+  };
+
+  try {
+    content = await beforeUserMessage(content, hookContext);
+  } catch (error) {
+    debug('beforeUserMessage hook error:', error.message);
+  }
+
+  // Load session with coordinator agent from participants
+  let session = loadSessionWithAgent(parseInt(req.params.sessionId, 10), req.user.id, db);
 
   if (!session) {
     debug('Session not found');
     return res.status(404).json({ error: 'Session not found' });
+  }
+
+  if (!session.agent_id) {
+    debug('Session has no agent');
+    return res.status(400).json({ error: 'Session has no agent configured' });
   }
 
   debug('Session found', { id: session.id, agentType: session.agent_type, agentName: session.agent_name });
@@ -284,13 +193,13 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
   }
 
   // Add error handlers to detect issues
-  res.on('error', (err) => {
-    debug('Response error:', err.message);
+  res.on('error', (error) => {
+    debug('Response error:', error.message);
   });
 
   if (res.socket) {
-    res.socket.on('error', (err) => {
-      debug('Socket error:', err.message);
+    res.socket.on('error', (error) => {
+      debug('Socket error:', error.message);
     });
     res.socket.on('end', () => {
       debug('Socket end event');
@@ -379,59 +288,21 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
   try {
     let dataKey = getDataKey(req);
 
-    // Load user abilities
-    loadUserAbilities(req.user.id, dataKey);
-
-    // Decrypt agent credentials
-    let apiKey      = (session.encrypted_api_key) ? decryptWithKey(session.encrypted_api_key, dataKey) : null;
-    let agentConfig = (session.encrypted_config) ? JSON.parse(decryptWithKey(session.encrypted_config, dataKey)) : {};
-
-    // Build process map for injection
-    let defaultProcesses = JSON.parse(session.default_processes || '[]');
-    let processMap       = new Map();
-
-    for (let processName of defaultProcesses) {
-      if (isSystemProcess(processName)) {
-        let processContent = getSystemProcess(processName);
-        if (processContent)
-          processMap.set(processName, processContent);
-      }
-    }
-
-    // Load user processes
-    let userProcessNames = defaultProcesses.filter((n) => !isSystemProcess(n));
-    if (userProcessNames.length > 0) {
-      let placeholders  = userProcessNames.map(() => '?').join(',');
-      let userProcesses = db.prepare(`
-        SELECT name, encrypted_content
-        FROM processes
-        WHERE user_id = ? AND name IN (${placeholders})
-      `).all(req.user.id, ...userProcessNames);
-
-      for (let p of userProcesses) {
-        let decryptedContent = decryptWithKey(p.encrypted_content, dataKey);
-        processMap.set(p.name, decryptedContent);
-      }
-    }
-
-    // Inject processes into user message content
-    let processedContent = injectProcesses(content, processMap);
+    // Set up agent with decrypted credentials, processes, and content injection
+    debug('Creating agent', { type: session.agent_type, hasApiUrl: !!session.agent_api_url });
+    let { agent, processedContent } = setupSessionAgent({
+      session,
+      userId:  req.user.id,
+      dataKey,
+      content,
+    });
+    debug('Agent created successfully');
 
     // Check if there are existing frames in the session
     let existingFrameCount = db.prepare(`
       SELECT COUNT(*) as count FROM frames
       WHERE session_id = ? AND type = 'message'
     `).get(req.params.sessionId)?.count || 0;
-
-    // Create agent
-    debug('Creating agent', { type: session.agent_type, hasApiKey: !!apiKey, hasApiUrl: !!session.agent_api_url });
-    let agent = createAgent(session.agent_type, {
-      apiKey: apiKey,
-      apiUrl: session.agent_api_url,
-      system: session.system_prompt,
-      ...agentConfig,
-    });
-    debug('Agent created successfully');
 
     // Build messages array for agent
     let messages = [];
@@ -535,11 +406,13 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
     // USER MESSAGE: Store and stream response
     // =========================================================================
 
-    // Store user message as frame
+    // Store user message as frame (strip interaction tags for display - they're processed separately)
+    // Keep raw content for interaction processing below
+    let displayContent = stripInteractionTags(content);
     createUserMessageFrame({
       sessionId: parseInt(req.params.sessionId, 10),
       userId:    req.user.id,
-      content:   content,
+      content:   displayContent,
       hidden:    false,
     });
 
@@ -590,12 +463,15 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
     }
 
     // Add user message to context (with process injection and conditional instructions)
-    messages.push({ role: 'user', content: processedContent });
+    // Replace <interaction> tags with a note - the AI needs to know the interaction was
+    // handled via IPC so it doesn't try to duplicate it (e.g., sending update_prompt again)
+    let cleanedContent = replaceInteractionTagsWithNote(processedContent);
+    messages.push({ role: 'user', content: cleanedContent });
 
     // Calculate estimated tokens for display
     let totalChars = 0;
-    for (let msg of messages) {
-      let content = (typeof msg.content === 'string') ? msg.content : JSON.stringify(msg.content);
+    for (let message of messages) {
+      let content = (typeof message.content === 'string') ? message.content : JSON.stringify(message.content);
       totalChars += content.length;
     }
     // Add system prompt length if present
@@ -851,18 +727,46 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
           sendEvent('tool_result', { messageId, ...chunk });
         } else if (chunk.type === 'usage') {
           debug(`Chunk #${chunkCount}: usage`, chunk);
+
+          // Include cache statistics in event
           sendEvent('usage', {
             messageId,
-            input_tokens:  chunk.input_tokens,
-            output_tokens: chunk.output_tokens,
+            input_tokens:                 chunk.input_tokens,
+            output_tokens:                chunk.output_tokens,
+            cache_creation_input_tokens:  chunk.cache_creation_input_tokens || 0,
+            cache_read_input_tokens:      chunk.cache_read_input_tokens || 0,
           });
 
-          // Calculate cost in cents
-          let inputTokens = chunk.input_tokens || 0;
-          let outputTokens = chunk.output_tokens || 0;
-          let inputCost = inputTokens * (0.003 / 1000);  // $3 per 1M input tokens
+          // Calculate cost in cents with cache pricing
+          // Sonnet 4 pricing: $3/1M input, $15/1M output
+          // Cache reads: 10% of input price ($0.30/1M)
+          // Cache writes: 125% of input price ($3.75/1M)
+          let inputTokens      = chunk.input_tokens || 0;
+          let outputTokens     = chunk.output_tokens || 0;
+          let cacheReadTokens  = chunk.cache_read_input_tokens || 0;
+          let cacheWriteTokens = chunk.cache_creation_input_tokens || 0;
+
+          // Regular input tokens (not from cache)
+          let regularInputTokens = inputTokens;
+          let inputCost = regularInputTokens * (0.003 / 1000);  // $3 per 1M input tokens
+
+          // Cache read tokens (90% discount)
+          let cacheReadCost = cacheReadTokens * (0.0003 / 1000);  // $0.30 per 1M (10% of $3)
+
+          // Cache write tokens (25% premium)
+          let cacheWriteCost = cacheWriteTokens * (0.00375 / 1000);  // $3.75 per 1M (125% of $3)
+
+          // Output tokens
           let outputCost = outputTokens * (0.015 / 1000);  // $15 per 1M output tokens
-          let costCents = Math.round((inputCost + outputCost) * 100);
+
+          let totalCost = inputCost + cacheReadCost + cacheWriteCost + outputCost;
+          let costCents = Math.round(totalCost * 100);
+
+          // Log cache savings
+          if (cacheReadTokens > 0) {
+            let savedCost = cacheReadTokens * (0.003 / 1000) * 0.9;  // 90% savings
+            debug('Cache savings:', { cacheReadTokens, savedCents: Math.round(savedCost * 100) });
+          }
 
           // Record charge in token_charges table
           // Note: message_id is NULL during streaming since the message isn't stored yet
@@ -870,7 +774,7 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
           db.prepare(`
             INSERT INTO token_charges (agent_id, session_id, message_id, input_tokens, output_tokens, cost_cents, charge_type)
             VALUES (?, ?, NULL, ?, ?, ?, 'usage')
-          `).run(session.agent_id, req.params.sessionId, inputTokens, outputTokens, costCents);
+          `).run(session.agent_id, req.params.sessionId, inputTokens + cacheReadTokens + cacheWriteTokens, outputTokens, costCents);
 
           // Also update session totals for backwards compatibility
           db.prepare(`
@@ -878,7 +782,7 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
             SET input_tokens = input_tokens + ?,
                 output_tokens = output_tokens + ?
             WHERE id = ?
-          `).run(inputTokens, outputTokens, req.params.sessionId);
+          `).run(inputTokens + cacheReadTokens + cacheWriteTokens, outputTokens, req.params.sessionId);
         } else if (chunk.type === 'done') {
           debug(`Chunk #${chunkCount}: done`, { stopReason: chunk.stopReason });
           // End the parser
@@ -941,6 +845,7 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
         let interactionContext = {
           sessionId: req.params.sessionId,
           userId:    req.user.id,
+          agentId:   session.agent_id,
           dataKey:   dataKey,
         };
 
@@ -987,7 +892,7 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
           if (res.flush) res.flush();
 
           // Store the interaction request as HIDDEN frame (intermediate message)
-          createAgentMessageFrame({
+          let agentMessageFrame = createAgentMessageFrame({
             sessionId:     parseInt(req.params.sessionId, 10),
             userId:        req.user.id,
             agentId:       session.agent_id,
@@ -996,7 +901,8 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
             skipBroadcast: true,
           });
 
-          // Execute interactions
+          // Execute interactions with parent frame ID for REQUEST/RESULT frame creation
+          interactionContext.parentFrameId = agentMessageFrame.id;
           let results = await executeInteractions(currentBlock, interactionContext);
           debug('Interaction results', { count: results.results.length });
 
@@ -1119,7 +1025,7 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
             agentId:       session.agent_id,
             content:       cleanFinalContent,
             hidden:        false,
-            skipBroadcast: true,
+            // Broadcast via WebSocket so hero-chat receives the frame
           });
           persistedMessageID = storedFrame.id;
           debug('Stored interaction response with frame ID:', persistedMessageID);
@@ -1136,6 +1042,18 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
         });
 
       } else {
+        // Run AFTER_AGENT_RESPONSE hook (plugins can modify final content)
+        try {
+          let hookResult = await afterAgentResponse(
+            { content: fullContent, agentId: session.agent_id },
+            { sessionId: parseInt(req.params.sessionId, 10), userId: req.user.id },
+          );
+          if (hookResult && typeof hookResult.content === 'string')
+            fullContent = hookResult.content;
+        } catch (error) {
+          debug('afterAgentResponse hook error:', error.message);
+        }
+
         // No interactions - store as frame
         debug('Storing assistant response as frame', { length: fullContent.length });
         let storedFrame = createAgentMessageFrame({
@@ -1144,7 +1062,7 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
           agentId:       session.agent_id,
           content:       fullContent,
           hidden:        false,
-          skipBroadcast: true,  // SSE already notifies client via message_complete
+          // Broadcast via WebSocket so hero-chat receives the frame
         });
         persistedMessageID = storedFrame.id;
         debug('Stored message with frame ID:', persistedMessageID);
@@ -1208,8 +1126,8 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
         } else if (result.debounced) {
           debug('Compaction debounced');
         }
-      }).catch((err) => {
-        console.error('[Stream] Compaction check error:', err);
+      }).catch((error) => {
+        console.error('[Stream] Compaction check error:', error);
       });
     }
 
@@ -1244,42 +1162,5 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
     res.end();
   }
 });
-
-/**
- * Convert HML element to assertion format for pipeline execution.
- * Note: websearch is handled by the interaction system, not HML pipeline.
- */
-function elementToAssertion(element) {
-  switch (element.type) {
-    case 'websearch':
-      // Websearch is handled by the interaction system via <interaction> tags,
-      // not through HML element execution. Return null to skip pipeline execution.
-      return null;
-
-    case 'bash':
-      return {
-        id:        element.id,
-        assertion: 'command',
-        name:      'bash',
-        message:   element.content,
-        ...element.attributes,
-      };
-
-    case 'ask':
-      return {
-        id:        element.id,
-        assertion: 'question',
-        name:      'ask',
-        message:   element.content,
-        mode:      (element.attributes.timeout) ? 'timeout' : 'demand',
-        timeout:   (element.attributes.timeout) ? parseInt(element.attributes.timeout, 10) * 1000 : undefined,
-        default:   element.attributes.default,
-        options:   element.attributes.options?.split(',').map((s) => s.trim()),
-      };
-
-    default:
-      return null;
-  }
-}
 
 export default router;

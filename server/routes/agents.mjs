@@ -4,6 +4,7 @@ import { Router } from 'express';
 import { getDatabase } from '../database.mjs';
 import { encryptWithKey, decryptWithKey } from '../encryption.mjs';
 import { requireAuth, getDataKey } from '../middleware/auth.mjs';
+import { getAgentAvatar } from '../lib/avatars.mjs';
 
 const router = Router();
 
@@ -17,7 +18,7 @@ router.use(requireAuth);
 router.get('/', (req, res) => {
   let db     = getDatabase();
   let agents = db.prepare(`
-    SELECT id, name, type, api_url, encrypted_config, default_processes, created_at, updated_at
+    SELECT id, name, type, api_url, avatar_url, encrypted_config, default_processes, created_at, updated_at
     FROM agents
     WHERE user_id = ?
     ORDER BY name
@@ -43,8 +44,9 @@ router.get('/', (req, res) => {
         name:             a.name,
         type:             a.type,
         apiUrl:           a.api_url,
+        avatarUrl:        getAgentAvatar(a),
         config:           config,
-        defaultAbilities: JSON.parse(a.default_processes || '[]'),
+        defaultAbilities: (() => { try { return JSON.parse(a.default_processes || '[]'); } catch { return []; } })(),
         createdAt:        a.created_at,
         updatedAt:        a.updated_at,
       };
@@ -58,7 +60,7 @@ router.get('/', (req, res) => {
  */
 router.post('/', (req, res) => {
   // Accept both defaultAbilities (new) and defaultProcesses (legacy)
-  let { name, type, apiUrl, apiKey, config: agentConfig, defaultAbilities, defaultProcesses } = req.body;
+  let { name, type, apiUrl, apiKey, avatarUrl, config: agentConfig, defaultAbilities, defaultProcesses } = req.body;
   let abilities = defaultAbilities || defaultProcesses || [];
 
   if (!name || !type)
@@ -91,15 +93,18 @@ router.post('/', (req, res) => {
     let abilitiesJson   = JSON.stringify(abilities);
 
     let result = db.prepare(`
-      INSERT INTO agents (user_id, name, type, api_url, encrypted_api_key, encrypted_config, default_processes)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(req.user.id, name, type, apiUrl || null, encryptedApiKey, encryptedConfig, abilitiesJson);
+      INSERT INTO agents (user_id, name, type, api_url, avatar_url, encrypted_api_key, encrypted_config, default_processes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(req.user.id, name, type, apiUrl || null, avatarUrl || null, encryptedApiKey, encryptedConfig, abilitiesJson);
+
+    let createdAgent = { name, avatar_url: avatarUrl || null };
 
     return res.status(201).json({
       id:               result.lastInsertRowid,
       name:             name,
       type:             type,
       apiUrl:           apiUrl || null,
+      avatarUrl:        getAgentAvatar(createdAgent),
       defaultAbilities: abilities,
       createdAt:        new Date().toISOString(),
     });
@@ -116,7 +121,7 @@ router.post('/', (req, res) => {
 router.get('/:id', (req, res) => {
   let db    = getDatabase();
   let agent = db.prepare(`
-    SELECT id, name, type, api_url, encrypted_api_key, encrypted_config, default_processes, created_at, updated_at
+    SELECT id, name, type, api_url, avatar_url, encrypted_api_key, encrypted_config, default_processes, created_at, updated_at
     FROM agents
     WHERE id = ? AND user_id = ?
   `).get(req.params.id, req.user.id);
@@ -131,8 +136,19 @@ router.get('/:id', (req, res) => {
     let agentConfig = null;
 
     if (agent.encrypted_config) {
-      let decrypted = decryptWithKey(agent.encrypted_config, dataKey);
-      agentConfig   = JSON.parse(decrypted);
+      try {
+        let decrypted = decryptWithKey(agent.encrypted_config, dataKey);
+        agentConfig   = JSON.parse(decrypted);
+      } catch (error) {
+        console.error(`Failed to decrypt/parse agent config for agent ${agentId}:`, error.message);
+      }
+    }
+
+    let agentAbilities = [];
+    try {
+      agentAbilities = JSON.parse(agent.default_processes || '[]');
+    } catch (error) {
+      console.error(`Failed to parse default_processes for agent ${agentId}:`, error.message);
     }
 
     return res.json({
@@ -140,8 +156,9 @@ router.get('/:id', (req, res) => {
       name:             agent.name,
       type:             agent.type,
       apiUrl:           agent.api_url,
+      avatarUrl:        getAgentAvatar(agent),
       config:           agentConfig,
-      defaultAbilities: JSON.parse(agent.default_processes || '[]'),
+      defaultAbilities: agentAbilities,
       hasApiKey:        !!agent.encrypted_api_key,
       createdAt:        agent.created_at,
       updatedAt:        agent.updated_at,
@@ -158,7 +175,7 @@ router.get('/:id', (req, res) => {
  */
 router.put('/:id', (req, res) => {
   // Accept both defaultAbilities (new) and defaultProcesses (legacy)
-  let { name, type, apiUrl, apiKey, config: agentConfig, defaultAbilities, defaultProcesses } = req.body;
+  let { name, type, apiUrl, apiKey, avatarUrl, config: agentConfig, defaultAbilities, defaultProcesses } = req.body;
   let abilities = (defaultAbilities !== undefined) ? defaultAbilities : defaultProcesses;
 
   let db    = getDatabase();
@@ -212,6 +229,11 @@ router.put('/:id', (req, res) => {
       let encryptedConfig = (agentConfig) ? encryptWithKey(JSON.stringify(agentConfig), dataKey) : null;
       updates.push('encrypted_config = ?');
       values.push(encryptedConfig);
+    }
+
+    if (avatarUrl !== undefined) {
+      updates.push('avatar_url = ?');
+      values.push(avatarUrl || null);
     }
 
     if (abilities !== undefined) {

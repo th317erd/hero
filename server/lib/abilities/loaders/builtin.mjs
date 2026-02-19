@@ -59,7 +59,7 @@ The <thinking> block will be shown to the user in a collapsible "thinking" displ
      * @returns {Object} Match result with details
      */
     matchCondition: (context) => {
-      let { userMessage, sessionID } = context;
+      let { userMessage, sessionID, testDb } = context;
 
       // If the user's message already contains an interaction tag, they're using IPC
       if (userMessage.includes('<interaction>')) {
@@ -67,7 +67,7 @@ The <thinking> block will be shown to the user in a collapsible "thinking" displ
       }
 
       // Get unanswered prompts from recent messages
-      let unansweredPrompts = getUnansweredPrompts(sessionID);
+      let unansweredPrompts = getUnansweredPrompts(sessionID, testDb);
 
       if (unansweredPrompts.length === 0) {
         return { matches: false };

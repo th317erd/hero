@@ -12,8 +12,7 @@
 }
 
 .abilities-list {
-  max-height: 400px;
-  overflow-y: auto;
+  /* No max-height/overflow - modal main handles scrolling */
 }
 
 .ability-item {
@@ -53,7 +52,7 @@
   gap: 8px;
 }
 
-.ability-actions .btn {
+.ability-actions .button {
   padding: 4px 8px;
   font-size: 12px;
 }
@@ -124,7 +123,7 @@
   gap: 8px;
 }
 
-.agent-actions .btn {
+.agent-actions .button {
   padding: 4px 8px;
   font-size: 12px;
 }

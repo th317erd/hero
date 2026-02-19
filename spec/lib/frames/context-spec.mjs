@@ -155,7 +155,7 @@ describe('Frame Context Builder', () => {
 
     it('should apply update frames correctly', () => {
       createFrame({
-        id: 'msg-1',
+        id: 'message-1',
         sessionId: 1,
         type: 'message',
         authorType: 'user',
@@ -166,7 +166,7 @@ describe('Frame Context Builder', () => {
         sessionId: 1,
         type: 'update',
         authorType: 'system',
-        targetIds: ['frame:msg-1'],
+        targetIds: ['frame:message-1'],
         payload: { content: 'Updated message' },
       }, db);
 
@@ -190,12 +190,47 @@ describe('Frame Context Builder', () => {
 
       assert.equal(messages.length, 5);
     });
+
+    it('should strip <interaction> tags from user messages', () => {
+      // User message containing an interaction tag (e.g., from prompt answer)
+      createFrame({
+        sessionId:  1,
+        type:       'message',
+        authorType: 'user',
+        payload:    { content: 'Blue<interaction>{"target_id":"@system","target_property":"update_prompt"}</interaction>' },
+      }, db);
+
+      const messages = loadFramesForContext(1, {}, db);
+
+      assert.equal(messages.length, 1);
+      assert.equal(messages[0].role, 'user');
+      // The <interaction> tag should be stripped
+      assert.equal(messages[0].content, 'Blue');
+      assert.ok(!messages[0].content.includes('<interaction>'), 'Should not contain <interaction> tags');
+    });
+
+    it('should NOT strip <interaction> tags from assistant messages', () => {
+      // Agent messages may legitimately contain interaction tags
+      createFrame({
+        sessionId:  1,
+        type:       'message',
+        authorType: 'agent',
+        payload:    { content: 'Let me search for that.<interaction>{"target_id":"@system"}</interaction>' },
+      }, db);
+
+      const messages = loadFramesForContext(1, {}, db);
+
+      assert.equal(messages.length, 1);
+      assert.equal(messages[0].role, 'assistant');
+      // Agent messages keep their interaction tags
+      assert.ok(messages[0].content.includes('<interaction>'), 'Assistant messages should keep <interaction> tags');
+    });
   });
 
   describe('getFramesForDisplay', () => {
     it('should return frames and compiled state', () => {
       createFrame({
-        id: 'msg-1',
+        id: 'message-1',
         sessionId: 1,
         type: 'message',
         authorType: 'user',
@@ -206,7 +241,7 @@ describe('Frame Context Builder', () => {
         sessionId: 1,
         type: 'update',
         authorType: 'system',
-        targetIds: ['frame:msg-1'],
+        targetIds: ['frame:message-1'],
         payload: { content: 'Hello (edited)' },
       }, db);
 
@@ -214,7 +249,7 @@ describe('Frame Context Builder', () => {
 
       assert.equal(result.frames.length, 2);
       assert.equal(result.count, 2);
-      assert.deepEqual(result.compiled['msg-1'], { content: 'Hello (edited)' });
+      assert.deepEqual(result.compiled['message-1'], { content: 'Hello (edited)' });
     });
   });
 

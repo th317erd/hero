@@ -12,6 +12,57 @@ function debug(...args) {
 }
 
 /**
+ * Prepare messages for prompt caching.
+ * Adds cache_control to the second-to-last message (the last message before the new user input).
+ * This caches the entire conversation prefix for subsequent requests.
+ *
+ * @param {Array} messages - Array of message objects
+ * @param {Object} options - Options
+ * @param {boolean} options.enableCaching - Whether to enable caching (default true)
+ * @returns {Array} Messages formatted for caching
+ */
+function prepareMessagesForCaching(messages, options = {}) {
+  let { enableCaching = true } = options;
+
+  if (!enableCaching || messages.length < 2)
+    return messages;
+
+  // Clone messages to avoid mutation
+  let prepared = messages.map((msg, index) => {
+    // Convert string content to block format for all messages
+    let content = msg.content;
+
+    if (typeof content === 'string') {
+      content = [{ type: 'text', text: content }];
+    } else if (Array.isArray(content)) {
+      // Already in block format, clone it
+      content = content.map((block) => ({ ...block }));
+    } else {
+      // Unknown format, wrap as-is
+      content = [{ type: 'text', text: JSON.stringify(content) }];
+    }
+
+    return { role: msg.role, content };
+  });
+
+  // Add cache_control to the LAST content block of the SECOND-TO-LAST message
+  // This caches everything up to and including that message
+  let cacheIndex = prepared.length - 2;
+
+  if (cacheIndex >= 0) {
+    let cacheMessage = prepared[cacheIndex];
+    let lastBlock    = cacheMessage.content[cacheMessage.content.length - 1];
+
+    if (lastBlock) {
+      lastBlock.cache_control = { type: 'ephemeral' };
+      debug('Added cache_control to message', { index: cacheIndex, role: cacheMessage.role });
+    }
+  }
+
+  return prepared;
+}
+
+/**
  * Claude agent implementation using the Anthropic API.
  */
 export class ClaudeAgent extends BaseAgent {
@@ -51,22 +102,22 @@ export class ClaudeAgent extends BaseAgent {
    * Handles the full agentic loop.
    */
   async sendMessage(messages, options = {}) {
-    let { signal } = options;
+    let { signal, enableCaching = true } = options;
     let toolCalls    = [];
     let toolMessages = [];
     let response;
 
-    // Clone messages to avoid mutating original
-    let conversationMessages = [...messages];
+    // Prepare messages with caching support
+    let conversationMessages = prepareMessagesForCaching(messages, { enableCaching });
 
     // Calculate approximate token count for diagnostics
     let totalChars = 0;
-    for (let msg of conversationMessages) {
-      let content = (typeof msg.content === 'string') ? msg.content : JSON.stringify(msg.content);
+    for (let message of conversationMessages) {
+      let content = (typeof message.content === 'string') ? message.content : JSON.stringify(message.content);
       totalChars += content.length;
     }
     let estimatedTokens = Math.ceil(totalChars / 4);
-    debug('sendMessage called', { messageCount: conversationMessages.length, estimatedTokens });
+    debug('sendMessage called', { messageCount: conversationMessages.length, estimatedTokens, caching: enableCaching });
 
     // Agentic loop: keep going while agent wants to use tools
     while (true) {
@@ -79,8 +130,19 @@ export class ClaudeAgent extends BaseAgent {
         messages:   conversationMessages,
       };
 
-      if (this.system)
-        requestParams.system = this.system;
+      // Format system prompt for caching (if long enough)
+      if (this.system) {
+        if (enableCaching && this.system.length >= 1000) {
+          // Use block format with cache_control for system prompt
+          requestParams.system = [{
+            type:          'text',
+            text:          this.system,
+            cache_control: { type: 'ephemeral' },
+          }];
+        } else {
+          requestParams.system = this.system;
+        }
+      }
 
       let toolDefs = this.getToolDefinitions();
 
@@ -91,13 +153,23 @@ export class ClaudeAgent extends BaseAgent {
       response = await this.client.messages.create(requestParams);
       let apiTime = Date.now() - apiStartTime;
 
-      // Log usage info
+      // Log usage info including cache statistics
       if (DEBUG && response.usage) {
+        let usage = response.usage;
         console.log('[ClaudeAgent] sendMessage usage:', {
-          input_tokens:  response.usage.input_tokens,
-          output_tokens: response.usage.output_tokens,
-          apiTimeMs:     apiTime,
+          input_tokens:               usage.input_tokens,
+          output_tokens:              usage.output_tokens,
+          cache_creation_input_tokens: usage.cache_creation_input_tokens || 0,
+          cache_read_input_tokens:     usage.cache_read_input_tokens || 0,
+          apiTimeMs:                  apiTime,
         });
+
+        // Log cache hit/miss status
+        if (usage.cache_read_input_tokens > 0) {
+          console.log('[ClaudeAgent] CACHE HIT:', usage.cache_read_input_tokens, 'tokens read from cache');
+        } else if (usage.cache_creation_input_tokens > 0) {
+          console.log('[ClaudeAgent] CACHE MISS: Created cache with', usage.cache_creation_input_tokens, 'tokens');
+        }
       }
 
       // Check if we need to execute tools
@@ -162,15 +234,17 @@ export class ClaudeAgent extends BaseAgent {
    * Send a message and stream the response.
    */
   async *sendMessageStream(messages, options = {}) {
+    let { signal, enableCaching = true } = options;
+
     // Calculate approximate token count for diagnostics
     let totalChars     = 0;
     let messageSizes   = [];
 
-    for (let msg of messages) {
-      let content = (typeof msg.content === 'string') ? msg.content : JSON.stringify(msg.content);
+    for (let message of messages) {
+      let content = (typeof message.content === 'string') ? message.content : JSON.stringify(message.content);
       let chars   = content.length;
       totalChars += chars;
-      messageSizes.push({ role: msg.role, chars });
+      messageSizes.push({ role: message.role, chars });
     }
 
     // Rough token estimate: ~4 chars per token for English
@@ -181,6 +255,7 @@ export class ClaudeAgent extends BaseAgent {
       model:           this.model,
       totalChars:      totalChars,
       estimatedTokens: estimatedTokens,
+      caching:         enableCaching,
     });
 
     // Log message sizes in debug mode
@@ -192,10 +267,8 @@ export class ClaudeAgent extends BaseAgent {
       }
     }
 
-    let { signal } = options;
-
-    // Clone messages to avoid mutating original
-    let conversationMessages = [...messages];
+    // Prepare messages with caching support
+    let conversationMessages = prepareMessagesForCaching(messages, { enableCaching });
     let currentToolUse       = null;
 
     // Agentic loop with streaming
@@ -213,8 +286,18 @@ export class ClaudeAgent extends BaseAgent {
       };
 
       if (this.system) {
-        requestParams.system = this.system;
-        debug('Using system prompt', { length: this.system.length });
+        // Format system prompt for caching (if long enough)
+        if (enableCaching && this.system.length >= 1000) {
+          requestParams.system = [{
+            type:          'text',
+            text:          this.system,
+            cache_control: { type: 'ephemeral' },
+          }];
+          debug('Using system prompt with caching', { length: this.system.length });
+        } else {
+          requestParams.system = this.system;
+          debug('Using system prompt', { length: this.system.length });
+        }
       }
 
       let toolDefs = this.getToolDefinitions();
@@ -302,21 +385,34 @@ export class ClaudeAgent extends BaseAgent {
               totalTimeMs: totalTime,
             });
 
-            // Log and yield token usage if available
+            // Log and yield token usage if available (including cache stats)
             if (event.usage) {
+              let usage = event.usage;
+
               if (DEBUG) {
                 console.log('[ClaudeAgent] Token usage:', {
-                  input_tokens:  event.usage.input_tokens,
-                  output_tokens: event.usage.output_tokens,
-                  totalTimeMs:   totalTime,
+                  input_tokens:               usage.input_tokens,
+                  output_tokens:              usage.output_tokens,
+                  cache_creation_input_tokens: usage.cache_creation_input_tokens || 0,
+                  cache_read_input_tokens:     usage.cache_read_input_tokens || 0,
+                  totalTimeMs:                totalTime,
                 });
+
+                // Log cache hit/miss status
+                if (usage.cache_read_input_tokens > 0) {
+                  console.log('[ClaudeAgent] CACHE HIT:', usage.cache_read_input_tokens, 'tokens read from cache');
+                } else if (usage.cache_creation_input_tokens > 0) {
+                  console.log('[ClaudeAgent] CACHE MISS: Created cache with', usage.cache_creation_input_tokens, 'tokens');
+                }
               }
 
-              // Yield usage info to stream handler
+              // Yield usage info to stream handler (including cache stats)
               yield {
-                type:         'usage',
-                input_tokens:  event.usage.input_tokens,
-                output_tokens: event.usage.output_tokens,
+                type:                        'usage',
+                input_tokens:                 usage.input_tokens,
+                output_tokens:                usage.output_tokens,
+                cache_creation_input_tokens:  usage.cache_creation_input_tokens || 0,
+                cache_read_input_tokens:      usage.cache_read_input_tokens || 0,
               };
             }
 

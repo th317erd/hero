@@ -15,9 +15,24 @@ import {
 } from './index.mjs';
 
 // Debug logging
-function debug(...args) {
-  if (process.env.DEBUG)
-    console.log('[FrameContext]', ...args);
+function debug(sessionId, ...args) {
+  if (process.env.DEBUG) {
+    const prefix = (sessionId) ? `[session_${sessionId}]` : '[FrameContext]';
+    console.log(prefix, ...args);
+  }
+}
+
+/**
+ * Strip <interaction> tags from text.
+ * These tags represent interactions that were already executed by the server.
+ * Showing them to the AI causes confusion (AI might try to execute them again).
+ *
+ * @param {string} text - Text potentially containing <interaction> tags
+ * @returns {string} Text with interaction tags removed
+ */
+function stripInteractionTags(text) {
+  if (!text) return text;
+  return text.replace(/<interaction>[\s\S]*?<\/interaction>/g, '').trim();
 }
 
 /**
@@ -36,8 +51,7 @@ export function loadFramesForContext(sessionId, options = {}, db = null) {
   // Get frames from the most recent compact point forward
   const frames = getFrames(sessionId, { fromCompact: true, limit: maxRecentFrames }, db);
 
-  debug('Loading frames for context', {
-    sessionId,
+  debug(sessionId, 'Loading frames for context', {
     frameCount: frames.length,
     fromCompact: true,
   });
@@ -75,9 +89,12 @@ export function loadFramesForContext(sessionId, options = {}, db = null) {
     }
 
     // Determine role from author type or payload
+    // Note: Claude API only accepts 'user' and 'assistant' roles,
+    // not 'system' (system prompts go in the `system` parameter)
     let role;
     if (content.role) {
-      role = content.role;
+      // Map 'system' role to 'user' for API compatibility
+      role = (content.role === 'system') ? 'user' : content.role;
     } else if (frame.authorType === AuthorType.USER) {
       role = 'user';
     } else if (frame.authorType === AuthorType.AGENT) {
@@ -101,9 +118,13 @@ export function loadFramesForContext(sessionId, options = {}, db = null) {
       messageContent = JSON.stringify(content);
     }
 
+    // Strip <interaction> tags from user messages - they were already executed
+    // by the server and showing them to the AI causes confusion
+    let cleanedContent = (role === 'user') ? stripInteractionTags(messageContent) : messageContent;
+
     messages.push({
       role,
-      content: messageContent,
+      content: cleanedContent,
     });
   }
 
@@ -129,8 +150,7 @@ export function loadFramesForContext(sessionId, options = {}, db = null) {
     }
   }
 
-  debug('Context built from frames', {
-    sessionId,
+  debug(sessionId, 'Context built from frames', {
     messageCount: messages.length,
     frameCount: frames.length,
   });

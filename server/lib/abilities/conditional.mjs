@@ -99,10 +99,11 @@ export function formatConditionalInstructions(instructions) {
  * Get unanswered hml-prompt elements from recent messages.
  *
  * @param {number} sessionID - The session ID
+ * @param {Object} [testDb] - Optional database instance for testing
  * @returns {Array} Array of unanswered prompt objects
  */
-export function getUnansweredPrompts(sessionID) {
-  let db = getDatabase();
+export function getUnansweredPrompts(sessionID, testDb = null) {
+  let db = testDb || getDatabase();
 
   // Get recent agent message frames that might contain prompts
   let frames = db.prepare(`

@@ -4,13 +4,19 @@
 // State
 // ============================================================================
 
-const state = {
+// Keys that are automatically synced between state.* and GlobalState
+const SYNCED_KEYS = new Set([
+  'user', 'sessions', 'agents', 'abilities',
+  'currentSession', 'globalSpend', 'serviceSpend', 'sessionSpend',
+]);
+
+const _state = {
   user:                 null,
   sessions:             [],
   agents:               [],
   abilities:            { system: [], user: [] },
   currentSession:       null,
-  messages:             [],
+  // NOTE: state.messages removed - use sessionStore.getSession(id) instead
   isLoading:            false,
   runningOperations:    [],
   editingAbilityId:     null,
@@ -31,6 +37,25 @@ const state = {
   sessionSpend:         { cost: 0 },  // Spend for current session
 };
 
+// Proxy wrapper: when a synced key is written, auto-forward to GlobalState
+const state = new Proxy(_state, {
+  set(target, key, value) {
+    target[key] = value;
+
+    // Forward synced keys to GlobalState (if loaded)
+    if (SYNCED_KEYS.has(key) && !window.__stateSyncing && typeof window.setGlobal === 'function') {
+      window.__stateSyncing = true;
+      try {
+        window.setGlobal(key, value);
+      } finally {
+        window.__stateSyncing = false;
+      }
+    }
+
+    return true;
+  },
+});
+
 // ============================================================================
 // DOM Elements
 // ============================================================================
@@ -45,89 +70,23 @@ const elements = {
   loginForm:   document.getElementById('login-form'),
   loginError:  document.getElementById('login-error'),
 
-  // Sessions
-  sessionsList:    document.getElementById('sessions-list'),
-  sessionSearch:   document.getElementById('session-search'),
-  toggleArchived:  document.getElementById('toggle-archived'),
-  newSessionBtn:   document.getElementById('new-session-btn'),
-  logoutBtn:       document.getElementById('logout-btn'),
+  // Sessions (hero-sessions-list component handles its own DOM)
+  sessionsList: document.getElementById('sessions-list'),
 
   // Chat
-  sessionTitle:       document.getElementById('session-title'),
-  sessionSelect:      document.getElementById('session-select'),
-  messagesContainer:  document.getElementById('messages'),
-  messageInput:       document.getElementById('message-input'),
-  sendBtn:            document.getElementById('send-btn'),
-  clearBtn:           document.getElementById('clear-btn'),
-  backBtn:            document.getElementById('back-btn'),
-  chatLogoutBtn:      document.getElementById('chat-logout-btn'),
-  showHiddenToggle:   document.getElementById('show-hidden-toggle'),
-  scrollToBottomBtn:  document.getElementById('scroll-to-bottom'),
-  chatMain:           document.querySelector('.chat-main'),
-
-  // New Session Modal
-  newSessionModal:  document.getElementById('new-session-modal'),
-  newSessionForm:   document.getElementById('new-session-form'),
-  agentSelect:      document.getElementById('agent-select'),
-  newSessionError:  document.getElementById('new-session-error'),
-  cancelNewSession: document.getElementById('cancel-new-session'),
-
-  // New Agent Modal
-  newAgentModal:        document.getElementById('new-agent-modal'),
-  newAgentForm:         document.getElementById('new-agent-form'),
-  newAgentError:        document.getElementById('new-agent-error'),
-  cancelNewAgent:       document.getElementById('cancel-new-agent'),
-  agentAbilitiesList:   document.getElementById('agent-abilities-list'),
-
-  // Abilities
-  abilitiesBtn:         document.getElementById('abilities-btn'),
-  abilitiesModal:       document.getElementById('abilities-modal'),
-  closeAbilitiesModal:  document.getElementById('close-abilities-modal'),
-  systemAbilitiesList:  document.getElementById('system-abilities-list'),
-  userAbilitiesList:    document.getElementById('user-abilities-list'),
-  newAbilityBtn:        document.getElementById('new-ability-btn'),
-
-  // Edit Ability Modal
-  editAbilityModal:     document.getElementById('edit-ability-modal'),
-  editAbilityTitle:     document.getElementById('edit-ability-title'),
-  editAbilityForm:      document.getElementById('edit-ability-form'),
-  editAbilityError:     document.getElementById('edit-ability-error'),
-  cancelEditAbility:    document.getElementById('cancel-edit-ability'),
+  messagesContainer: document.getElementById('chat'),  // hero-chat component
+  heroChat:          document.getElementById('chat'),  // hero-chat component reference
+  chatMain:          document.querySelector('.chat-main'),
 
   // Operations Panel
   operationsPanel:      document.getElementById('operations-panel'),
   operationsList:       document.getElementById('operations-list'),
   toggleOperations:     document.getElementById('toggle-operations'),
-
-  // Agents
-  agentsBtn:            document.getElementById('agents-btn'),
-  agentsModal:          document.getElementById('agents-modal'),
-  closeAgentsModal:     document.getElementById('close-agents-modal'),
-  addAgentFromList:     document.getElementById('add-agent-from-list'),
-  agentsList:           document.getElementById('agents-list'),
-
-  // Agent Config Modal
-  agentConfigModal:     document.getElementById('agent-config-modal'),
-  agentConfigForm:      document.getElementById('agent-config-form'),
-  agentConfigId:        document.getElementById('agent-config-id'),
-  agentConfigJson:      document.getElementById('agent-config-json'),
-  agentConfigError:     document.getElementById('agent-config-error'),
-  cancelAgentConfig:    document.getElementById('cancel-agent-config'),
-
-  // Ability Modal
-  abilityModal:         document.getElementById('ability-modal'),
-  abilityModalTitle:    document.getElementById('ability-modal-title'),
-  abilityForm:          document.getElementById('ability-form'),
-  abilityEditId:        document.getElementById('ability-edit-id'),
-  abilityName:          document.getElementById('ability-name'),
-  abilityCategory:      document.getElementById('ability-category'),
-  abilityDescription:   document.getElementById('ability-description'),
-  abilityContent:       document.getElementById('ability-content'),
-  abilityAutoApprove:   document.getElementById('ability-auto-approve'),
-  abilityDangerLevel:   document.getElementById('ability-danger-level'),
-  abilityModalError:    document.getElementById('ability-modal-error'),
-  cancelAbilityModal:   document.getElementById('cancel-ability-modal'),
 };
 
 // Read base path from <base> tag (set by server from package.json config)
 const BASE_PATH = document.querySelector('base')?.getAttribute('href')?.replace(/\/$/, '') || '';
+
+// Expose state globally for ES modules (hero-app, session-frames-provider, etc.)
+window.state = state;
+window.elements = elements;
