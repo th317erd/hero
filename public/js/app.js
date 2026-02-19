@@ -1207,8 +1207,23 @@ document.addEventListener('toggle-hidden', (e) => {
 
 // Handle send events from hero-input
 document.addEventListener('hero:send-message', async (e) => {
-  let { content, streaming, sessionId } = e.detail || {};
+  let { content, files, streaming, sessionId } = e.detail || {};
   if (content && sessionId) {
+    // Upload files first if any
+    if (files && files.length > 0) {
+      try {
+        let uploadResult = await API.uploads.upload(sessionId, files);
+        if (uploadResult.uploads && uploadResult.uploads.length > 0) {
+          let fileRefs = uploadResult.uploads
+            .map((u) => `[${u.originalName}](${u.url})`)
+            .join(' ');
+          content = content + '\n\n' + fileRefs;
+        }
+      } catch (err) {
+        console.error('File upload failed:', err.message);
+      }
+    }
+
     // Call the existing sendMessage logic
     let inputEl = document.querySelector('hero-input');
     await handleSendMessageContent(content, streaming);

@@ -324,16 +324,62 @@ All modal components migrated to split HTML/JS pattern:
 - `spec/lib/security/approval-hardening-spec.mjs` — 16 tests (hash generation, ownership, replay, duplicates, denial, session approval)
 - `spec/lib/security/bus-hardening-spec.mjs` — 10 tests (sender_id, respond verification, creation integrity)
 
+### Phase 8 — File Uploads, Avatars, Rich Content (2026-02-19)
+
+**DB Migration 021:**
+- `uploads` table (user_id, session_id, filename, original_name, mime_type, size_bytes, storage_path)
+- `avatar_url` column added to agents table
+
+**File Uploads:** `server/routes/uploads.mjs`
+- `POST /api/sessions/:sessionId/uploads` — multer multipart, max 10MB, max 5 files, MIME type whitelist
+- `GET /api/uploads/:id` — serve file with ownership verification
+- `GET /api/sessions/:sessionId/uploads` — list session uploads
+- `DELETE /api/uploads/:id` — remove from disk + DB
+- Upload storage: `~/.config/hero/uploads/<userId>/<uuid>.<ext>`
+
+**Agent Avatars:** `server/lib/avatars.mjs`
+- `generateAvatar(name, size)` — deterministic SVG data URI (initials + hash-based color from 16-color palette)
+- `getAgentAvatar(agent)` — returns custom avatar_url or generated fallback
+- `getUserAvatar(user)` — generated from display_name or username
+- `getInitials(name)` — 1-2 char initials from name parts
+- `getColor(name)` — MD5 hash → color palette index
+
+**Rich Content Registry:** `server/lib/content/index.mjs`
+- `registerContentType(type, renderer)` — plugin-friendly extension point
+- `unregisterContentType(type)` — clean removal (built-ins protected)
+- `transformContent(type, payload)` — server-side payload transform
+- `listContentTypes()` — built-in + custom types
+- Built-in types: text, markdown, code, image, file
+- Renderer definition: description, source, serverTransform, clientComponent, clientScript
+
+**Routes Modified:**
+- `server/routes/agents.mjs` — avatarUrl in all CRUD responses, accepts avatarUrl on create/update
+- `server/routes/sessions.mjs` — avatarUrl in agent info for session list + detail
+- `server/routes/index.mjs` — registered uploads routes
+- `server/lib/participants/index.mjs` — avatar_url in loadSessionWithAgent query + return
+
+**Client Updates:**
+- `hero-input` — drag-and-drop overlay, paste handler, file preview chips, pendingFiles state
+- `hero-chat` — avatar in message headers, attachment rendering (images + file links)
+- `api.js` — `API.uploads` namespace (upload via FormData, list, delete)
+- `app.js` — upload files before sending message, append file refs to content
+
+**Tests Added:**
+- `spec/lib/avatars-spec.mjs` — 22 tests
+- `spec/lib/content-registry-spec.mjs` — 19 tests
+- `spec/routes/uploads-spec.mjs` — 16 tests
+
 ### Test Suite
 - Runner: `find spec -name '*-spec.mjs' | xargs node --test --test-force-exit`
-- Current: **1595 tests, 0 failures**
+- Current: **1614 tests, 0 failures**
 
-### Pending
-- Phase 3 advanced: Inter-agent streaming, multi-coordinator discussion, @mention routing
-- Phase 4 remaining: npm package plugin support, fs.watch auto-start in server
-- Phase 6 remaining: User settings UI, API key scope enforcement
-- Phase 7 remaining: Self-approval prevention, cross-session nonce, chained command UX
-- Phase 8: File uploads, avatars, rich content
+### Pending (all phases complete — remaining deferred items)
+- Phase 1: Participant list sidebar, @mention autocomplete, WebSocket broadcast to all participants
+- Phase 3: Inter-agent streaming, multi-coordinator discussion, @mention routing
+- Phase 4: npm package plugin support, fs.watch auto-start in server
+- Phase 6: User settings UI, API key scope enforcement
+- Phase 7: Self-approval prevention, cross-session nonce, chained command UX
+- Phase 8: Screenshots (plugin), avatar picker UI, rich content renderers (plugin territory)
 
 ---
 

@@ -45,11 +45,59 @@
   }
 
   hero-chat .message-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-size: 12px;
     font-weight: 600;
     color: var(--text-muted, #6b7280);
     margin-bottom: 4px;
     padding: 0 8px;
+  }
+
+  hero-chat .message-avatar {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    object-fit: cover;
+    flex-shrink: 0;
+  }
+
+  hero-chat .message-attachments {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  hero-chat .attachment-image {
+    max-width: 300px;
+    max-height: 200px;
+    border-radius: var(--radius-sm, 4px);
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+
+  hero-chat .attachment-image:hover {
+    opacity: 0.85;
+  }
+
+  hero-chat .attachment-file {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background: var(--bg-secondary, #1a1a2e);
+    border: 1px solid var(--border-color, #2d2d2d);
+    border-radius: var(--radius-sm, 4px);
+    color: var(--text-secondary, #a0a0b0);
+    font-size: 12px;
+    text-decoration: none;
+  }
+
+  hero-chat .attachment-file:hover {
+    border-color: var(--accent, #f472b6);
+    color: var(--accent, #f472b6);
   }
 
   hero-chat .message-bubble {

@@ -10,6 +10,7 @@ import {
   addParticipant,
   removeParticipant,
 } from '../lib/participants/index.mjs';
+import { getAgentAvatar } from '../lib/avatars.mjs';
 
 const router = Router();
 
@@ -121,16 +122,16 @@ router.get('/', (req, res) => {
       let agentInfo = null;
 
       if (coordinatorParticipant) {
-        let agent = db.prepare('SELECT id, name, type FROM agents WHERE id = ?').get(coordinatorParticipant.participantId);
+        let agent = db.prepare('SELECT id, name, type, avatar_url FROM agents WHERE id = ?').get(coordinatorParticipant.participantId);
         if (agent)
-          agentInfo = { id: agent.id, name: agent.name, type: agent.type };
+          agentInfo = { id: agent.id, name: agent.name, type: agent.type, avatarUrl: getAgentAvatar(agent) };
       }
 
       // Fall back to legacy agent_id if no participants
       if (!agentInfo && s.agent_id) {
-        let agent = db.prepare('SELECT id, name, type FROM agents WHERE id = ?').get(s.agent_id);
+        let agent = db.prepare('SELECT id, name, type, avatar_url FROM agents WHERE id = ?').get(s.agent_id);
         if (agent)
-          agentInfo = { id: agent.id, name: agent.name, type: agent.type };
+          agentInfo = { id: agent.id, name: agent.name, type: agent.type, avatarUrl: getAgentAvatar(agent) };
       }
 
       return {
@@ -142,7 +143,7 @@ router.get('/', (req, res) => {
         depth:           s._depth || 0,
         // Legacy support
         archived:        s.status === 'archived',
-        agent:           agentInfo || { id: null, name: null, type: null },
+        agent:           agentInfo || { id: null, name: null, type: null, avatarUrl: null },
         participants:    participants.map((p) => ({
           id:              p.id,
           participantType: p.participantType,
@@ -180,7 +181,7 @@ router.post('/', (req, res) => {
   // Verify all agents exist and belong to user
   let agents = [];
   for (let id of resolvedAgentIds) {
-    let agent = db.prepare('SELECT id, name, type FROM agents WHERE id = ? AND user_id = ?').get(id, req.user.id);
+    let agent = db.prepare('SELECT id, name, type, avatar_url FROM agents WHERE id = ? AND user_id = ?').get(id, req.user.id);
     if (!agent)
       return res.status(404).json({ error: `Agent ${id} not found` });
     agents.push(agent);
@@ -284,9 +285,10 @@ router.get('/:id', (req, res) => {
     parentSessionId: session.parent_session_id,
     archived:        session.status === 'archived',
     agent:           {
-      id:   session.agent_id,
-      name: session.agent_name,
-      type: session.agent_type,
+      id:        session.agent_id,
+      name:      session.agent_name,
+      type:      session.agent_type,
+      avatarUrl: getAgentAvatar({ name: session.agent_name, avatar_url: session.agent_avatar_url }),
     },
     participants: participants.map((p) => ({
       id:              p.id,

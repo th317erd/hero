@@ -212,6 +212,56 @@ const API = {
       return api('GET', `/search?${params.toString()}`);
     },
   },
+
+  // --------------------------------------------------------------------------
+  // Uploads
+  // --------------------------------------------------------------------------
+  uploads: {
+    /**
+     * Upload files to a session.
+     * @param {number} sessionId - Session ID
+     * @param {File[]} files - Files to upload
+     * @returns {Promise<{uploads: object[]}>}
+     */
+    upload: async (sessionId, files) => {
+      let formData = new FormData();
+      for (let file of files) {
+        formData.append('files', file);
+      }
+
+      let basePath = window.__BASE_PATH || '/hero/';
+      let response = await fetch(`${basePath}api/sessions/${sessionId}/uploads`, {
+        method:      'POST',
+        body:        formData,
+        credentials: 'same-origin',
+      });
+
+      if (!response.ok) {
+        let error = await response.json().catch(() => ({ error: 'Upload failed' }));
+        throw new Error(error.error || 'Upload failed');
+      }
+
+      return response.json();
+    },
+
+    /**
+     * List uploads for a session.
+     * @param {number} sessionId - Session ID
+     * @returns {Promise<{uploads: object[]}>}
+     */
+    list: async (sessionId) => {
+      return api('GET', `/sessions/${sessionId}/uploads`);
+    },
+
+    /**
+     * Delete an upload.
+     * @param {number} uploadId - Upload ID
+     * @returns {Promise<{success: boolean}>}
+     */
+    delete: async (uploadId) => {
+      return api('DELETE', `/uploads/${uploadId}`);
+    },
+  },
 };
 
 // Make API available globally

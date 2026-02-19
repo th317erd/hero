@@ -189,10 +189,49 @@
 - [ ] Nonce for cross-session replay prevention
 - [ ] Chained command permissions UX (visual approval chain)
 
-## Phase 8: Polish & Future Features
-> Status: PENDING — independent
+## Phase 8: File Uploads, Avatars, Rich Content
+> Status: **CORE COMPLETE**
 
-- [ ] File uploads (drag-and-drop)
-- [ ] Agent avatars
-- [ ] Rich content extension points
+### File Uploads — DONE
+- [x] Migration 021: `uploads` table + `avatar_url` column on agents
+- [x] Upload route: `POST /api/sessions/:sessionId/uploads` (multer, 10MB limit, type validation)
+- [x] Upload serving: `GET /api/uploads/:id` (ownership-verified)
+- [x] Upload listing: `GET /api/sessions/:sessionId/uploads`
+- [x] Upload deletion: `DELETE /api/uploads/:id`
+- [x] Uploads directory helper in config-path.mjs
+- [x] Client: drag-and-drop + paste handling in hero-input
+- [x] Client: file preview chips (thumbnail for images, name for files)
+- [x] Client: `API.uploads` namespace (upload, list, delete)
+- [x] Client: file references appended to message on send
+
+### Agent Avatars — DONE
+- [x] Deterministic SVG avatar generation (initials + hash-based color)
+- [x] `getAgentAvatar()` / `getUserAvatar()` helpers
+- [x] Agents CRUD updated: accept `avatarUrl`, return generated or custom avatar
+- [x] Sessions API returns `avatarUrl` for agents
+- [x] `loadSessionWithAgent()` includes `avatar_url` in agent data
+- [x] Client: avatar display in message headers (hero-chat)
+
+### Rich Content Extension Points — DONE
+- [x] Content type registry: `server/lib/content/index.mjs`
+- [x] `registerContentType()` / `unregisterContentType()` / `getContentRenderer()`
+- [x] Server-side `transformContent()` for payload transforms
+- [x] `listContentTypes()` includes built-in (text, markdown, code, image, file) + custom
+- [x] `isKnownContentType()` check
+- [x] Plugin-friendly: source tracking, clientComponent/clientScript fields
+
+### Client File/Image Rendering — DONE
+- [x] `_renderAttachments()` in hero-chat (image preview + file link chips)
+- [x] CSS for attachment images, file chips, avatar badges
+- [x] Image lightbox (click to open in new tab)
+
+### Tests — DONE
+- [x] 22 avatar tests (initials, colors, generation, agent/user helpers)
+- [x] 19 content registry tests (register, unregister, render, transform, list)
+- [x] 16 upload tests (table schema, CRUD, cascade, config helpers)
+- [x] All 1614 tests passing
+
+### Pending (deferred)
 - [ ] Message visibility / screenshots (plugin)
+- [ ] Agent avatar picker UI in create/edit modal
+- [ ] Rich content renderer implementations (map, chart — plugin territory)

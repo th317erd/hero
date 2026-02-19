@@ -205,6 +205,14 @@ export class HeroChat extends HeroComponent {
   }
 
   /**
+   * Get agent avatar URL.
+   * @returns {string|null}
+   */
+  get agentAvatarUrl() {
+    return this.session?.agent?.avatarUrl || null;
+  }
+
+  /**
    * Get the messages container element (for external insertions).
    * @returns {HTMLElement|null}
    */
@@ -1575,8 +1583,17 @@ export class HeroChat extends HeroComponent {
 
     const queuedBadge = (message.queued) ? '<span class="queued-badge">Queued</span>' : '';
 
+    // Avatar for assistant messages
+    let avatarHtml = '';
+    if (message.role !== 'user' && this.agentAvatarUrl) {
+      avatarHtml = `<img class="message-avatar" src="${this._escapeAttr(this.agentAvatarUrl)}" alt="">`;
+    }
+
     // Render content
     const contentHtml = this._renderContent(message);
+
+    // Render attachments
+    const attachmentsHtml = this._renderAttachments(message);
 
     // Token estimate
     const tokenEstimate = this._estimateTokens(message);
@@ -1587,9 +1604,10 @@ export class HeroChat extends HeroComponent {
            data-message-id="${messageId}"
            data-frame-id="${frameId}"
            id="${(messageId) ? `message-${messageId}` : ''}">
-        <div class="message-header">${roleLabel} ${queuedBadge}${typeBadge}</div>
+        <div class="message-header">${avatarHtml}${roleLabel} ${queuedBadge}${typeBadge}</div>
         <div class="message-bubble">
           <div class="message-content">${contentHtml}</div>
+          ${attachmentsHtml}
         </div>
         ${timestampHtml}
       </div>
@@ -1786,6 +1804,44 @@ export class HeroChat extends HeroComponent {
     }
     // Fallback: escape HTML
     return escapeHtml(text).replace(/\n/g, '<br>');
+  }
+
+  /**
+   * Render file/image attachments for a message.
+   * @param {object} message
+   * @returns {string}
+   */
+  _renderAttachments(message) {
+    let attachments = message.attachments || message.uploads;
+    if (!attachments || !Array.isArray(attachments) || attachments.length === 0)
+      return '';
+
+    let items = attachments.map((a) => {
+      let isImage = a.mimeType && a.mimeType.startsWith('image/');
+      let url     = a.url || `/api/uploads/${a.id}`;
+
+      if (isImage) {
+        return `<a href="${this._escapeAttr(url)}" target="_blank" rel="noopener">
+          <img class="attachment-image" src="${this._escapeAttr(url)}" alt="${escapeHtml(a.originalName || a.filename || 'image')}" loading="lazy">
+        </a>`;
+      }
+
+      return `<a class="attachment-file" href="${this._escapeAttr(url)}" target="_blank" rel="noopener">
+        📎 ${escapeHtml(a.originalName || a.filename || 'file')}
+      </a>`;
+    });
+
+    return `<div class="message-attachments">${items.join('')}</div>`;
+  }
+
+  /**
+   * Escape a string for use in an HTML attribute.
+   * @param {string} str
+   * @returns {string}
+   */
+  _escapeAttr(str) {
+    if (!str) return '';
+    return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
   /**

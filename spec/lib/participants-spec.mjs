@@ -48,6 +48,7 @@ function createTestDatabase() {
       name TEXT NOT NULL,
       type TEXT DEFAULT 'claude',
       api_url TEXT,
+      avatar_url TEXT,
       encrypted_api_key TEXT,
       encrypted_config TEXT,
       default_processes TEXT DEFAULT '[]',

@@ -596,6 +596,30 @@ function getMigrations() {
         CREATE INDEX idx_api_keys_user ON api_keys(user_id);
       `,
     },
+
+    {
+      name: '021_uploads_and_avatars',
+      sql:  `
+        -- Agent avatars
+        ALTER TABLE agents ADD COLUMN avatar_url TEXT;
+
+        -- File uploads
+        CREATE TABLE uploads (
+          id           INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          session_id   INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
+          filename     TEXT NOT NULL,
+          original_name TEXT NOT NULL,
+          mime_type    TEXT NOT NULL,
+          size_bytes   INTEGER NOT NULL,
+          storage_path TEXT NOT NULL,
+          created_at   TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX idx_uploads_user ON uploads(user_id);
+        CREATE INDEX idx_uploads_session ON uploads(session_id);
+      `,
+    },
   ];
 }
 

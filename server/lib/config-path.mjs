@@ -81,10 +81,35 @@ export function ensurePluginsDir() {
   return pluginsDir;
 }
 
+/**
+ * Get the path to the uploads directory.
+ *
+ * @returns {string} Absolute path to uploads directory
+ */
+export function getUploadsDir() {
+  return join(getConfigDir(), 'uploads');
+}
+
+/**
+ * Ensure the uploads directory exists, creating it if necessary.
+ *
+ * @returns {string} Absolute path to uploads directory
+ */
+export function ensureUploadsDir() {
+  let uploadsDir = getUploadsDir();
+
+  if (!existsSync(uploadsDir))
+    mkdirSync(uploadsDir, { recursive: true });
+
+  return uploadsDir;
+}
+
 export default {
   getConfigDir,
   ensureConfigDir,
   getDatabasePath,
   getPluginsDir,
   ensurePluginsDir,
+  getUploadsDir,
+  ensureUploadsDir,
 };
