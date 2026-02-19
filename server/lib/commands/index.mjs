@@ -15,7 +15,16 @@ import {
   createSystemMessageFrame,
   createAgentMessageFrame,
 } from '../frames/broadcast.mjs';
-import { loadSessionWithAgent } from '../participants/index.mjs';
+import {
+  loadSessionWithAgent,
+  getSessionParticipants,
+  addParticipant,
+  removeParticipant,
+  isParticipant,
+  ParticipantType,
+  ParticipantRole,
+} from '../participants/index.mjs';
+import { getFrames, FrameType } from '../frames/index.mjs';
 
 // ============================================================================
 // Command Pattern Matching
@@ -544,6 +553,324 @@ registerCommand('ability', 'Manage abilities (list, create, edit, delete)', asyn
         error:   `Unknown subcommand: ${subcommand}\n\nUsage: /ability [list|create|edit|delete]`,
       };
   }
+});
+
+// /participants
+registerCommand('participants', 'List all participants in the current session', async (args, context) => {
+  if (!context.sessionId) {
+    return {
+      success: false,
+      error:   'No active session.',
+    };
+  }
+
+  let db           = context.db || getDatabase();
+  let participants = getSessionParticipants(context.sessionId, db);
+
+  if (participants.length === 0) {
+    return {
+      success: true,
+      content: 'No participants in this session.',
+    };
+  }
+
+  let text = '# Session Participants\n\n';
+
+  for (let participant of participants) {
+    let name = '';
+    let badge = '';
+
+    if (participant.participantType === 'agent') {
+      let agent = db.prepare('SELECT name, type FROM agents WHERE id = ?').get(participant.participantId);
+      name  = (agent) ? agent.name : `Agent #${participant.participantId}`;
+      badge = (agent) ? ` (${agent.type})` : '';
+    } else {
+      let user = db.prepare('SELECT username FROM users WHERE id = ?').get(participant.participantId);
+      name = (user) ? user.username : `User #${participant.participantId}`;
+    }
+
+    let roleTag = '';
+    if (participant.role === 'coordinator')
+      roleTag = ' **[coordinator]**';
+    else if (participant.role === 'owner')
+      roleTag = ' **[owner]**';
+
+    text += `- **${name}**${badge}${roleTag} (${participant.participantType})\n`;
+  }
+
+  return { success: true, content: text };
+});
+
+// /invite <agentId>
+registerCommand('invite', 'Add an agent to the current session', async (args, context) => {
+  if (!context.sessionId) {
+    return {
+      success: false,
+      error:   'No active session.',
+    };
+  }
+
+  let input = args.trim();
+
+  if (!input) {
+    return {
+      success: false,
+      error:   'Usage: /invite <agentId> [role]\n\nRoles: coordinator, member (default: member)',
+    };
+  }
+
+  let parts   = input.split(/\s+/);
+  let agentId = parseInt(parts[0], 10);
+  let role    = parts[1]?.toLowerCase() || 'member';
+
+  if (isNaN(agentId)) {
+    return {
+      success: false,
+      error:   `Invalid agent ID: "${parts[0]}"`,
+    };
+  }
+
+  if (!['coordinator', 'member'].includes(role)) {
+    return {
+      success: false,
+      error:   `Invalid role: "${role}". Must be "coordinator" or "member".`,
+    };
+  }
+
+  let db = context.db || getDatabase();
+
+  // Verify agent exists and belongs to user
+  let agent = db.prepare('SELECT id, name, type FROM agents WHERE id = ? AND user_id = ?')
+    .get(agentId, context.userId);
+
+  if (!agent) {
+    return {
+      success: false,
+      error:   `Agent #${agentId} not found or does not belong to you.`,
+    };
+  }
+
+  // Check if already a participant
+  if (isParticipant(context.sessionId, ParticipantType.AGENT, agentId, db)) {
+    return {
+      success: false,
+      error:   `Agent "${agent.name}" is already a participant in this session.`,
+    };
+  }
+
+  addParticipant(context.sessionId, ParticipantType.AGENT, agentId, role, db);
+
+  return {
+    success: true,
+    content: `Agent **${agent.name}** (${agent.type}) added as **${role}**.`,
+  };
+});
+
+// /kick <agentId>
+registerCommand('kick', 'Remove an agent from the current session', async (args, context) => {
+  if (!context.sessionId) {
+    return {
+      success: false,
+      error:   'No active session.',
+    };
+  }
+
+  let input = args.trim();
+
+  if (!input) {
+    return {
+      success: false,
+      error:   'Usage: /kick <agentId>',
+    };
+  }
+
+  let agentId = parseInt(input, 10);
+
+  if (isNaN(agentId)) {
+    return {
+      success: false,
+      error:   `Invalid agent ID: "${input}"`,
+    };
+  }
+
+  let db = context.db || getDatabase();
+
+  // Verify agent exists
+  let agent = db.prepare('SELECT id, name FROM agents WHERE id = ?').get(agentId);
+
+  if (!agent) {
+    return {
+      success: false,
+      error:   `Agent #${agentId} not found.`,
+    };
+  }
+
+  // Check if actually a participant
+  if (!isParticipant(context.sessionId, ParticipantType.AGENT, agentId, db)) {
+    return {
+      success: false,
+      error:   `Agent "${agent.name}" is not a participant in this session.`,
+    };
+  }
+
+  let removed = removeParticipant(context.sessionId, ParticipantType.AGENT, agentId, db);
+
+  if (!removed) {
+    return {
+      success: false,
+      error:   `Failed to remove agent "${agent.name}".`,
+    };
+  }
+
+  return {
+    success: true,
+    content: `Agent **${agent.name}** removed from session.`,
+  };
+});
+
+// /history [count]
+registerCommand('history', 'Show recent conversation history', async (args, context) => {
+  if (!context.sessionId) {
+    return {
+      success: false,
+      error:   'No active session.',
+    };
+  }
+
+  let count = parseInt(args.trim(), 10);
+  if (isNaN(count) || count < 1)
+    count = 20;
+
+  if (count > 100)
+    count = 100;
+
+  let db     = context.db || getDatabase();
+  let frames = getFrames(context.sessionId, {
+    types: [FrameType.MESSAGE],
+    limit: count,
+  }, db);
+
+  if (frames.length === 0) {
+    return {
+      success: true,
+      content: 'No messages in this session.',
+    };
+  }
+
+  let text = `# History (last ${frames.length} messages)\n\n`;
+
+  for (let frame of frames) {
+    let payload = frame.payload;
+
+    if (payload.hidden)
+      continue;
+
+    let author    = payload.role || frame.authorType;
+    let content   = payload.content || '';
+    let timestamp = frame.timestamp.slice(0, 19).replace('T', ' ');
+
+    // Truncate long messages
+    if (content.length > 200)
+      content = content.slice(0, 200) + '...';
+
+    // Strip HTML tags for clean display
+    content = content.replace(/<[^>]+>/g, '');
+
+    text += `**[${timestamp}] ${author}:** ${content}\n\n`;
+  }
+
+  return { success: true, content: text };
+});
+
+// /export [format]
+registerCommand('export', 'Export conversation history', async (args, context) => {
+  if (!context.sessionId) {
+    return {
+      success: false,
+      error:   'No active session.',
+    };
+  }
+
+  let format = args.trim().toLowerCase() || 'text';
+
+  if (!['text', 'json', 'markdown'].includes(format)) {
+    return {
+      success: false,
+      error:   `Unknown format: "${format}"\n\nSupported formats: text, json, markdown`,
+    };
+  }
+
+  let db     = context.db || getDatabase();
+  let frames = getFrames(context.sessionId, {
+    types: [FrameType.MESSAGE],
+  }, db);
+
+  // Filter hidden frames
+  let visibleFrames = frames.filter((frame) => !frame.payload.hidden);
+
+  if (visibleFrames.length === 0) {
+    return {
+      success: true,
+      content: 'No messages to export.',
+    };
+  }
+
+  // Get session info
+  let session = context.session;
+  if (!session && context.sessionId && context.userId) {
+    session = db.prepare('SELECT id, name FROM sessions WHERE id = ? AND user_id = ?')
+      .get(context.sessionId, context.userId);
+  }
+
+  let sessionName = session?.name || session?.session_name || 'Unknown Session';
+
+  if (format === 'json') {
+    let exportData = {
+      session: {
+        id:   context.sessionId,
+        name: sessionName,
+      },
+      exportedAt: new Date().toISOString(),
+      messages:   visibleFrames.map((frame) => ({
+        id:        frame.id,
+        timestamp: frame.timestamp,
+        author:    frame.payload.role || frame.authorType,
+        authorId:  frame.authorId,
+        content:   frame.payload.content || '',
+      })),
+    };
+
+    return {
+      success: true,
+      content: '```json\n' + JSON.stringify(exportData, null, 2) + '\n```',
+    };
+  }
+
+  // Text or Markdown format
+  let divider = (format === 'markdown') ? '---' : '────────────────────';
+  let text    = '';
+
+  if (format === 'markdown')
+    text += `# ${sessionName}\n\n`;
+  else
+    text += `Session: ${sessionName}\n${divider}\n\n`;
+
+  for (let frame of visibleFrames) {
+    let payload   = frame.payload;
+    let author    = payload.role || frame.authorType;
+    let content   = payload.content || '';
+    let timestamp = frame.timestamp.slice(0, 19).replace('T', ' ');
+
+    if (format === 'markdown') {
+      text += `### ${author} — ${timestamp}\n\n${content}\n\n`;
+    } else {
+      // Strip HTML for plain text
+      let plainContent = content.replace(/<[^>]+>/g, '');
+      text += `[${timestamp}] ${author}:\n${plainContent}\n\n`;
+    }
+  }
+
+  return { success: true, content: text };
 });
 
 export default {

@@ -202,13 +202,43 @@ All modal components migrated to split HTML/JS pattern:
 - Recursion depth enforcement (MAX_DELEGATION_DEPTH = 10)
 - 16 delegate + 17 execute-command + 14 coordination = 47 new tests
 
+### Phase 4 — Commands + Plugin Hardening (2026-02-18)
+
+**New Commands:**
+- `/participants` — list session participants with roles and types
+- `/invite <agentId> [role]` — add agent (default role: member)
+- `/kick <agentId>` — remove agent from session
+- `/history [count]` — show recent messages (max 100, default 20)
+- `/export [format]` — export conversation (text, json, markdown)
+
+**Plugin Hardening:**
+- Internal plugins directory: `server/plugins/`
+- Dual-source discovery: internal (`server/plugins/`) + user (`~/.config/hero/plugins/`)
+- Dependency declaration: `hero.dependencies` in plugin `package.json`
+- Topological sort with circular dependency detection: `resolveDependencies()`
+- Hot-reload: `reloadPlugin(name, context)`, `watchPluginsDirectory(dir, context)`
+- Dependency-safe unloading: blocks unload if other plugins depend on it
+- Hook wiring: BEFORE_USER_MESSAGE + AFTER_AGENT_RESPONSE now fire in both message routes
+
+**Files Modified:**
+- `server/lib/commands/index.mjs` — 5 new commands
+- `server/lib/plugins/loader.mjs` — rewritten with dual discovery, deps, reload, watch
+- `server/routes/messages-stream.mjs` — wired beforeUserMessage + afterAgentResponse hooks
+- `server/routes/messages.mjs` — wired beforeUserMessage + afterAgentResponse hooks
+- `server/plugins/.gitkeep` — internal plugins directory created
+
+**Tests Added:**
+- `spec/lib/commands-new-spec.mjs` — 36 tests for new commands
+- `spec/lib/plugins/loader-enhanced-spec.mjs` — 27 tests for enhanced loader
+
 ### Test Suite
 - Runner: `find spec -name '*-spec.mjs' | xargs node --test --test-force-exit`
-- Current: **1378 tests, 0 failures**
+- Current: **1418 tests, 0 failures**
 
 ### Pending
 - Phase 3 advanced: Inter-agent streaming, multi-coordinator discussion, @mention routing
-- Phase 4-8: Commands hardening, HML forms, auth enhancement, etc.
+- Phase 4 remaining: npm package plugin support, fs.watch auto-start in server
+- Phase 5-8: HML forms, auth enhancement, etc.
 
 ---
 

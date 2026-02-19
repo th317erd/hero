@@ -84,15 +84,33 @@
 - [ ] Wire BEFORE_TOOL hook for agent tool permission gating
 
 ## Phase 4: Commands + Plugin Hardening
-> Status: PENDING — blocked by Phase 2
+> Status: **CORE COMPLETE**
+> Commit: (pending)
 
-- [ ] New commands: /participants, /invite, /kick, /history, /export
-- [ ] Plugin hot-reload (fs.watch + unload/load)
-- [ ] Plugin dependency declaration and resolution
-- [ ] npm package plugin support
-- [ ] Internal plugins directory (`server/plugins/`)
-- [ ] Formalize plugin API shape
-- [ ] Tests for all
+### Commands (complete)
+- [x] /participants — list all session participants with roles
+- [x] /invite <agentId> [role] — add agent to session
+- [x] /kick <agentId> — remove agent from session
+- [x] /history [count] — show recent conversation history (max 100)
+- [x] /export [format] — export conversation (text, json, markdown)
+- [x] 36 new command tests
+
+### Plugin Hardening (complete)
+- [x] Internal plugins directory (`server/plugins/`)
+- [x] Plugin dependency declaration (`hero.dependencies` in package.json)
+- [x] Dependency resolution (topological sort with circular detection)
+- [x] Plugin hot-reload (`reloadPlugin()`, `watchPluginsDirectory()`)
+- [x] Dependency-safe unloading (blocks unload if dependents exist)
+- [x] Dual discovery (internal + user plugins, user overrides internal)
+- [x] Plugin source tracking ('internal' vs 'user')
+- [x] Wire BEFORE_USER_MESSAGE hook into both message routes
+- [x] Wire AFTER_AGENT_RESPONSE hook into both message routes
+- [x] BEFORE_COMMAND/AFTER_COMMAND already wired (from Phase 2)
+- [x] 27 new plugin loader tests
+
+### Pending (deferred)
+- [ ] npm package plugin support (resolve from node_modules)
+- [ ] fs.watch auto-reload (function exists, needs server startup wiring)
 
 ## Phase 5: HML Forms + Infinite Scroll
 > Status: PENDING — can start alongside Phase 3/4

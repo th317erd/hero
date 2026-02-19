@@ -34,6 +34,7 @@ import {
 import { handleCommandInterception } from '../lib/messaging/command-handler.mjs';
 import { setupSessionAgent } from '../lib/messaging/session-setup.mjs';
 import { loadSessionWithAgent } from '../lib/participants/index.mjs';
+import { beforeUserMessage, afterAgentResponse } from '../lib/plugins/hooks.mjs';
 import {
   stripInteractionTags,
   replaceInteractionTagsWithNote,
@@ -143,6 +144,18 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
   // =========================================================================
   // END COMMAND INTERCEPTION - Continue with normal message processing
   // =========================================================================
+
+  // Run BEFORE_USER_MESSAGE hook (plugins can modify content)
+  let hookContext = {
+    sessionId: parseInt(req.params.sessionId, 10),
+    userId:    req.user.id,
+  };
+
+  try {
+    content = await beforeUserMessage(content, hookContext);
+  } catch (error) {
+    debug('beforeUserMessage hook error:', error.message);
+  }
 
   // Load session with coordinator agent from participants
   let session = loadSessionWithAgent(parseInt(req.params.sessionId, 10), req.user.id, db);
@@ -1029,6 +1042,18 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
         });
 
       } else {
+        // Run AFTER_AGENT_RESPONSE hook (plugins can modify final content)
+        try {
+          let hookResult = await afterAgentResponse(
+            { content: fullContent, agentId: session.agent_id },
+            { sessionId: parseInt(req.params.sessionId, 10), userId: req.user.id },
+          );
+          if (hookResult && typeof hookResult.content === 'string')
+            fullContent = hookResult.content;
+        } catch (error) {
+          debug('afterAgentResponse hook error:', error.message);
+        }
+
         // No interactions - store as frame
         debug('Storing assistant response as frame', { length: fullContent.length });
         let storedFrame = createAgentMessageFrame({

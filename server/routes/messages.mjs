@@ -23,6 +23,7 @@ import {
 import { handleCommandInterception } from '../lib/messaging/command-handler.mjs';
 import { setupSessionAgent } from '../lib/messaging/session-setup.mjs';
 import { loadSessionWithAgent } from '../lib/participants/index.mjs';
+import { beforeUserMessage, afterAgentResponse } from '../lib/plugins/hooks.mjs';
 
 const router = Router();
 
@@ -97,6 +98,16 @@ router.post('/:sessionId/messages', async (req, res) => {
   // =========================================================================
   // END COMMAND INTERCEPTION
   // =========================================================================
+
+  // Run BEFORE_USER_MESSAGE hook (plugins can modify content)
+  try {
+    content = await beforeUserMessage(content, {
+      sessionId: parseInt(req.params.sessionId, 10),
+      userId:    req.user.id,
+    });
+  } catch (error) {
+    console.error('[Messages] beforeUserMessage hook error:', error.message);
+  }
 
   // If hidden flag is set, store as hidden and optionally show acknowledgment
   if (hidden) {
@@ -296,6 +307,18 @@ router.post('/:sessionId/messages', async (req, res) => {
 
       if (markupResult.modified)
         finalContent = markupResult.text;
+    }
+
+    // Run AFTER_AGENT_RESPONSE hook (plugins can modify final content)
+    try {
+      let hookResult = await afterAgentResponse(
+        { content: finalContent, agentId: session.agent_id },
+        { sessionId, userId: req.user.id },
+      );
+      if (hookResult && typeof hookResult.content === 'string')
+        finalContent = hookResult.content;
+    } catch (error) {
+      console.error('[Messages] afterAgentResponse hook error:', error.message);
     }
 
     // Store final assistant response as frame
