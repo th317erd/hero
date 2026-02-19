@@ -84,6 +84,10 @@ export class HeroChat extends HeroComponent {
   #lastScrollHeight = 0;
   #userScrolledAway = false;  // TRUE = user scrolled up to read, don't auto-scroll
 
+  // Infinite scroll state
+  #loadingOlder = false;
+  #scrollTopThreshold = 100;  // pixels from top to trigger loading
+
   // ---------------------------------------------------------------------------
   // Shadow DOM
   // ---------------------------------------------------------------------------
@@ -319,6 +323,11 @@ export class HeroChat extends HeroComponent {
       // User reached the bottom → they want to follow new content
       if (atBottom) {
         this.#userScrolledAway = false;
+      }
+
+      // Infinite scroll: near top → load older frames
+      if (currentScrollTop < this.#scrollTopThreshold && !this.#loadingOlder) {
+        this._loadOlderFrames();
       }
 
       this.#lastScrollTop = currentScrollTop;
@@ -665,6 +674,63 @@ export class HeroChat extends HeroComponent {
     }
   }
 
+  /**
+   * Load older frames when scrolling near the top (infinite scroll).
+   * Preserves scroll position so content doesn't jump.
+   */
+  async _loadOlderFrames() {
+    const provider = this.framesProvider;
+    if (!provider || !provider.hasOlderFrames || provider.loadingOlder)
+      return;
+
+    this.#loadingOlder = true;
+
+    // Show loading indicator at top
+    this._showTopLoader(true);
+
+    // Capture scroll state before loading
+    const container    = this._getScrollContainer();
+    const scrollHeight = container ? container.scrollHeight : 0;
+
+    try {
+      const result = await provider.loadOlderFrames(50);
+
+      if (result.loaded > 0) {
+        // Restore scroll position: maintain offset from where user was reading
+        requestAnimationFrame(() => {
+          if (container) {
+            const newScrollHeight = container.scrollHeight;
+            const heightDiff      = newScrollHeight - scrollHeight;
+            container.scrollTop  += heightDiff;
+          }
+        });
+      }
+    } finally {
+      this.#loadingOlder = false;
+      this._showTopLoader(false);
+    }
+  }
+
+  /**
+   * Show or hide the loading indicator at the top of messages.
+   * @param {boolean} show
+   */
+  _showTopLoader(show) {
+    let container = this.shadowRoot?.querySelector('.messages-container');
+    if (!container) return;
+
+    let loader = container.querySelector('.infinite-scroll-loader');
+
+    if (show && !loader) {
+      let loaderEl = document.createElement('div');
+      loaderEl.className = 'infinite-scroll-loader';
+      loaderEl.innerHTML = '<span class="loader-dot"></span><span class="loader-dot"></span><span class="loader-dot"></span>';
+      container.insertBefore(loaderEl, container.firstChild);
+    } else if (!show && loader) {
+      loader.remove();
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Rendering
   // ---------------------------------------------------------------------------
@@ -863,10 +929,66 @@ export class HeroChat extends HeroComponent {
             prompt.render();
           }
         });
+
+        // Add batch prompt buttons if message has multiple prompts
+        this._addPromptBatchButtons(element, frameId);
       }
     });
 
     return element;
+  }
+
+  /**
+   * Add Submit All / Ignore buttons for messages that have multiple hml-prompt elements.
+   * @param {HTMLElement} element - The message element
+   * @param {string} frameId - The frame/message ID
+   */
+  _addPromptBatchButtons(element, frameId) {
+    let prompts = element.querySelectorAll('hml-prompt');
+    if (prompts.length < 2)
+      return;
+
+    // Check if buttons already exist
+    if (element.querySelector('.prompt-batch-actions'))
+      return;
+
+    let actionsDiv = document.createElement('div');
+    actionsDiv.className = 'prompt-batch-actions';
+    actionsDiv.innerHTML = `
+      <span class="prompt-batch-count">${prompts.length} prompts</span>
+      <button class="prompt-batch-submit" title="Submit all answers">Submit All</button>
+      <button class="prompt-batch-ignore" title="Ignore all prompts">Ignore</button>
+    `;
+
+    // Bind events
+    let submitBtn = actionsDiv.querySelector('.prompt-batch-submit');
+    let ignoreBtn = actionsDiv.querySelector('.prompt-batch-ignore');
+
+    submitBtn.addEventListener('click', () => {
+      if (typeof window.submitPromptBatch === 'function')
+        window.submitPromptBatch(frameId);
+
+      // Hide buttons after action
+      actionsDiv.classList.add('prompt-batch-done');
+    });
+
+    ignoreBtn.addEventListener('click', () => {
+      if (typeof window.ignorePromptBatch === 'function')
+        window.ignorePromptBatch(frameId);
+
+      // Mark prompts as ignored visually
+      prompts.forEach((p) => p.setAttribute('ignored', ''));
+
+      // Hide buttons after action
+      actionsDiv.classList.add('prompt-batch-done');
+    });
+
+    // Insert after the message bubble
+    let bubble = element.querySelector('.message-bubble');
+    if (bubble)
+      bubble.after(actionsDiv);
+    else
+      element.appendChild(actionsDiv);
   }
 
   /**
@@ -1340,6 +1462,76 @@ export class HeroChat extends HeroComponent {
         border-top: 1px dashed var(--border-color, #3d3d5c);
         max-height: 300px;
         overflow-y: auto;
+      }
+
+      /* Prompt batch actions */
+      .prompt-batch-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px;
+        margin-top: 4px;
+      }
+
+      .prompt-batch-actions.prompt-batch-done {
+        display: none;
+      }
+
+      .prompt-batch-count {
+        font-size: 12px;
+        color: var(--text-muted, #6b7280);
+        margin-right: auto;
+      }
+
+      .prompt-batch-submit,
+      .prompt-batch-ignore {
+        padding: 4px 12px;
+        border-radius: 4px;
+        border: 1px solid var(--border-color, #3d3d5c);
+        background: var(--bg-tertiary, #2a2a3e);
+        color: var(--text-primary, #e0e0e0);
+        font-size: 12px;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+
+      .prompt-batch-submit {
+        background: var(--accent, #f472b6);
+        border-color: var(--accent, #f472b6);
+        color: white;
+      }
+
+      .prompt-batch-submit:hover {
+        opacity: 0.9;
+      }
+
+      .prompt-batch-ignore:hover {
+        background: var(--bg-secondary, #1a1a2e);
+      }
+
+      /* Infinite scroll loader */
+      .infinite-scroll-loader {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 6px;
+        padding: 16px;
+      }
+
+      .loader-dot {
+        width: 8px;
+        height: 8px;
+        background: var(--text-muted, #6b7280);
+        border-radius: 50%;
+        animation: loader-bounce 1.4s infinite;
+      }
+
+      .loader-dot:nth-child(2) { animation-delay: 0.2s; }
+      .loader-dot:nth-child(3) { animation-delay: 0.4s; }
+
+      @keyframes loader-bounce {
+        0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+        30% { transform: translateY(-6px); opacity: 1; }
       }
     </style>`;
   }

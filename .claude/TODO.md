@@ -113,14 +113,14 @@
 - [ ] fs.watch auto-reload (function exists, needs server startup wiring)
 
 ## Phase 5: HML Forms + Infinite Scroll
-> Status: PENDING — can start alongside Phase 3/4
+> Status: **CORE COMPLETE**
 
-- [ ] Group prompts per message with Submit/Ignore
-- [ ] Batch submission for multiple prompts
-- [ ] Paginated frames API (`GET /frames?before=<ts>&limit=50`)
-- [ ] Client infinite scroll on scroll-to-top
-- [ ] Cross-session search endpoint
-- [ ] Tests
+- [x] Paginated frames API (`GET /frames?before=<ts>&limit=50`) with `hasMore` flag
+- [x] Cross-session search endpoint (`GET /api/search`)
+- [x] Client infinite scroll on scroll-to-top (scroll position preservation)
+- [x] Group prompts per message with Submit All / Ignore buttons
+- [x] Batch submission for multiple prompts (multiple `<interaction>` blocks per message)
+- [x] Tests (12 pagination + 17 search + 13 route = 42 new tests)
 
 ## Phase 6: Auth Enhancement + User Settings
 > Status: PENDING — blocked by Phase 2

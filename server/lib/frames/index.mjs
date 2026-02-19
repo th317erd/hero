@@ -156,12 +156,13 @@ export function getFrame(id, db = null) {
  *
  * @param {number} sessionId - Session ID
  * @param {Object} [options] - Query options
- * @param {string} [options.fromTimestamp] - Get frames after this timestamp
+ * @param {string} [options.fromTimestamp] - Get frames after this timestamp (exclusive)
+ * @param {string} [options.beforeTimestamp] - Get frames before this timestamp (exclusive, for backward pagination)
  * @param {string} [options.fromCompact] - Start from the most recent compact frame
  * @param {string[]} [options.types] - Filter by frame types
  * @param {number} [options.limit] - Maximum number of frames to return
  * @param {Database} [db] - Optional database instance for testing
- * @returns {Object[]} Array of frames sorted by timestamp
+ * @returns {Object[]} Array of frames sorted by timestamp ASC
  */
 export function getFrames(sessionId, options = {}, db = null) {
   db = db || getDatabase();
@@ -187,11 +188,26 @@ export function getFrames(sessionId, options = {}, db = null) {
     params.push(options.fromTimestamp);
   }
 
+  // Backward pagination: get frames before a timestamp
+  if (options.beforeTimestamp) {
+    sql += ' AND timestamp < ?';
+    params.push(options.beforeTimestamp);
+  }
+
   // Filter by types
   if (options.types && options.types.length > 0) {
     const placeholders = options.types.map(() => '?').join(', ');
     sql += ` AND type IN (${placeholders})`;
     params.push(...options.types);
+  }
+
+  // For backward pagination, order DESC first then reverse for correct ASC output
+  if (options.beforeTimestamp && options.limit) {
+    sql += ' ORDER BY timestamp DESC LIMIT ?';
+    params.push(options.limit);
+    const rows = db.prepare(sql).all(...params);
+    // Reverse to get chronological order
+    return rows.reverse().map(parseFrameRow);
   }
 
   sql += ' ORDER BY timestamp ASC';
@@ -407,6 +423,106 @@ function parseFrameRow(row) {
   };
 }
 
+/**
+ * Search frames by content text across one or all sessions for a user.
+ *
+ * @param {number} userId - User ID (for ownership verification)
+ * @param {string} query - Search text
+ * @param {Object} [options] - Search options
+ * @param {number} [options.sessionId] - Limit to a specific session
+ * @param {string[]} [options.types] - Filter by frame types (default: ['message'])
+ * @param {number} [options.limit] - Maximum results (default: 50, max: 200)
+ * @param {number} [options.offset] - Offset for pagination (default: 0)
+ * @param {Database} [db] - Optional database instance for testing
+ * @returns {Object[]} Array of matching frames with session metadata
+ */
+export function searchFrames(userId, query, options = {}, db = null) {
+  db = db || getDatabase();
+
+  if (!query || query.trim().length === 0)
+    return [];
+
+  let types  = options.types || ['message'];
+  let limit  = Math.min(options.limit || 50, 200);
+  let offset = options.offset || 0;
+
+  let sql = `
+    SELECT f.*, s.name as session_name
+    FROM frames f
+    JOIN sessions s ON f.session_id = s.id
+    WHERE s.user_id = ?
+      AND f.payload LIKE ?
+  `;
+  let params = [userId, `%${query}%`];
+
+  if (options.sessionId) {
+    sql += ' AND f.session_id = ?';
+    params.push(options.sessionId);
+  }
+
+  if (types.length > 0) {
+    let placeholders = types.map(() => '?').join(', ');
+    sql += ` AND f.type IN (${placeholders})`;
+    for (let type of types)
+      params.push(type);
+  }
+
+  sql += ' ORDER BY f.timestamp DESC LIMIT ? OFFSET ?';
+  params.push(limit, offset);
+
+  let rows = db.prepare(sql).all(...params);
+
+  return rows.map((row) => {
+    let frame = parseFrameRow(row);
+    frame.sessionName = row.session_name;
+    return frame;
+  });
+}
+
+/**
+ * Count search results for a query.
+ *
+ * @param {number} userId - User ID
+ * @param {string} query - Search text
+ * @param {Object} [options] - Search options
+ * @param {number} [options.sessionId] - Limit to a specific session
+ * @param {string[]} [options.types] - Filter by frame types
+ * @param {Database} [db] - Optional database instance for testing
+ * @returns {number} Total matching frames
+ */
+export function countSearchResults(userId, query, options = {}, db = null) {
+  db = db || getDatabase();
+
+  if (!query || query.trim().length === 0)
+    return 0;
+
+  let types = options.types || ['message'];
+
+  let sql = `
+    SELECT COUNT(*) as count
+    FROM frames f
+    JOIN sessions s ON f.session_id = s.id
+    WHERE s.user_id = ?
+      AND f.payload LIKE ?
+  `;
+  let params = [userId, `%${query}%`];
+
+  if (options.sessionId) {
+    sql += ' AND f.session_id = ?';
+    params.push(options.sessionId);
+  }
+
+  if (types.length > 0) {
+    let placeholders = types.map(() => '?').join(', ');
+    sql += ` AND f.type IN (${placeholders})`;
+    for (let type of types)
+      params.push(type);
+  }
+
+  let result = db.prepare(sql).get(...params);
+  return result.count;
+}
+
 export default {
   FrameType,
   AuthorType,
@@ -420,4 +536,6 @@ export default {
   getLatestCompact,
   countFrames,
   compileFrames,
+  searchFrames,
+  countSearchResults,
 };

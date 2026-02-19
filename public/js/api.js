@@ -152,14 +152,16 @@ const API = {
      * @param {number} sessionId - Session ID
      * @param {object} [options] - Query options
      * @param {string} [options.fromTimestamp] - Get frames after this timestamp
+     * @param {string} [options.before] - Get frames before this timestamp (backward pagination)
      * @param {boolean} [options.fromCompact] - Start from most recent compact frame
      * @param {string[]} [options.types] - Filter by frame types
      * @param {number} [options.limit] - Maximum frames to return
-     * @returns {Promise<{frames: object[], compiled: object}>}
+     * @returns {Promise<{frames: object[], count: number, hasMore: boolean}>}
      */
     list: async (sessionId, options = {}) => {
       let params = new URLSearchParams();
       if (options.fromTimestamp) params.append('fromTimestamp', options.fromTimestamp);
+      if (options.before) params.append('before', options.before);
       if (options.fromCompact) params.append('fromCompact', '1');
       if (options.types) params.append('types', options.types.join(','));
       if (options.limit) params.append('limit', String(options.limit));
@@ -184,6 +186,31 @@ const API = {
      * @returns {Promise<object>}
      */
     stats: (sessionId) => api('GET', `/sessions/${sessionId}/frames/stats`),
+  },
+
+  // --------------------------------------------------------------------------
+  // Search
+  // --------------------------------------------------------------------------
+  search: {
+    /**
+     * Search frame content across sessions.
+     * @param {string} query - Search text
+     * @param {object} [options] - Search options
+     * @param {number} [options.sessionId] - Limit to specific session
+     * @param {string[]} [options.types] - Frame types to search
+     * @param {number} [options.limit] - Max results
+     * @param {number} [options.offset] - Pagination offset
+     * @returns {Promise<{results: object[], total: number, hasMore: boolean}>}
+     */
+    frames: async (query, options = {}) => {
+      let params = new URLSearchParams();
+      params.append('query', query);
+      if (options.sessionId) params.append('sessionId', String(options.sessionId));
+      if (options.types) params.append('types', options.types.join(','));
+      if (options.limit) params.append('limit', String(options.limit));
+      if (options.offset) params.append('offset', String(options.offset));
+      return api('GET', `/search?${params.toString()}`);
+    },
   },
 };
 
@@ -614,7 +641,7 @@ async function unarchiveSession(id) {
  * Fetch frames for a session.
  * @param {number} sessionId - Session ID
  * @param {object} [options] - Query options
- * @returns {Promise<{frames: object[], compiled: object}>}
+ * @returns {Promise<{frames: object[], count: number, hasMore: boolean}>}
  */
 async function fetchFrames(sessionId, options = {}) {
   return await API.frames.list(sessionId, options);

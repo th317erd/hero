@@ -105,6 +105,9 @@ export class SessionFramesProvider extends HeroComponent {
   // State
   #sessionId = null;
   #lastTimestamp = null;
+  #firstTimestamp = null;
+  #hasOlderFrames = false;
+  #loadingOlder = false;
   #unsubscribers = [];
 
   // ---------------------------------------------------------------------------
@@ -187,6 +190,30 @@ export class SessionFramesProvider extends HeroComponent {
   }
 
   /**
+   * Get the first known timestamp (oldest loaded frame).
+   * @returns {string|null}
+   */
+  getFirstTimestamp() {
+    return this.#firstTimestamp;
+  }
+
+  /**
+   * Whether there are older frames available to load.
+   * @returns {boolean}
+   */
+  get hasOlderFrames() {
+    return this.#hasOlderFrames;
+  }
+
+  /**
+   * Whether currently loading older frames.
+   * @returns {boolean}
+   */
+  get loadingOlder() {
+    return this.#loadingOlder;
+  }
+
+  /**
    * Recompile all frames and update the compiled DynamicProperty.
    * Called after any frame change to ensure consistent state.
    */
@@ -262,6 +289,9 @@ export class SessionFramesProvider extends HeroComponent {
     // Reset state
     this.#sessionId = sessionId;
     this.#lastTimestamp = null;
+    this.#firstTimestamp = null;
+    this.#hasOlderFrames = false;
+    this.#loadingOlder = false;
     this.frames = [];
     this.compiled = new Map();
     this._phantomFrame = null;
@@ -291,15 +321,20 @@ export class SessionFramesProvider extends HeroComponent {
           // Compile frames to build state
           this._recompile();
 
-          // Track last timestamp
+          // Track timestamps
           if (result.frames.length > 0) {
             this.#lastTimestamp = result.frames[result.frames.length - 1].timestamp;
+            this.#firstTimestamp = result.frames[0].timestamp;
           }
+
+          // Check if there are older frames (before the compact point)
+          this.#hasOlderFrames = result.hasMore || false;
 
           this.debug('Loaded frames', {
             sessionId,
             count:    result.frames.length,
             compiled: this.compiled.valueOf().size,
+            hasOlder: this.#hasOlderFrames,
           });
         }
       } catch (error) {
@@ -314,9 +349,76 @@ export class SessionFramesProvider extends HeroComponent {
   _clearSession() {
     this.#sessionId = null;
     this.#lastTimestamp = null;
+    this.#firstTimestamp = null;
+    this.#hasOlderFrames = false;
+    this.#loadingOlder = false;
     this._phantomFrame = null;
     this.frames = [];
     this.compiled = new Map();
+  }
+
+  /**
+   * Load older frames (for infinite scroll / backward pagination).
+   * Prepends frames before the oldest currently loaded frame.
+   *
+   * @param {number} [count=50] - Number of frames to load
+   * @returns {Promise<{loaded: number, hasMore: boolean}>}
+   */
+  async loadOlderFrames(count = 50) {
+    if (this.#loadingOlder || !this.#sessionId || !this.#firstTimestamp) {
+      return { loaded: 0, hasMore: this.#hasOlderFrames };
+    }
+
+    this.#loadingOlder = true;
+
+    try {
+      let result = await window.fetchFrames(this.#sessionId, {
+        before: this.#firstTimestamp,
+        limit:  count,
+      });
+
+      if (!result || !result.frames || result.frames.length === 0) {
+        this.#hasOlderFrames = false;
+        return { loaded: 0, hasMore: false };
+      }
+
+      // Prepend older frames before current frames
+      let currentFrames = this.frames.valueOf();
+      let olderFrames   = result.frames;
+
+      // Deduplicate by ID
+      let existingIds = new Set(currentFrames.map((f) => f.id));
+      let newFrames   = [];
+      for (let frame of olderFrames) {
+        if (!existingIds.has(frame.id))
+          newFrames.push(frame);
+      }
+
+      if (newFrames.length > 0) {
+        let merged = [...newFrames, ...currentFrames];
+        merged.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+        this.frames = merged;
+        this._recompile();
+
+        // Update first timestamp
+        this.#firstTimestamp = merged[0].timestamp;
+      }
+
+      this.#hasOlderFrames = result.hasMore || false;
+
+      this.debug('Loaded older frames', {
+        loaded:  newFrames.length,
+        hasMore: this.#hasOlderFrames,
+        total:   this.frames.valueOf().length,
+      });
+
+      return { loaded: newFrames.length, hasMore: this.#hasOlderFrames };
+    } catch (error) {
+      console.warn('SessionFramesProvider: Failed to load older frames:', error);
+      return { loaded: 0, hasMore: this.#hasOlderFrames };
+    } finally {
+      this.#loadingOlder = false;
+    }
   }
 
   // ---------------------------------------------------------------------------

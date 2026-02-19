@@ -919,16 +919,150 @@ function updatePromptInState(messageId, promptId, answer) {
 // Make submitUserPromptAnswer available globally (called from markup.js)
 window.submitUserPromptAnswer = submitUserPromptAnswer;
 
-// Listen for prompt-submit events from <hml-prompt> Web Components
-// Use a Set to track which prompts have been submitted to prevent duplicates
+// ============================================================================
+// Prompt Batch Submission System
+// ============================================================================
+// Prompts are buffered per message frame. Users can:
+// 1. Submit individually (immediate send)
+// 2. Use "Submit All" to batch-send all answered prompts for a message
+// 3. Use "Ignore" to dismiss all unanswered prompts for a message
+
+// Buffer: messageId → Map<promptId, { question, answer, type }>
+const _pendingPromptAnswers = new Map();
 const _submittedPrompts = new Set();
 
+/**
+ * Buffer a prompt answer for batch submission.
+ * @param {string} messageId
+ * @param {string} promptId
+ * @param {string} question
+ * @param {string} answer
+ * @param {string} type
+ */
+function bufferPromptAnswer(messageId, promptId, question, answer, type) {
+  if (!_pendingPromptAnswers.has(messageId))
+    _pendingPromptAnswers.set(messageId, new Map());
+
+  _pendingPromptAnswers.get(messageId).set(promptId, { question, answer, type });
+
+  // Dispatch event so hero-chat can update Submit/Ignore button state
+  document.dispatchEvent(new CustomEvent('prompt-answer-buffered', {
+    detail: { messageId, promptId, pendingCount: _pendingPromptAnswers.get(messageId).size },
+  }));
+}
+
+/**
+ * Submit all buffered prompt answers for a message as a batch.
+ * Sends a single message with multiple interaction blocks.
+ * @param {string} messageId
+ */
+function submitPromptBatch(messageId) {
+  let answers = _pendingPromptAnswers.get(messageId);
+  if (!answers || answers.size === 0)
+    return;
+
+  // Build interaction blocks for all answers
+  let interactions = [];
+  let summaryParts = [];
+
+  for (let [promptId, data] of answers) {
+    let key = `${messageId}-${promptId}`;
+    if (_submittedPrompts.has(key))
+      continue;
+
+    _submittedPrompts.add(key);
+
+    // Update state
+    updatePromptInState(messageId, promptId, data.answer);
+
+    interactions.push({
+      interaction_id:  `prompt-response-${promptId}`,
+      target_id:       '@system',
+      target_property: 'update_prompt',
+      payload: {
+        message_id: messageId,
+        prompt_id:  promptId,
+        answer:     data.answer,
+        question:   data.question,
+      },
+    });
+
+    summaryParts.push(`"${data.question}": ${data.answer}`);
+  }
+
+  if (interactions.length === 0)
+    return;
+
+  // Build single message with all interaction blocks
+  let interactionBlocks = interactions.map((interaction) =>
+    `<interaction>\n${JSON.stringify(interaction, null, 2)}\n</interaction>`
+  ).join('\n\n');
+
+  let content = `Answering ${interactions.length} prompt${(interactions.length > 1) ? 's' : ''}:\n\n${summaryParts.join('\n')}\n\n${interactionBlocks}`;
+
+  console.log('[App] Batch submitting prompts:', { messageId, count: interactions.length });
+
+  // Clear buffer
+  _pendingPromptAnswers.delete(messageId);
+
+  // Send as user message
+  if (state.streamingMode)
+    processMessageStream(content);
+  else
+    processMessage(content);
+
+  // Notify UI
+  document.dispatchEvent(new CustomEvent('prompt-batch-submitted', {
+    detail: { messageId, count: interactions.length },
+  }));
+}
+
+/**
+ * Ignore all prompts for a message.
+ * @param {string} messageId
+ */
+function ignorePromptBatch(messageId) {
+  // Mark all prompts as submitted so they can't be resubmitted
+  let answers = _pendingPromptAnswers.get(messageId);
+  if (answers) {
+    for (let [promptId] of answers) {
+      _submittedPrompts.add(`${messageId}-${promptId}`);
+    }
+  }
+
+  _pendingPromptAnswers.delete(messageId);
+
+  console.log('[App] Ignoring prompts for message:', messageId);
+
+  // Notify UI
+  document.dispatchEvent(new CustomEvent('prompt-batch-ignored', {
+    detail: { messageId },
+  }));
+}
+
+/**
+ * Get pending prompt count for a message.
+ * @param {string} messageId
+ * @returns {number}
+ */
+function getPendingPromptCount(messageId) {
+  let answers = _pendingPromptAnswers.get(messageId);
+  return (answers) ? answers.size : 0;
+}
+
+// Expose globally
+window.submitPromptBatch   = submitPromptBatch;
+window.ignorePromptBatch   = ignorePromptBatch;
+window.bufferPromptAnswer  = bufferPromptAnswer;
+window.getPendingPromptCount = getPendingPromptCount;
+
+// Listen for prompt-submit events from <hml-prompt> Web Components
 document.addEventListener('prompt-submit', (event) => {
   // Stop propagation to prevent any other listeners from receiving this
   event.stopPropagation();
   event.stopImmediatePropagation();
 
-  let { messageId, promptId, question, answer } = event.detail;
+  let { messageId, promptId, question, answer, type } = event.detail;
 
   // Deduplicate - only process each prompt once per page load
   let key = `${messageId}-${promptId}`;
@@ -936,9 +1070,15 @@ document.addEventListener('prompt-submit', (event) => {
     console.log('[App] prompt-submit already processed, skipping:', key);
     return;
   }
-  _submittedPrompts.add(key);
 
   console.log('[App] prompt-submit event received:', event.detail);
+
+  // Buffer the answer for batch submission
+  bufferPromptAnswer(messageId, promptId, question, answer, type);
+
+  // Also submit individually for backward compatibility
+  // (individual prompt submission still works alongside batch)
+  _submittedPrompts.add(key);
   submitUserPromptAnswer(messageId, promptId, question, answer);
 });
 

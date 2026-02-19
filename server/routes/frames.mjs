@@ -15,6 +15,8 @@ import {
   getLatestCompact,
   countFrames,
   compileFrames,
+  searchFrames,
+  countSearchResults,
 } from '../lib/frames/index.mjs';
 
 const router = Router();
@@ -28,9 +30,10 @@ router.use(requireAuth);
  *
  * Query parameters:
  * - fromCompact: If 'true', start from most recent compact frame
- * - fromTimestamp: Get frames after this timestamp
+ * - fromTimestamp: Get frames after this timestamp (forward pagination)
+ * - before: Get frames before this timestamp (backward pagination / infinite scroll)
  * - types: Comma-separated list of frame types to filter
- * - limit: Maximum number of frames to return
+ * - limit: Maximum number of frames to return (default: no limit)
  * - compiled: If 'true', return compiled state instead of raw frames
  */
 router.get('/:sessionId/frames', (req, res) => {
@@ -57,12 +60,18 @@ router.get('/:sessionId/frames', (req, res) => {
     options.fromTimestamp = req.query.fromTimestamp;
   }
 
+  if (req.query.before) {
+    options.beforeTimestamp = req.query.before;
+  }
+
   if (req.query.types) {
     options.types = req.query.types.split(',').map((t) => t.trim());
   }
 
+  let requestedLimit = null;
   if (req.query.limit) {
-    options.limit = parseInt(req.query.limit, 10);
+    requestedLimit = parseInt(req.query.limit, 10);
+    options.limit = requestedLimit;
   }
 
   const frames = getFrames(sessionId, options);
@@ -76,14 +85,35 @@ router.get('/:sessionId/frames', (req, res) => {
       compiledObj[id] = payload;
     }
     return res.json({
-      compiled: compiledObj,
-      frameCount: frames.length,
+      compiled:    compiledObj,
+      frameCount:  frames.length,
     });
+  }
+
+  // Determine if there are more frames beyond this batch
+  let hasMore = false;
+  if (requestedLimit && frames.length === requestedLimit) {
+    // Check if there are frames beyond this batch
+    const checkOptions = {};
+    if (options.beforeTimestamp && frames.length > 0) {
+      // Backward pagination — check if there are older frames
+      checkOptions.beforeTimestamp = frames[0].timestamp;
+    } else if (frames.length > 0) {
+      // Forward pagination — check if there are newer frames
+      checkOptions.fromTimestamp = frames[frames.length - 1].timestamp;
+    }
+    if (options.types) {
+      checkOptions.types = options.types;
+    }
+    checkOptions.limit = 1;
+    const peek = getFrames(sessionId, checkOptions);
+    hasMore = peek.length > 0;
   }
 
   res.json({
     frames,
-    count: frames.length,
+    count:   frames.length,
+    hasMore,
   });
 });
 

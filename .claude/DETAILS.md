@@ -231,14 +231,36 @@ All modal components migrated to split HTML/JS pattern:
 - `spec/lib/commands-new-spec.mjs` — 36 tests for new commands
 - `spec/lib/plugins/loader-enhanced-spec.mjs` — 27 tests for enhanced loader
 
+### Phase 5 — HML Forms + Infinite Scroll (2026-02-18)
+
+**Server — Backward Pagination + Search:**
+- `server/lib/frames/index.mjs` — Added `beforeTimestamp` option to `getFrames()` (DESC+reverse for correct ASC output), added `searchFrames()` and `countSearchResults()`
+- `server/routes/frames.mjs` — Added `before` query param, `hasMore` flag via peek query
+- `server/routes/search.mjs` — NEW: Cross-session search endpoint (`GET /api/search`)
+- `server/routes/index.mjs` — Registered search routes
+
+**Client — Infinite Scroll:**
+- `public/js/api.js` — Added `before` param to `API.frames.list()`, added `API.search.frames()`
+- `public/js/components/session-frames-provider/session-frames-provider.js` — Added `loadOlderFrames()`, `hasOlderFrames`, `loadingOlder` state
+- `public/js/components/hero-chat/hero-chat.js` — Scroll-to-top detection, `_loadOlderFrames()` with scroll position preservation, loading dots animation
+
+**Client — Prompt Batch Submission:**
+- `public/js/app.js` — Added `_pendingPromptAnswers` Map, `bufferPromptAnswer()`, `submitPromptBatch()`, `ignorePromptBatch()`, `getPendingPromptCount()`
+- `public/js/components/hero-chat/hero-chat.js` — Added `_addPromptBatchButtons()` for messages with 2+ prompts, Submit All / Ignore buttons
+
+**Tests Added:**
+- `spec/lib/frames/pagination-spec.mjs` — 12 tests for backward pagination
+- `spec/lib/frames/search-spec.mjs` — 17 tests for search + count
+- `spec/routes/search-spec.mjs` — 13 tests for route-level search + pagination
+
 ### Test Suite
 - Runner: `find spec -name '*-spec.mjs' | xargs node --test --test-force-exit`
-- Current: **1418 tests, 0 failures**
+- Current: **1424 tests, 0 failures**
 
 ### Pending
 - Phase 3 advanced: Inter-agent streaming, multi-coordinator discussion, @mention routing
 - Phase 4 remaining: npm package plugin support, fs.watch auto-start in server
-- Phase 5-8: HML forms, auth enhancement, etc.
+- Phase 6-8: Auth enhancement, server hardening, polish
 
 ---
 
