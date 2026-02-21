@@ -499,6 +499,28 @@
 
 ---
 
+## F2: Permission Prompt as Channel-Wide Forms
+> Status: **COMPLETE**
+
+### What was done
+- [x] Fixed `requestPermissionPrompt` API usage in `detector.mjs` — was using old API (`prompt.markup`, `prompt.promise`), now correctly awaits the async function which creates frames internally
+- [x] Fixed `handlePermissionPromptResponse` → `handlePermissionResponse` import name in `websocket.mjs`
+- [x] Wired PROMPT action in `command-handler.mjs` — user-initiated commands auto-allow on PROMPT (users don't need to approve their own commands); agent-initiated commands (via `execute-command.mjs` and `detector.mjs`) properly await user approval
+- [x] Permission prompt system (`prompt.mjs`) fully wired end-to-end:
+  - `requestPermissionPrompt()` creates hml-prompt form, broadcasts as system message frame
+  - `handlePermissionResponse()` creates permission rule from user answer, resolves pending promise
+  - `cancelPermissionPrompt()` resolves with deny on cancel/ignore
+  - WebSocket handler accepts `permission_prompt_response` from authenticated users
+  - WebSocket handler accepts `permission_prompt_cancel` for cancellation
+- [x] Three integration points handle PROMPT action:
+  - `detector.mjs` — BEFORE_TOOL permission check for agent tool use
+  - `execute-command.mjs` — Agent command execution via interaction system
+  - `command-handler.mjs` — User-typed commands (auto-allows, no prompt needed)
+- [x] Tests: 19 tests in `spec/lib/permissions/prompt-spec.mjs` (PERMUI-001 through INT-003)
+- [x] All 2140 tests passing, 0 failures
+
+---
+
 ## F2: Permission Prompts as Channel-Wide Forms
 > Status: **COMPLETE**
 
