@@ -74,18 +74,20 @@ class InteractionBus extends EventEmitter {
    * @param {number} [options.sessionId] - Session ID
    * @param {number} [options.userId] - User ID
    * @param {number} [options.senderId] - Sender ID (indicates authorized user interaction)
+   * @param {number} [options.sourceAgentId] - Agent ID that originated this interaction
    * @returns {Object} The interaction object
    */
   create(targetId, targetProperty, payload, options = {}) {
     let interaction = {
-      interaction_id:  randomUUID(),
-      target_id:       targetId,
-      target_property: targetProperty,
-      payload:         payload,
-      ts:              Date.now(),
-      source_id:       options.sourceId || null,
-      session_id:      options.sessionId || null,
-      user_id:         options.userId || null,
+      interaction_id:   randomUUID(),
+      target_id:        targetId,
+      target_property:  targetProperty,
+      payload:          payload,
+      ts:               Date.now(),
+      source_id:        options.sourceId || null,
+      session_id:       options.sessionId || null,
+      user_id:          options.userId || null,
+      source_agent_id:  options.sourceAgentId || null,
     };
 
     // Only include sender_id if explicitly provided
@@ -187,6 +189,7 @@ class InteractionBus extends EventEmitter {
    * @param {boolean} [success=true] - Whether the response is successful
    * @param {Object} [securityContext] - Optional security context
    * @param {number} [securityContext.userId] - Authenticated user ID for verification
+   * @param {number} [securityContext.agentId] - Agent ID (if response originates from an agent)
    * @returns {boolean} True if interaction was pending
    */
   respond(interactionId, payload, success = true, securityContext = {}) {
@@ -199,6 +202,13 @@ class InteractionBus extends EventEmitter {
     if (securityContext.userId && pending.interaction.user_id &&
         securityContext.userId !== pending.interaction.user_id) {
       console.warn(`[Security] Interaction response user mismatch: user ${securityContext.userId} tried to respond to interaction for user ${pending.interaction.user_id}`);
+      return false;
+    }
+
+    // Self-approval prevention: agents cannot respond to their own interactions
+    if (securityContext.agentId && pending.interaction.source_agent_id &&
+        securityContext.agentId === pending.interaction.source_agent_id) {
+      console.warn(`[Security] Self-response blocked: agent ${securityContext.agentId} tried to respond to its own interaction ${interactionId}`);
       return false;
     }
 

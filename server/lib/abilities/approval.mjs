@@ -163,6 +163,7 @@ export async function requestApproval(ability, params, context, timeout = 0) {
       ability,
       context,
       userId:      context.userId,
+      agentId:     context.agent?.id || null,
       requestHash: requestHash,
     });
 
@@ -219,6 +220,12 @@ export function handleApprovalResponse(executionId, approved, reason, rememberFo
   if (securityContext.requestHash && pending.requestHash && securityContext.requestHash !== pending.requestHash) {
     console.warn(`[Security] Request hash mismatch for execution ${executionId}`);
     return { success: false, error: 'Request hash mismatch — possible replay attack' };
+  }
+
+  // Self-approval prevention: agents cannot approve their own actions
+  if (securityContext.agentId && pending.agentId && securityContext.agentId === pending.agentId) {
+    console.warn(`[Security] Self-approval blocked: agent ${securityContext.agentId} tried to approve its own action (execution ${executionId})`);
+    return { success: false, error: 'Agents cannot approve their own actions' };
   }
 
   // Race condition guard: atomically remove from pending
@@ -313,6 +320,14 @@ export function getApprovalHistory(userId, limit = 50) {
  */
 export function getPendingApproval(executionId) {
   return pendingApprovals.get(executionId);
+}
+
+/**
+ * Inject a pending approval for testing.
+ * @private
+ */
+export function _addPendingApproval(executionId, entry) {
+  pendingApprovals.set(executionId, entry);
 }
 
 export { generateRequestHash };

@@ -398,9 +398,10 @@ export async function executeInteractions(interactionBlock, context) {
     // Include senderId if provided - this indicates the interaction originated
     // from an authenticated user (secure/authorized)
     let interactionOptions = {
-      sourceId:  agentInteractionId,
-      sessionId: context.sessionId,
-      userId:    context.userId,
+      sourceId:      agentInteractionId,
+      sessionId:     context.sessionId,
+      userId:        context.userId,
+      sourceAgentId: context.agent?.id || context.agentId || null,
     };
 
     // Only add senderId if explicitly provided in context
