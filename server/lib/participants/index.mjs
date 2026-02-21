@@ -321,6 +321,46 @@ export function loadSessionWithAgent(sessionId, userId, database = null) {
 }
 
 /**
+ * Load a specific agent's full data for routing override (e.g., @mention routing).
+ * The agent must be a participant in the session.
+ *
+ * @param {number} sessionId - Session ID
+ * @param {number} agentId - Agent ID to load
+ * @param {Database} [database] - Optional database instance (for testing)
+ * @returns {Object|null} Agent data in the same shape as loadSessionWithAgent's agent fields, or null
+ */
+export function loadAgentForSession(sessionId, agentId, database = null) {
+  let db = database || getDatabase();
+
+  // Verify agent is a participant in this session
+  let participant = db.prepare(`
+    SELECT 1 FROM session_participants
+    WHERE session_id = ? AND participant_type = 'agent' AND participant_id = ?
+  `).get(sessionId, agentId);
+
+  if (!participant) return null;
+
+  let agent = db.prepare(`
+    SELECT id, name, type, api_url, avatar_url, encrypted_api_key, encrypted_config, default_processes, default_abilities
+    FROM agents WHERE id = ?
+  `).get(agentId);
+
+  if (!agent) return null;
+
+  return {
+    agent_id:           agent.id,
+    agent_name:         agent.name,
+    agent_type:         agent.type,
+    agent_api_url:      agent.api_url,
+    agent_avatar_url:   agent.avatar_url,
+    encrypted_api_key:  agent.encrypted_api_key,
+    encrypted_config:   agent.encrypted_config,
+    default_processes:  agent.default_processes,
+    default_abilities:  agent.default_abilities,
+  };
+}
+
+/**
  * Create a session with participants.
  *
  * Accepts either a single agentId or an array of agentIds.
@@ -507,6 +547,7 @@ export default {
   isParticipant,
   getParticipantSessions,
   loadSessionWithAgent,
+  loadAgentForSession,
   createSessionWithParticipants,
   promoteCoordinator,
   updateParticipantAlias,

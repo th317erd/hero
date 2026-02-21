@@ -192,6 +192,73 @@
       color: var(--error, #f87171);
     }
 
+    /* @Mention autocomplete dropdown */
+    .mention-dropdown {
+      display: none;
+      position: absolute;
+      bottom: 100%;
+      left: 8px;
+      right: 8px;
+      max-height: 180px;
+      overflow-y: auto;
+      background: var(--bg-tertiary, #2a2a3e);
+      border: 1px solid var(--border-color, #2d2d2d);
+      border-radius: var(--radius-sm, 4px);
+      box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.3);
+      z-index: 20;
+    }
+
+    .mention-dropdown.active {
+      display: block;
+    }
+
+    .mention-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    .mention-item:hover,
+    .mention-item.selected {
+      background: var(--accent, #f472b6);
+      color: white;
+    }
+
+    .mention-item .mention-name {
+      font-weight: 600;
+      color: var(--text-primary, #e0e0e0);
+    }
+
+    .mention-item.selected .mention-name,
+    .mention-item:hover .mention-name {
+      color: white;
+    }
+
+    .mention-item .mention-real {
+      color: var(--text-muted, #6b7280);
+      font-size: 12px;
+    }
+
+    .mention-item.selected .mention-real,
+    .mention-item:hover .mention-real {
+      color: rgba(255, 255, 255, 0.7);
+    }
+
+    .mention-item .mention-role {
+      margin-left: auto;
+      color: var(--text-muted, #6b7280);
+      font-size: 11px;
+      text-transform: capitalize;
+    }
+
+    .mention-item.selected .mention-role,
+    .mention-item:hover .mention-role {
+      color: rgba(255, 255, 255, 0.7);
+    }
+
     /* Mobile */
     @media (max-width: 640px) {
       .input-container {
@@ -220,6 +287,7 @@
        data-event-ondrop="handleDrop"
        style="position: relative;"
   >
+    <div class="mention-dropdown"></div>
     <div class="drop-overlay"><span>Drop files here</span></div>
     <textarea
       class="message-input"

@@ -34,7 +34,8 @@ import {
 } from '../lib/frames/broadcast.mjs';
 import { handleCommandInterception } from '../lib/messaging/command-handler.mjs';
 import { setupSessionAgent } from '../lib/messaging/session-setup.mjs';
-import { loadSessionWithAgent } from '../lib/participants/index.mjs';
+import { loadSessionWithAgent, loadAgentForSession, getSessionParticipants } from '../lib/participants/index.mjs';
+import { findMentionedAgent } from '../lib/mentions.mjs';
 import { beforeUserMessage, afterAgentResponse } from '../lib/plugins/hooks.mjs';
 import {
   stripInteractionTags,
@@ -169,6 +170,24 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
   if (!session.agent_id) {
     debug('Session has no agent');
     return res.status(400).json({ error: 'Session has no agent configured' });
+  }
+
+  // @mention routing: if the message @mentions a member agent, route to that agent
+  let participants = getSessionParticipants(session.id, db);
+  let enriched     = participants
+    .filter((p) => p.participantType === 'agent')
+    .map((p) => {
+      let agent = db.prepare('SELECT name FROM agents WHERE id = ?').get(p.participantId);
+      return { ...p, name: agent?.name || null };
+    });
+
+  let mentioned = findMentionedAgent(content, enriched);
+  if (mentioned && mentioned.agentId !== session.agent_id) {
+    let agentOverride = loadAgentForSession(session.id, mentioned.agentId, db);
+    if (agentOverride) {
+      debug('@mention routing override', { from: session.agent_name, to: agentOverride.agent_name });
+      Object.assign(session, agentOverride);
+    }
   }
 
   debug('Session found', { id: session.id, agentType: session.agent_type, agentName: session.agent_name });
@@ -415,6 +434,7 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
       userId:    req.user.id,
       content:   displayContent,
       hidden:    false,
+      targetIds: mentioned ? [`agent:${mentioned.agentId}`] : undefined,
     });
 
     db.prepare('UPDATE sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(req.params.sessionId);

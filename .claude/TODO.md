@@ -639,3 +639,39 @@
   - AUDIT-005: getAuditLogs query (10 tests — all, order, filters, limit, deserialize, camelCase)
   - AUDIT-006: Integration wiring (6 tests — permissions evaluate, approval grant/deny/unknown)
 - [x] All 2192 tests passing, 0 failures
+
+---
+
+## F3: @Mention Autocomplete and Message Routing
+> Status: **COMPLETE**
+
+### What was done
+- [x] Created `server/lib/mentions.mjs` — @mention parsing and resolution
+  - `extractMentions(text)` — regex extraction of `@name` patterns from message text
+  - `resolveMentionsFromEnriched(mentions, participants)` — match mentions to agent participants by alias (preferred) or name (case-insensitive), with deduplication
+  - `findMentionedAgent(text, participants)` — combined extract+resolve, returns first matched `{agentId, participant}`
+- [x] Added `loadAgentForSession(sessionId, agentId, db)` to `server/lib/participants/index.mjs`
+  - Loads full agent data for routing override (verifies agent is session participant)
+  - Returns same shape as `loadSessionWithAgent` agent fields
+- [x] Wired @mention routing in `server/routes/messages-stream.mjs`
+  - After loading session with coordinator, parses @mentions from message content
+  - Enriches participant list with agent names for resolution
+  - If mention resolves to a different agent, overrides session agent fields via `Object.assign`
+  - User message frame gets `targetIds: ['agent:<id>']` when @mention detected
+- [x] Added `targetIds` passthrough to `createUserMessageFrame` in `server/lib/frames/broadcast.mjs`
+- [x] Client: @mention autocomplete in `hero-input.js`
+  - Detects `@` trigger on input (only at word boundary)
+  - Filters session agent participants by query (name or alias match)
+  - Arrow keys navigate, Tab/Enter select, Escape dismisses
+  - Inserts `@alias ` (or `@name `) into textarea at cursor position
+  - Dropdown shows name, alias ("real name"), and role
+- [x] Client: autocomplete dropdown UI in `hero-input.html`
+  - `.mention-dropdown` positioned above input, themed to match app
+  - `.mention-item` with hover/selected states, role tag
+- [x] Created `spec/lib/mentions-spec.mjs` — 43 tests (MENTION-001 through MENTION-005)
+  - MENTION-001: extractMentions (13 tests — single, multiple, hyphens, numbers, edge cases)
+  - MENTION-002: resolveMentionsFromEnriched (12 tests — by name, by alias, case-insensitive, dedup, null handling)
+  - MENTION-003: findMentionedAgent (7 tests — first match, alias, null, unknown, user mentions)
+  - MENTION-004: loadAgentForSession (6 tests — participant, non-participant, different session, field shape)
+  - MENTION-005: Client autocomplete structure (5 tests — HTML elements, CSS, JS methods, keydown handlers)
+- [x] All 2230 tests passing, 0 failures

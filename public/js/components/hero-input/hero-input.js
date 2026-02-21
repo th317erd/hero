@@ -33,6 +33,12 @@ export class HeroInput extends HeroComponent {
   #draftTimer = null;
   #DRAFT_DEBOUNCE_MS = 100;
 
+  // @mention autocomplete state
+  #mentionActive = false;
+  #mentionStartIndex = -1;
+  #mentionSelectedIndex = 0;
+  #mentionCandidates = [];
+
   // ---------------------------------------------------------------------------
   // Shadow DOM
   // ---------------------------------------------------------------------------
@@ -219,6 +225,37 @@ export class HeroInput extends HeroComponent {
    * @param {KeyboardEvent} e
    */
   handleKeydown(e) {
+    // @mention autocomplete navigation
+    if (this.#mentionActive) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        this.#mentionSelectedIndex = Math.min(this.#mentionSelectedIndex + 1, this.#mentionCandidates.length - 1);
+        this._renderMentionDropdown();
+        return;
+      }
+
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        this.#mentionSelectedIndex = Math.max(this.#mentionSelectedIndex - 1, 0);
+        this._renderMentionDropdown();
+        return;
+      }
+
+      if (e.key === 'Tab' || e.key === 'Enter') {
+        if (this.#mentionCandidates.length > 0) {
+          e.preventDefault();
+          this._selectMention(this.#mentionCandidates[this.#mentionSelectedIndex]);
+          return;
+        }
+      }
+
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        this._closeMentionDropdown();
+        return;
+      }
+    }
+
     // Enter without Shift sends message
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -247,6 +284,9 @@ export class HeroInput extends HeroComponent {
 
     // Enable scrolling when content exceeds max height
     textarea.style.overflowY = (textarea.scrollHeight > this.#maxHeight) ? 'auto' : 'hidden';
+
+    // Check for @mention trigger
+    this._checkMentionTrigger();
 
     // Save draft (debounced)
     this._saveDraftDebounced();
@@ -509,6 +549,135 @@ export class HeroInput extends HeroComponent {
     let key = this._draftKey();
     if (key)
       sessionStorage.removeItem(key);
+  }
+
+  // ---------------------------------------------------------------------------
+  // @Mention Autocomplete
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Check if the cursor is in an @mention context and show/update dropdown.
+   */
+  _checkMentionTrigger() {
+    let textarea = this.textarea;
+    if (!textarea) return;
+
+    let text   = textarea.value;
+    let cursor = textarea.selectionStart;
+
+    // Walk backwards from cursor to find @ trigger
+    let atIndex = -1;
+    for (let i = cursor - 1; i >= 0; i--) {
+      let char = text[i];
+
+      // Stop at whitespace or newline — no @ in this word
+      if (char === ' ' || char === '\n' || char === '\t') break;
+
+      if (char === '@') {
+        // Only trigger at start of line or after whitespace
+        if (i === 0 || /\s/.test(text[i - 1])) {
+          atIndex = i;
+        }
+        break;
+      }
+    }
+
+    if (atIndex === -1) {
+      this._closeMentionDropdown();
+      return;
+    }
+
+    let query = text.slice(atIndex + 1, cursor).toLowerCase();
+    this.#mentionStartIndex = atIndex;
+
+    // Get agent participants from current session
+    let participants = this.currentSession?.participants || [];
+    let agents = participants.filter((p) => p.participantType === 'agent');
+
+    // Filter by query (match name or alias)
+    let candidates = agents.filter((a) => {
+      let name  = (a.name || '').toLowerCase();
+      let alias = (a.alias || '').toLowerCase();
+      return name.startsWith(query) || alias.startsWith(query);
+    });
+
+    if (candidates.length === 0) {
+      this._closeMentionDropdown();
+      return;
+    }
+
+    this.#mentionActive     = true;
+    this.#mentionCandidates = candidates;
+    this.#mentionSelectedIndex = Math.min(this.#mentionSelectedIndex, candidates.length - 1);
+    this._renderMentionDropdown();
+  }
+
+  /**
+   * Select a mention candidate and insert it into the textarea.
+   * @param {Object} candidate - Participant to mention
+   */
+  _selectMention(candidate) {
+    let textarea = this.textarea;
+    if (!textarea) return;
+
+    let displayName = candidate.alias || candidate.name || `agent-${candidate.participantId}`;
+    let before      = textarea.value.slice(0, this.#mentionStartIndex);
+    let after       = textarea.value.slice(textarea.selectionStart);
+    let insertion   = `@${displayName} `;
+
+    textarea.value = before + insertion + after;
+    textarea.selectionStart = textarea.selectionEnd = before.length + insertion.length;
+
+    this._closeMentionDropdown();
+    textarea.focus();
+    this.autoResize();
+  }
+
+  /**
+   * Render the mention autocomplete dropdown.
+   */
+  _renderMentionDropdown() {
+    let dropdown = this.shadowRoot?.querySelector('.mention-dropdown');
+    if (!dropdown) return;
+
+    dropdown.innerHTML = '';
+    dropdown.classList.add('active');
+
+    for (let i = 0; i < this.#mentionCandidates.length; i++) {
+      let candidate = this.#mentionCandidates[i];
+      let item      = document.createElement('div');
+      item.className = 'mention-item' + ((i === this.#mentionSelectedIndex) ? ' selected' : '');
+
+      let name = candidate.alias || candidate.name || `agent-${candidate.participantId}`;
+      let role = candidate.role || '';
+
+      item.innerHTML = `<span class="mention-name">@${name}</span>` +
+                       ((candidate.alias && candidate.name) ? `<span class="mention-real">${candidate.name}</span>` : '') +
+                       `<span class="mention-role">${role}</span>`;
+
+      item.addEventListener('mousedown', (e) => {
+        e.preventDefault(); // Prevent textarea blur
+        this._selectMention(candidate);
+      });
+
+      dropdown.appendChild(item);
+    }
+  }
+
+  /**
+   * Close the mention autocomplete dropdown.
+   */
+  _closeMentionDropdown() {
+    this.#mentionActive        = false;
+    this.#mentionStartIndex    = -1;
+    this.#mentionSelectedIndex = 0;
+    this.#mentionCandidates    = [];
+
+    let dropdown = this.shadowRoot?.querySelector('.mention-dropdown');
+    if (dropdown) {
+      dropdown.classList.remove('active');
+      dropdown.innerHTML = '';
+    }
   }
 
   // ---------------------------------------------------------------------------

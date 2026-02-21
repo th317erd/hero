@@ -106,7 +106,7 @@ export function createAndBroadcastFrame(options, db = null) {
  * @returns {Object} The created frame
  */
 export function createUserMessageFrame(options, db = null) {
-  const { sessionId, userId, content, hidden = false, skipBroadcast = false } = options;
+  const { sessionId, userId, content, hidden = false, targetIds, skipBroadcast = false } = options;
 
   return createAndBroadcastFrame({
     sessionId,
@@ -119,6 +119,7 @@ export function createUserMessageFrame(options, db = null) {
       content,
       hidden,
     },
+    targetIds,
     skipBroadcast,
   }, db);
 }
