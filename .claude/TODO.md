@@ -462,6 +462,21 @@
 
 ---
 
+## F5: Active Coordinator Behavior (Routing Logic)
+> Status: **COMPLETE**
+
+### What was done
+- [x] Verified `loadSessionWithAgent()` routes to coordinator agent (not members)
+- [x] Verified legacy `agent_id` fallback when coordinator removed from participants
+- [x] Verified promote swaps routing target atomically
+- [x] Verified session with no coordinator and no legacy agent returns null agent
+- [x] Verified members excluded from unaddressed message routing
+- [x] Verified `createSessionWithParticipants` first agent is coordinator route target
+- [x] Created `spec/lib/f5-coordinator-routing-spec.mjs` — 18 tests (ROUTE-C01 through ROUTE-C07)
+- [x] All 1510 tests passing, 0 failures
+
+---
+
 ## F4: Client Page Routing + Settings UI
 > Status: **COMPLETE**
 
