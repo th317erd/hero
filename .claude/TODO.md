@@ -294,3 +294,26 @@
 - [x] Avatar initial now derives from actual username (`GlobalState.user`) not "You"
 - [x] User "wyatt" → "W", user "claude" → "C"
 - [x] All 1672 tests passing
+
+---
+
+## S4: Wire BEFORE_TOOL Hook into Interaction Detector
+> Status: **IN PROGRESS**
+
+### Plan
+- [ ] Wire BEFORE_TOOL/AFTER_TOOL hooks in `server/lib/interactions/detector.mjs`
+- [ ] Write tests: PERM-001 thru PERM-006, GUARD-001/005/006, PLUGIN-001 thru PLUGIN-004, INT-001
+- [ ] Run full test suite
+- [ ] Commit
+
+---
+
+## S6: Build Missing Test Helpers
+> Status: **COMPLETE**
+
+### Tasks
+- [x] Create `spec/helpers/sse-mock.mjs` — Mock SSE response (write, setHeader, end, getEvents, getHeaders, parseSSE)
+- [x] Create `spec/helpers/route-helpers.mjs` — Express route test harness (createMockRequest, createMockResponse, callRoute)
+- [x] Create `spec/helpers/db-helpers.mjs` — Database fixture seeders (createTestDatabase, seedUser, seedAgent, seedSession, resetCounters)
+- [x] Create `spec/helpers/helpers-spec.mjs` — 48 tests (16 SSE, 16 route, 16 database)
+- [x] Run full test suite — 1684 tests passing, 0 failures
