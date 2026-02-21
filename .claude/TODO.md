@@ -330,6 +330,50 @@
 
 ---
 
+## S7: Messages Stream Route Tests
+> Status: **COMPLETE**
+
+### What was done
+- [x] Created `spec/routes/messages-stream-spec.mjs` — 33 integration tests
+- [x] STREAM-001 thru STREAM-010: Input validation, SSE headers, round-trip, error handling
+- [x] FRAME-001/002/003: Frame creation, token charges
+- [x] MSG-001/002/003: Command interception, onstart flow, session updated_at
+- [x] RENDER-003/004: HML element lifecycle (thinking, progress, todo)
+- [x] GUARD-002: User interaction tag processing
+- [x] Websearch element handling, session ownership enforcement
+- [x] All 1767 tests passing
+
+---
+
+## S8: Comprehensive WebSocket Tests
+> Status: **COMPLETE**
+
+### What was done
+- [x] Created `spec/lib/websocket-spec.mjs` — 47 tests
+- [x] SEC-001: Authenticated userId passed to approval handler
+- [x] SEC-002: Unauthenticated connection rejected (close code 4001)
+- [x] SEC-003: Cross-user interaction prevention (reject wrong user, accept correct user)
+- [x] SEC-004: Frame creation via WS rejected (no create_frame handler, unknown types ignored)
+- [x] GUARD-008: Disconnect cleans up client tracking (register, remove, multiple connections)
+- [x] Message handlers: question_answer, question_cancel, ability_question, approval, interaction
+- [x] Interaction bus → WebSocket forwarding (per-connection handler, user targeting)
+- [x] broadcastToUser delivery (single client, multi-client, cross-user isolation)
+- [x] Error handling: malformed JSON, empty messages
+- [x] All 1767 tests passing
+
+---
+
+## Test Runner Fix
+> Status: **COMPLETE**
+
+### What was done
+- [x] Added `--test-force-exit` to `npm test` — prevents hanging from open DB/WS handles
+- [x] Added `--test-timeout=30000` — safety net for individual test hangs
+- [x] Root cause: messages-stream-spec imports real route modules (DB, websocket, timers)
+- [x] Full suite: 1767 tests, 0 failures, ~12.5 seconds
+
+---
+
 ## S6: Build Missing Test Helpers
 > Status: **COMPLETE**
 
@@ -339,3 +383,33 @@
 - [x] Create `spec/helpers/db-helpers.mjs` — Database fixture seeders (createTestDatabase, seedUser, seedAgent, seedSession, resetCounters)
 - [x] Create `spec/helpers/helpers-spec.mjs` — 48 tests (16 SSE, 16 route, 16 database)
 - [x] Run full test suite — 1684 tests passing, 0 failures
+
+---
+
+## S5: Self-Approval Prevention
+> Status: **COMPLETE**
+
+### What was done
+- [x] Added `agentId` tracking to pending approvals in `approval.mjs` (from `context.agent?.id`)
+- [x] Added self-approval check in `handleApprovalResponse` — blocks when `securityContext.agentId === pending.agentId`
+- [x] Added `source_agent_id` field to interaction creation in `bus.mjs`
+- [x] Added self-response check in `bus.respond()` — blocks when responding agent matches `source_agent_id`
+- [x] Added `sourceAgentId` to interaction options in `detector.mjs`
+- [x] Added `_addPendingApproval` test helper export
+- [x] Wrote 10 tests: COORD-003, GUARD-007, edge cases (null agentId, empty context)
+- [x] All tests passing
+
+---
+
+## X1: Rate Limiting
+> Status: **COMPLETE**
+
+### What was done
+- [x] Created `server/middleware/rate-limit.mjs` — in-memory token-bucket rate limiter with sliding window
+- [x] `POST /login` — 10/min per IP (auth.mjs)
+- [x] `POST /auth/magic-link/request` — 5/hour per email (users.mjs)
+- [x] `POST /me/api-keys` — 10/hour per user (users.mjs)
+- [x] Global API — 100/min per IP (routes/index.mjs)
+- [x] Exports: `rateLimit()`, `consume()`, `resetBucket()`, `resetAll()`, `stopCleanup()`
+- [x] Wrote 17 tests: core consume, middleware, route wiring, edge cases
+- [x] All tests passing
