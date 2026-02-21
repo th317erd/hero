@@ -931,25 +931,32 @@ export class HeroChat extends HeroComponent {
   }
 
   /**
-   * Add Submit All / Ignore buttons for messages that have multiple hml-prompt elements.
+   * Add Ignore / Submit buttons for messages that have 1+ hml-prompt elements.
+   * Every message with prompts is a form — no per-prompt submit buttons.
    * @param {HTMLElement} element - The message element
    * @param {string} frameId - The frame/message ID
    */
   _addPromptBatchButtons(element, frameId) {
     let prompts = element.querySelectorAll('hml-prompt');
-    if (prompts.length < 2)
+    if (prompts.length < 1)
       return;
 
     // Check if buttons already exist
     if (element.querySelector('.prompt-batch-actions'))
       return;
 
+    // Skip if all prompts are already answered
+    let unanswered = Array.from(prompts).filter((p) => !p.isAnswered);
+    if (unanswered.length === 0)
+      return;
+
     let actionsDiv = document.createElement('div');
     actionsDiv.className = 'prompt-batch-actions';
+    let countLabel = (prompts.length === 1) ? '1 prompt' : `${prompts.length} prompts`;
     actionsDiv.innerHTML = `
-      <span class="prompt-batch-count">${prompts.length} prompts</span>
-      <button class="prompt-batch-submit" title="Submit all answers">Submit All</button>
+      <span class="prompt-batch-count">${countLabel}</span>
       <button class="prompt-batch-ignore" title="Ignore all prompts">Ignore</button>
+      <button class="prompt-batch-submit" title="Submit all answers">Submit</button>
     `;
 
     // Bind events
@@ -981,6 +988,57 @@ export class HeroChat extends HeroComponent {
       bubble.after(actionsDiv);
     else
       element.appendChild(actionsDiv);
+
+    // Setup Enter-to-tab-forward focus management
+    this._setupPromptFocusChain(element, prompts, submitBtn);
+  }
+
+  /**
+   * Setup focus chain: Enter on a prompt advances to the next prompt,
+   * last prompt advances to the Submit button, Enter on Submit fires it.
+   * @param {HTMLElement} element - The message element
+   * @param {NodeList} prompts - The hml-prompt elements
+   * @param {HTMLElement} submitBtn - The Submit button
+   */
+  _setupPromptFocusChain(element, prompts, submitBtn) {
+    let promptList = Array.from(prompts);
+
+    element.addEventListener('prompt-tab-forward', (e) => {
+      let fromId = e.detail?.promptId;
+      let index = promptList.findIndex((p) => p.promptId === fromId);
+
+      if (index < 0) return;
+
+      // Find next unanswered prompt
+      for (let i = index + 1; i < promptList.length; i++) {
+        if (!promptList[i].isAnswered) {
+          this._focusPromptInput(promptList[i]);
+          return;
+        }
+      }
+
+      // No more prompts — focus the Submit button
+      submitBtn.focus();
+    });
+
+    // Enter on Submit button fires submit
+    submitBtn.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        submitBtn.click();
+      }
+    });
+  }
+
+  /**
+   * Focus the first focusable input inside an hml-prompt.
+   * Uses the prompt's public focusInput() API.
+   * @param {HTMLElement} prompt - The hml-prompt element
+   */
+  _focusPromptInput(prompt) {
+    if (typeof prompt.focusInput === 'function') {
+      prompt.focusInput();
+    }
   }
 
   /**

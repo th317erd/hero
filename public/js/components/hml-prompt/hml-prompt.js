@@ -214,19 +214,6 @@ const PROMPT_STYLES = `
     .input-range { width: 120px; accent-color: #3b82f6; cursor: pointer; }
     .range-value { color: #3b82f6; font-weight: 500; min-width: 30px; text-align: center; }
 
-    .submit-button {
-      background: #3b82f6;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      padding: 4px 12px;
-      margin-left: 8px;
-      cursor: pointer;
-      font-size: 0.9em;
-    }
-
-    .submit-button:hover { background: #2563eb; }
-
     /* Green "answered" style - triggered by either attribute */
     :host([answered]) .container,
     :host([value]) .container {
@@ -514,7 +501,7 @@ class HmlPrompt extends MythixUIComponent {
       ${PROMPT_STYLES}
       <span class="container">
         <span class="sizer">${question}</span>
-        <textarea class="input-text" rows="1" placeholder="${question}" title="Press Enter to submit"></textarea>
+        <textarea class="input-text" rows="1" placeholder="${question}" title="Press Enter to advance"></textarea>
       </span>
     `;
 
@@ -528,7 +515,7 @@ class HmlPrompt extends MythixUIComponent {
         e.stopPropagation();
         e.stopImmediatePropagation();
         let answer = input.value.trim();
-        if (answer) this._submitAnswer(answer);
+        if (answer) this._bufferAndAdvance(answer);
       }
     });
     input.addEventListener('input', () => {
@@ -559,7 +546,7 @@ class HmlPrompt extends MythixUIComponent {
         e.stopPropagation();
         e.stopImmediatePropagation();
         let answer = input.value.trim();
-        if (answer) this._submitAnswer(answer);
+        if (answer) this._bufferAndAdvance(answer);
       }
     });
   }
@@ -577,13 +564,11 @@ class HmlPrompt extends MythixUIComponent {
       ${PROMPT_STYLES}
       <span class="container">
         <span class="question-inline">${question}</span>
-        <input type="${inputType}" class="input-generic" value="${defVal}" placeholder="${placeholder}" title="Press Enter to submit">
-        <button class="submit-button">OK</button>
+        <input type="${inputType}" class="input-generic" value="${defVal}" placeholder="${placeholder}" title="Press Enter to advance">
       </span>
     `;
 
     let input = this.shadowRoot.querySelector('.input-generic');
-    let button = this.shadowRoot.querySelector('.submit-button');
 
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
@@ -592,15 +577,8 @@ class HmlPrompt extends MythixUIComponent {
         e.stopPropagation();
         e.stopImmediatePropagation();
         let answer = input.value.trim();
-        if (answer) this._submitAnswer(answer);
+        if (answer) this._bufferAndAdvance(answer);
       }
-    });
-
-    button.addEventListener('click', (e) => {
-      if (!consumeEvent(e)) return;
-      e.preventDefault();
-      let answer = input.value.trim();
-      if (answer) this._submitAnswer(answer);
     });
   }
 
@@ -631,17 +609,14 @@ class HmlPrompt extends MythixUIComponent {
       <span class="container">
         <span class="question-inline">${question}</span>
         <input type="color" class="input-color" value="${defVal}" title="Pick a color">
-        <button class="submit-button">OK</button>
       </span>
     `;
 
     let input = this.shadowRoot.querySelector('.input-color');
-    let submit = this.shadowRoot.querySelector('.submit-button');
 
-    submit.addEventListener('click', (e) => {
-      if (!consumeEvent(e)) return;
-      e.stopImmediatePropagation();
-      this._submitAnswer(input.value);
+    // Buffer answer on color change
+    input.addEventListener('change', () => {
+      this._bufferAnswer(input.value);
     });
   }
 
@@ -656,17 +631,14 @@ class HmlPrompt extends MythixUIComponent {
           <input type="checkbox" class="input-checkbox" ${checked}>
           <span class="question-inline">${question}</span>
         </label>
-        <button class="submit-button">OK</button>
       </span>
     `;
 
     let input = this.shadowRoot.querySelector('.input-checkbox');
-    let submit = this.shadowRoot.querySelector('.submit-button');
 
-    submit.addEventListener('click', (e) => {
-      if (!consumeEvent(e)) return;
-      e.stopImmediatePropagation();
-      this._submitAnswer(input.checked ? 'yes' : 'no');
+    // Buffer answer on change
+    input.addEventListener('change', () => {
+      this._bufferAnswer(input.checked ? 'yes' : 'no');
     });
   }
 
@@ -690,18 +662,16 @@ class HmlPrompt extends MythixUIComponent {
       <div class="container block">
         <span class="question-label">${question}</span>
         <div class="checkbox-group">${optionsHtml}</div>
-        <button class="submit-button" style="margin-top: 8px;">OK</button>
       </div>
     `;
 
-    let submit = this.shadowRoot.querySelector('.submit-button');
-    submit.addEventListener('click', (e) => {
-      if (!consumeEvent(e)) return;
-      e.stopImmediatePropagation();
+    // Buffer answer on any checkbox change
+    let checkboxGroup = this.shadowRoot.querySelector('.checkbox-group');
+    checkboxGroup.addEventListener('change', () => {
       let checked = this.shadowRoot.querySelectorAll(`input[name="${name}"]:checked`);
       let values = Array.from(checked).map((cb) => cb.value);
       if (values.length > 0) {
-        this._submitAnswer(values.join(', '));
+        this._bufferAnswer(values.join(', '));
       }
     });
   }
@@ -726,17 +696,15 @@ class HmlPrompt extends MythixUIComponent {
       <div class="container block">
         <span class="question-label">${question}</span>
         <div class="radio-group">${optionsHtml}</div>
-        <button class="submit-button" style="margin-top: 8px;">OK</button>
       </div>
     `;
 
-    let submit = this.shadowRoot.querySelector('.submit-button');
-    submit.addEventListener('click', (e) => {
-      if (!consumeEvent(e)) return;
-      e.stopImmediatePropagation();
+    // Buffer answer on radio selection
+    let radioGroup = this.shadowRoot.querySelector('.radio-group');
+    radioGroup.addEventListener('change', () => {
       let selected = this.shadowRoot.querySelector(`input[name="${name}"]:checked`);
       if (selected) {
-        this._submitAnswer(selected.value);
+        this._bufferAnswer(selected.value);
       }
     });
   }
@@ -758,18 +726,15 @@ class HmlPrompt extends MythixUIComponent {
           <option value="">-- Select --</option>
           ${optionsHtml}
         </select>
-        <button class="submit-button">OK</button>
       </span>
     `;
 
     let select = this.shadowRoot.querySelector('.input-select');
-    let submit = this.shadowRoot.querySelector('.submit-button');
 
-    submit.addEventListener('click', (e) => {
-      if (!consumeEvent(e)) return;
-      e.stopImmediatePropagation();
+    // Buffer answer on selection change
+    select.addEventListener('change', () => {
       if (select.value) {
-        this._submitAnswer(select.value);
+        this._bufferAnswer(select.value);
       }
     });
   }
@@ -789,60 +754,144 @@ class HmlPrompt extends MythixUIComponent {
           <span class="range-value">${defVal}</span>
           <input type="range" class="input-range" min="${minVal}" max="${maxVal}" step="${stepVal}" value="${defVal}">
         </span>
-        <button class="submit-button">OK</button>
       </span>
     `;
 
     let input = this.shadowRoot.querySelector('.input-range');
     let valueLabel = this.shadowRoot.querySelector('.range-value');
-    let submit = this.shadowRoot.querySelector('.submit-button');
 
     input.addEventListener('input', () => {
       valueLabel.textContent = input.value;
-    });
-
-    submit.addEventListener('click', (e) => {
-      if (!consumeEvent(e)) return;
-      e.stopImmediatePropagation();
-      this._submitAnswer(input.value);
+      this._bufferAnswer(input.value);
     });
   }
 
   // ---------------------------------------------------------------------------
-  // Submission
+  // Public API
   // ---------------------------------------------------------------------------
 
-  _submitAnswer(answer) {
-    if (!this.isConnected) return;
-    if (this._isSubmitting || this.isAnswered) return;
+  /**
+   * Mark this prompt as answered (visual only, no event dispatch).
+   * Used by batch submit to update the UI after sending.
+   * @param {string} answer
+   */
+  markAnswered(answer) {
+    this._setAnswer(answer);
+  }
 
-    this._isSubmitting = true;
+  // ---------------------------------------------------------------------------
+  // Focus Management
+  // ---------------------------------------------------------------------------
 
-    let question = this.question;
+  /**
+   * Focus the primary input element inside this prompt's shadow DOM.
+   * Used by hero-chat's focus chain for Enter-to-advance behavior.
+   */
+  focusInput() {
+    if (!this.shadowRoot) return;
+    let input = this.shadowRoot.querySelector('input, textarea, select');
+    if (input) input.focus();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Answer Buffering (S3: form-level submit)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Buffer the current answer without submitting.
+   * Used by change events on non-text inputs (color, checkbox, radio, select, range).
+   * @param {string} answer
+   */
+  _bufferAnswer(answer) {
+    this._bufferedAnswer = answer;
+
     let messageEl = this.closest('[data-message-id]');
     let messageId = (messageEl) ? messageEl.dataset.messageId : null;
 
-    if (this.isConnected) {
-      this.innerHTML = `${question}<response>${this._escapeHtml(answer)}</response>`;
-      this.setAttribute('answered', '');
-      this._renderTimes = [];
-      this._isRendering = false;
-      this.render();
-    }
+    this.dispatchEvent(new CustomEvent('prompt-answer-ready', {
+      bubbles:  true,
+      composed: true,
+      detail: {
+        messageId: messageId,
+        promptId:  this.promptId,
+        question:  this.question,
+        answer:    answer,
+        type:      this.promptType,
+      },
+    }));
+  }
 
+  /**
+   * Buffer the answer, mark as visually answered, and advance focus.
+   * Used by Enter key on text/number inputs.
+   * Does NOT submit to server — the form-level Submit button handles submission.
+   * @param {string} answer
+   */
+  _bufferAndAdvance(answer) {
+    if (!this.isConnected) return;
+    if (this.isAnswered) return;
+
+    // Buffer the answer
+    this._bufferAnswer(answer);
+
+    // Mark as visually answered
+    let question = this.question;
+    this.innerHTML = `${question}<response>${this._escapeHtml(answer)}</response>`;
+    this.setAttribute('answered', '');
+    this._renderTimes = [];
+    this._isRendering = false;
+    this.render();
+
+    // Dispatch tab-forward event for hero-chat to handle focus management
     queueMicrotask(() => {
-      this.dispatchEvent(new CustomEvent('prompt-submit', {
-        bubbles: true,
+      this.dispatchEvent(new CustomEvent('prompt-tab-forward', {
+        bubbles:  true,
         composed: true,
-        detail: {
-          messageId: messageId,
-          promptId: this.promptId,
-          question: question,
-          answer: answer,
-          type: this.promptType,
-        },
+        detail: { promptId: this.promptId },
       }));
     });
+  }
+
+  /**
+   * Get the current answer value from the input (for batch submit).
+   * Returns the answered value, buffered answer, or reads directly from input.
+   * @returns {string|null}
+   */
+  getCurrentAnswer() {
+    if (this.isAnswered) return this.response;
+    if (this._bufferedAnswer) return this._bufferedAnswer;
+
+    // Try to read directly from the shadow DOM input
+    let shadow = this.shadowRoot;
+    if (!shadow) return null;
+
+    switch (this.promptType) {
+      case 'text':
+        return shadow.querySelector('.input-text')?.value?.trim() || null;
+      case 'number':
+        return shadow.querySelector('.input-number')?.value?.trim() || null;
+      case 'color':
+        return shadow.querySelector('.input-color')?.value || null;
+      case 'checkbox': {
+        let cb = shadow.querySelector('.input-checkbox');
+        return (cb) ? (cb.checked ? 'yes' : 'no') : null;
+      }
+      case 'checkboxes': {
+        let checked = shadow.querySelectorAll(`input[name="${this.promptId}"]:checked`);
+        let values = Array.from(checked).map((c) => c.value);
+        return (values.length > 0) ? values.join(', ') : null;
+      }
+      case 'radio': {
+        let selected = shadow.querySelector(`input[name="${this.promptId}"]:checked`);
+        return (selected) ? selected.value : null;
+      }
+      case 'select':
+        return shadow.querySelector('.input-select')?.value || null;
+      case 'range':
+        return shadow.querySelector('.input-range')?.value || null;
+      default:
+        return shadow.querySelector('.input-generic')?.value?.trim() || null;
+    }
   }
 
   _escapeHtml(text) {

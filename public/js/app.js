@@ -917,9 +917,10 @@ window.submitUserPromptAnswer = submitUserPromptAnswer;
 // Prompt Batch Submission System
 // ============================================================================
 // Prompts are buffered per message frame. Users can:
-// 1. Submit individually (immediate send)
-// 2. Use "Submit All" to batch-send all answered prompts for a message
-// 3. Use "Ignore" to dismiss all unanswered prompts for a message
+// S3 Form Model: Every message with prompts is a FORM.
+// 1. User fills in prompts (answers buffered, NOT individually submitted)
+// 2. "Submit" batch-sends all answered prompts for a message
+// 3. "Ignore" dismisses all unanswered prompts for a message
 
 // Buffer: messageId → Map<promptId, { question, answer, type }>
 const _pendingPromptAnswers = new Map();
@@ -946,11 +947,48 @@ function bufferPromptAnswer(messageId, promptId, question, answer, type) {
 }
 
 /**
+ * Collect answers from prompt elements that haven't been buffered yet.
+ * Reads getCurrentAnswer() from each unanswered hml-prompt in the message.
+ * @param {string} messageId
+ */
+function _collectUnbufferedAnswers(messageId) {
+  let messageEl = document.querySelector(`[data-message-id="${messageId}"]`) ||
+                  document.querySelector(`[data-frame-id="${messageId}"]`);
+  if (!messageEl) return;
+
+  // Also check shadow DOMs (hero-chat renders in shadow DOM)
+  let chatEl = document.querySelector('hero-chat');
+  if (chatEl && chatEl.shadowRoot) {
+    messageEl = chatEl.shadowRoot.querySelector(`[data-message-id="${messageId}"]`) ||
+                chatEl.shadowRoot.querySelector(`[data-frame-id="${messageId}"]`) ||
+                messageEl;
+  }
+
+  let prompts = messageEl.querySelectorAll('hml-prompt');
+  for (let prompt of prompts) {
+    if (prompt.isAnswered) continue;
+
+    let answer = (typeof prompt.getCurrentAnswer === 'function') ? prompt.getCurrentAnswer() : null;
+    if (!answer) continue;
+
+    let promptId = prompt.promptId;
+    let key = `${messageId}-${promptId}`;
+    if (_submittedPrompts.has(key)) continue;
+
+    bufferPromptAnswer(messageId, promptId, prompt.question, answer, prompt.promptType);
+  }
+}
+
+/**
  * Submit all buffered prompt answers for a message as a batch.
  * Sends a single message with multiple interaction blocks.
  * @param {string} messageId
  */
 function submitPromptBatch(messageId) {
+  // Collect any answers from prompt elements that haven't been buffered yet
+  // (e.g., user typed but didn't press Enter)
+  _collectUnbufferedAnswers(messageId);
+
   let answers = _pendingPromptAnswers.get(messageId);
   if (!answers || answers.size === 0)
     return;
@@ -999,6 +1037,9 @@ function submitPromptBatch(messageId) {
   // Clear buffer
   _pendingPromptAnswers.delete(messageId);
 
+  // Mark prompt elements as answered visually
+  _markPromptsAnswered(messageId, answers);
+
   // Send as user message
   if (state.streamingMode)
     processMessageStream(content);
@@ -1012,7 +1053,39 @@ function submitPromptBatch(messageId) {
 }
 
 /**
+ * Mark prompt elements as visually answered after batch submission.
+ * @param {string} messageId
+ * @param {Map} answers - Map of promptId → { question, answer, type }
+ */
+function _markPromptsAnswered(messageId, answers) {
+  let messageEl = null;
+
+  // Check shadow DOM first (hero-chat renders in shadow DOM)
+  let chatEl = document.querySelector('hero-chat');
+  if (chatEl && chatEl.shadowRoot) {
+    messageEl = chatEl.shadowRoot.querySelector(`[data-message-id="${messageId}"]`) ||
+                chatEl.shadowRoot.querySelector(`[data-frame-id="${messageId}"]`);
+  }
+
+  if (!messageEl) {
+    messageEl = document.querySelector(`[data-message-id="${messageId}"]`) ||
+                document.querySelector(`[data-frame-id="${messageId}"]`);
+  }
+
+  if (!messageEl) return;
+
+  let prompts = messageEl.querySelectorAll('hml-prompt');
+  for (let prompt of prompts) {
+    let data = answers.get(prompt.promptId);
+    if (data && typeof prompt.markAnswered === 'function') {
+      prompt.markAnswered(data.answer);
+    }
+  }
+}
+
+/**
  * Ignore all prompts for a message.
+ * Sends a refusal frame to the server so the agent knows the user declined.
  * @param {string} messageId
  */
 function ignorePromptBatch(messageId) {
@@ -1024,14 +1097,61 @@ function ignorePromptBatch(messageId) {
     }
   }
 
+  // Also mark any unbuffered prompts as submitted
+  _collectUnbufferedPromptIds(messageId);
+
   _pendingPromptAnswers.delete(messageId);
 
   console.log('[App] Ignoring prompts for message:', messageId);
+
+  // Send refusal to server so agent knows user declined
+  let interactionPayload = {
+    interaction_id:  `prompt-ignore-${messageId}`,
+    target_id:       '@system',
+    target_property: 'ignore_prompts',
+    payload: {
+      message_id: messageId,
+      action:     'ignored',
+    },
+  };
+
+  let content = `[User declined to answer prompts]\n\n<interaction>\n${JSON.stringify(interactionPayload, null, 2)}\n</interaction>`;
+
+  if (state.streamingMode)
+    processMessageStream(content);
+  else
+    processMessage(content);
 
   // Notify UI
   document.dispatchEvent(new CustomEvent('prompt-batch-ignored', {
     detail: { messageId },
   }));
+}
+
+/**
+ * Mark all unbuffered prompt IDs in a message as submitted.
+ * Used by ignorePromptBatch to prevent re-submission.
+ * @param {string} messageId
+ */
+function _collectUnbufferedPromptIds(messageId) {
+  let messageEl = document.querySelector(`[data-message-id="${messageId}"]`) ||
+                  document.querySelector(`[data-frame-id="${messageId}"]`);
+
+  let chatEl = document.querySelector('hero-chat');
+  if (chatEl && chatEl.shadowRoot) {
+    messageEl = chatEl.shadowRoot.querySelector(`[data-message-id="${messageId}"]`) ||
+                chatEl.shadowRoot.querySelector(`[data-frame-id="${messageId}"]`) ||
+                messageEl;
+  }
+
+  if (!messageEl) return;
+
+  let prompts = messageEl.querySelectorAll('hml-prompt');
+  for (let prompt of prompts) {
+    if (prompt.isAnswered) continue;
+    let key = `${messageId}-${prompt.promptId}`;
+    _submittedPrompts.add(key);
+  }
 }
 
 /**
@@ -1050,31 +1170,22 @@ window.ignorePromptBatch   = ignorePromptBatch;
 window.bufferPromptAnswer  = bufferPromptAnswer;
 window.getPendingPromptCount = getPendingPromptCount;
 
-// Listen for prompt-submit events from <hml-prompt> Web Components
-document.addEventListener('prompt-submit', (event) => {
-  // Stop propagation to prevent any other listeners from receiving this
-  event.stopPropagation();
-  event.stopImmediatePropagation();
-
+// Listen for prompt-answer-ready events from <hml-prompt> Web Components.
+// S3: All prompts are forms — answers are buffered, not individually submitted.
+// Submission happens only via the message-level Submit button (submitPromptBatch).
+document.addEventListener('prompt-answer-ready', (event) => {
   let { messageId, promptId, question, answer, type } = event.detail;
+  if (!messageId || !promptId) return;
 
-  // Deduplicate - only process each prompt once per page load
+  // Deduplicate
   let key = `${messageId}-${promptId}`;
-  if (_submittedPrompts.has(key)) {
-    console.log('[App] prompt-submit already processed, skipping:', key);
-    return;
-  }
+  if (_submittedPrompts.has(key)) return;
 
-  console.log('[App] prompt-submit event received:', event.detail);
-
-  // Buffer the answer for batch submission
   bufferPromptAnswer(messageId, promptId, question, answer, type);
-
-  // Also submit individually for backward compatibility
-  // (individual prompt submission still works alongside batch)
-  _submittedPrompts.add(key);
-  submitUserPromptAnswer(messageId, promptId, question, answer);
 });
+
+// Note: prompt-submit event is no longer dispatched (S3: per-prompt submit removed).
+// All submission happens through the message-level Submit button (submitPromptBatch).
 
 function updateOperationState(command) {
   let index = state.runningOperations.findIndex((op) => op.id === command.id);
