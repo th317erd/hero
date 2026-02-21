@@ -2,6 +2,7 @@
 
 import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.mjs';
+import { rateLimit } from '../middleware/rate-limit.mjs';
 import { getDatabase } from '../database.mjs';
 import { changePassword, getUserById } from '../auth.mjs';
 import { createApiKey, listApiKeys, revokeApiKey } from '../lib/auth/api-keys.mjs';
@@ -10,6 +11,22 @@ import { authenticateUser, generateToken } from '../auth.mjs';
 import config from '../config.mjs';
 
 const router = Router();
+
+// Rate limit: 5 magic link requests per hour per email
+const magicLinkLimiter = rateLimit({
+  max:       5,
+  windowMs:  60 * 60 * 1000,
+  keyGenerator: (req) => `magic-link:${(req.body.email || 'unknown').toLowerCase().trim()}`,
+  message:   'Too many magic link requests, please try again later',
+});
+
+// Rate limit: 10 API key creations per hour per user
+const apiKeyLimiter = rateLimit({
+  max:       10,
+  windowMs:  60 * 60 * 1000,
+  keyGenerator: (req) => `api-key-create:${req.user?.id || 'unknown'}`,
+  message:   'Too many API key creations, please try again later',
+});
 
 // ============================================================================
 // User Profile
@@ -181,7 +198,7 @@ router.get('/me/api-keys', requireAuth, (req, res) => {
  * POST /api/users/me/api-keys
  * Create a new API key. Returns the plaintext key exactly once.
  */
-router.post('/me/api-keys', requireAuth, (req, res) => {
+router.post('/me/api-keys', requireAuth, apiKeyLimiter, (req, res) => {
   let { name, scopes, expiresAt } = req.body;
 
   if (!name || typeof name !== 'string' || name.trim().length === 0)
@@ -218,7 +235,7 @@ router.delete('/me/api-keys/:id', requireAuth, (req, res) => {
  * POST /api/users/auth/magic-link/request
  * Request a magic link for passwordless login.
  */
-router.post('/auth/magic-link/request', (req, res) => {
+router.post('/auth/magic-link/request', magicLinkLimiter, (req, res) => {
   let { email } = req.body;
 
   if (!email || typeof email !== 'string' || !email.includes('@'))

@@ -3,15 +3,24 @@
 import { Router } from 'express';
 import { authenticateUser, generateToken } from '../auth.mjs';
 import { optionalAuth } from '../middleware/auth.mjs';
+import { rateLimit } from '../middleware/rate-limit.mjs';
 import config from '../config.mjs';
 
 const router = Router();
+
+// Rate limit: 10 login attempts per minute per IP
+const loginLimiter = rateLimit({
+  max:       10,
+  windowMs:  60 * 1000,
+  keyGenerator: (req) => `login:${req.ip || req.socket?.remoteAddress || 'unknown'}`,
+  message:   'Too many login attempts, please try again later',
+});
 
 /**
  * POST /api/login
  * Authenticate user and set JWT cookie.
  */
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   let { username, password } = req.body;
 
   if (!username || !password)

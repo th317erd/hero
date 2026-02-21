@@ -2,6 +2,7 @@
 
 import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.mjs';
+import { rateLimit } from '../middleware/rate-limit.mjs';
 
 import authRoutes from './auth.mjs';
 import agentsRoutes from './agents.mjs';
@@ -20,6 +21,16 @@ import usersRoutes from './users.mjs';
 import uploadsRoutes from './uploads.mjs';
 
 const router = Router();
+
+// Global rate limit: 100 requests per minute per IP (applied to all API routes)
+const globalLimiter = rateLimit({
+  max:       100,
+  windowMs:  60 * 1000,
+  keyGenerator: (req) => `global:${req.ip || req.socket?.remoteAddress || 'unknown'}`,
+  message:   'Too many requests, please try again later',
+});
+
+router.use(globalLimiter);
 
 // Auth routes (login/logout don't require auth)
 router.use('/', authRoutes);
