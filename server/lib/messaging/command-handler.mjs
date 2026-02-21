@@ -91,6 +91,10 @@ export async function handleCommandInterception({ content, sessionId, userId, da
       };
     }
 
+    // Permission prompt: user-initiated commands auto-allow on 'prompt'
+    // (users don't need to approve their own commands — only agents do)
+    // The 'prompt' action only blocks in the interaction detector for agent actions.
+
     // Run BEFORE_COMMAND hook (allows plugins to modify or block commands)
     let commandData = await beforeCommand(
       { command: parsed.name, args: parsed.args },

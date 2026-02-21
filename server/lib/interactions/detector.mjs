@@ -20,6 +20,8 @@ import { getInteractionBus, queueAgentMessage, TARGETS } from './bus.mjs';
 import { checkSystemMethodAllowed } from './functions/system.mjs';
 import { createRequestFrame, createResultFrame } from '../frames/broadcast.mjs';
 import { beforeTool, afterTool } from '../plugins/hooks.mjs';
+import { evaluate as evaluatePermission, Action as PermissionAction } from '../permissions/index.mjs';
+import { requestPermissionPrompt } from '../permissions/prompt.mjs';
 
 // Regex to find <interaction> tag starts (with or without attributes)
 // Handles both <interaction> and <interaction type="...">, since LLMs sometimes
@@ -370,6 +372,86 @@ export async function executeInteractions(interactionBlock, context) {
     } catch (hookError) {
       // Hook errors should not break the pipeline — log and continue
       console.error(`BEFORE_TOOL hook error for '${toolData.name}':`, hookError.message);
+    }
+
+    // Step 1.75: Permission engine evaluation
+    // Only evaluate for agent-originated interactions (not user-originated)
+    // Requires context.db — when no database is available, skip permission check
+    if (context.agentId && !context.senderId && context.db) {
+      let permSubject = {
+        type: 'agent',
+        id:   context.agentId,
+        name: context.agent?.name || `Agent #${context.agentId}`,
+      };
+
+      let permResource = {
+        type: interactionData.target_id === TARGETS.SYSTEM ? 'tool' : 'ability',
+        name: interactionData.target_property,
+      };
+
+      let permContext = {
+        sessionId: context.sessionId ? parseInt(context.sessionId, 10) : null,
+        ownerId:   context.userId || null,
+      };
+
+      try {
+        let permResult = evaluatePermission(permSubject, permResource, permContext, context.db);
+
+        if (permResult.action === PermissionAction.DENY) {
+          let denyReason = 'Denied by permission rule';
+
+          queueAgentMessage(context.sessionId, agentInteractionId, 'interaction_update', {
+            status: 'denied',
+            reason: denyReason,
+          });
+
+          results.push({
+            interaction_id:  agentInteractionId,
+            target_id:       interactionData.target_id,
+            target_property: interactionData.target_property,
+            status:          'denied',
+            reason:          denyReason,
+          });
+
+          continue;
+        }
+
+        if (permResult.action === PermissionAction.PROMPT) {
+          // requestPermissionPrompt creates the system message frame internally
+          // and returns a Promise that resolves when the user submits
+          let promptResult = await requestPermissionPrompt(permSubject, permResource, {
+            ...permContext,
+            userId: context.userId,
+            db:     context.db,
+          });
+
+          if (promptResult.action === PermissionAction.DENY) {
+            let denyReason = promptResult.reason || 'Denied by user';
+
+            queueAgentMessage(context.sessionId, agentInteractionId, 'interaction_update', {
+              status: 'denied',
+              reason: denyReason,
+            });
+
+            results.push({
+              interaction_id:  agentInteractionId,
+              target_id:       interactionData.target_id,
+              target_property: interactionData.target_property,
+              status:          'denied',
+              reason:          denyReason,
+            });
+
+            continue;
+          }
+
+          // Permission granted — fall through to execution
+        }
+
+        // action === 'allow' — fall through to execution
+      } catch (permError) {
+        // Permission errors should not break the pipeline — log and continue
+        console.error(`Permission evaluation error for '${interactionData.target_property}':`, permError.message);
+      }
     }
 
     // Step 2: Create REQUEST frame (before execution)

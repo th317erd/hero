@@ -73,10 +73,32 @@
 - [x] Write property-based tests for deterministic resolution
 - [x] All 1321 tests passing
 
-### Pending (deferred to Phase 3+)
-- [ ] Wire BEFORE_TOOL hook into interaction detector (needs Phase 3 agent execution)
-- [ ] Integrate approval flow for `prompt` action (needs Phase 3 agent-as-subject)
-- [ ] Build permission prompt UX (`<hml-prompt>`)
+### F2: Permission Prompts as Form Submission — DONE
+- [x] `server/lib/permissions/prompt.mjs` — Permission prompt system (from prior session)
+  - `isPermissionPrompt()` — identifies perm- prefixed prompt IDs
+  - `requestPermissionPrompt()` — async, broadcasts hml-prompt form as system message, returns promise
+  - `handlePermissionResponse()` — resolves pending prompt, creates rule from user answer
+  - `cancelPermissionPrompt()` — cancels with deny
+  - Answer mapping: allow_once→ONCE, allow_session→SESSION, allow_always→PERMANENT, deny→DENY
+- [x] `server/lib/interactions/detector.mjs` — Permission evaluation in BEFORE_TOOL pipeline
+  - Step 1.75: evaluatePermission() for agent-originated interactions (requires context.db)
+  - DENY → blocks with denied status, PROMPT → broadcasts form + await response, ALLOW → proceeds
+  - Skips for user-originated interactions (has senderId) and when no DB available
+- [x] `server/lib/websocket.mjs` — WebSocket handler for permission_prompt_response + cancel
+  - Routes response to handlePermissionResponse() with authenticated userId
+  - Returns permission_prompt_result with success/error
+- [x] `server/lib/messaging/command-handler.mjs` — User commands auto-allow on 'prompt'
+  - Users don't need to approve their own commands, only explicit DENY blocks
+- [x] 19 new tests in `spec/lib/permissions/prompt-spec.mjs`
+  - PERMUI-001: Prompt ID identification
+  - PERMUI-002: Rule creation (allow_always, allow_session, allow_once, deny)
+  - PERMUI-003: Reject unknown/duplicate submissions
+  - PERMUI-004: Cancel resolves with deny
+  - PERMUI-005: Auto-resolution via created rules (permanent, session, once-consumed)
+  - INT-003: Full lifecycle, concurrent prompts, deny-no-rule
+- [x] All 2003 tests passing, 0 failures
+
+### Pending (deferred)
 - [ ] Implement meta-permissions (who can modify rules)
 - [ ] Structured command arguments for all commands
 

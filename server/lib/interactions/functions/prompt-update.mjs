@@ -9,6 +9,7 @@
 import { InteractionFunction, PERMISSION } from '../function.mjs';
 import { getDatabase } from '../../../database.mjs';
 import { broadcastToSession } from '../../websocket.mjs';
+import { isPermissionPrompt, handlePermissionResponse } from '../../permissions/prompt.mjs';
 
 /**
  * PromptUpdate Function class.
@@ -251,6 +252,12 @@ export class PromptUpdateFunction extends InteractionFunction {
         targetFrameId: message_id,
         payload:       framePayload,
       });
+    }
+
+    // If this is a permission prompt, resolve the pending permission request
+    // and create the appropriate permission rule.
+    if (isPermissionPrompt(prompt_id)) {
+      handlePermissionResponse(prompt_id, answer);
     }
 
     return {

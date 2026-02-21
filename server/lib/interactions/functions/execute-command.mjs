@@ -13,8 +13,8 @@
 //   4. If allowed, executes the command
 //   5. Returns the command result to the agent
 //
-// Only 'deny' blocks execution. 'prompt' returns a prompt result indicating
-// user approval is needed (deferred to Phase 3+ for full approval UX).
+// 'deny' blocks execution outright. 'prompt' broadcasts an hml-prompt form
+// to the channel and awaits user approval before proceeding.
 
 import { InteractionFunction, PERMISSION } from '../function.mjs';
 import { getDatabase } from '../../../database.mjs';
@@ -25,6 +25,7 @@ import {
   ResourceType,
   Action,
 } from '../../permissions/index.mjs';
+import { requestPermissionPrompt } from '../../permissions/prompt.mjs';
 
 /**
  * Execute Command Function class.
@@ -130,15 +131,25 @@ export class ExecuteCommandFunction extends InteractionFunction {
       };
     }
 
-    // If action is 'prompt', we need user approval. For now, return a prompt
-    // result that the coordinator can surface to the user.
+    // If action is 'prompt', broadcast an hml-prompt form to the channel
+    // and await user approval before proceeding.
     if (permission.action === Action.PROMPT) {
-      return {
-        status:  'prompt',
-        command: commandName,
-        args:    args,
-        message: `Agent wants to execute /${commandName} ${args}`.trim(),
-      };
+      let subject  = { type: SubjectType.AGENT, id: agentId };
+      let resource = { type: ResourceType.COMMAND, name: commandName };
+
+      let approval = await requestPermissionPrompt(subject, resource, {
+        sessionId,
+        userId,
+        db,
+      });
+
+      if (approval.action !== Action.ALLOW) {
+        return {
+          status:  'failed',
+          error:   `Permission denied by user: /${commandName} ${args}`.trim(),
+          command: commandName,
+        };
+      }
     }
 
     // -----------------------------------------------------------------------

@@ -4,6 +4,7 @@ import { WebSocketServer } from 'ws';
 import { verifyToken } from '../auth.mjs';
 import { answerQuestion, cancelQuestion } from './assertions/pending-questions.mjs';
 import { handleApprovalResponse, cancelApproval } from './abilities/approval.mjs';
+import { handlePermissionResponse, cancelPermissionPrompt } from './permissions/prompt.mjs';
 import { handleQuestionAnswer as handleAbilityQuestionAnswer, cancelQuestion as cancelAbilityQuestion } from './abilities/question.mjs';
 import { getInteractionBus } from './interactions/bus.mjs';
 import { getSessionFunctions, getUserFunctions } from './interactions/registry.mjs';
@@ -175,6 +176,35 @@ export function initWebSocket(server) {
                 type:        'ability_approval_cancel_result',
                 executionId: message.executionId,
                 success:     true,
+              }));
+            }
+            break;
+
+          // Permission prompt responses
+          case 'permission_prompt_response':
+            if (message.promptId && message.answer) {
+              let promptResult = handlePermissionResponse(
+                message.promptId,
+                message.answer,
+              );
+
+              ws.send(JSON.stringify({
+                type:     'permission_prompt_result',
+                promptId: message.promptId,
+                success:  promptResult.success,
+                error:    promptResult.error || null,
+              }));
+            }
+            break;
+
+          case 'permission_prompt_cancel':
+            if (message.promptId) {
+              cancelPermissionPrompt(message.promptId);
+
+              ws.send(JSON.stringify({
+                type:     'permission_prompt_cancel_result',
+                promptId: message.promptId,
+                success:  true,
               }));
             }
             break;
