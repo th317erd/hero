@@ -49,6 +49,10 @@ export { HeroModalCreateAgent as HeroModalAgent } from './hero-modal-create-agen
 export { HeroModalConfigureAbility as HeroModalAbility } from './hero-modal-configure-ability/hero-modal-configure-ability.js';
 export { HeroModalAgentSettings as HeroModalAgentConfig } from './hero-modal-agent-settings/hero-modal-agent-settings.js';
 
+// Page components (Shadow DOM - loaded via mythix-require for templates)
+export { HeroLogin } from './hero-login/hero-login.js';
+export { HeroSettings } from './hero-settings/hero-settings.js';
+
 // NOTE: The following Shadow DOM components are loaded via mythix-require in index.html:
 // - hero-modal (and variants)
 // - hero-header
@@ -59,6 +63,8 @@ export { HeroModalAgentSettings as HeroModalAgentConfig } from './hero-modal-age
 // - hero-input
 // - hml-prompt
 // - session-frames-provider
+// - hero-login
+// - hero-settings
 
 // One-time initialization
 if (!window.__heroComponentsLoaded) {

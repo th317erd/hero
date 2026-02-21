@@ -413,3 +413,28 @@
 - [x] Exports: `rateLimit()`, `consume()`, `resetBucket()`, `resetAll()`, `stopCleanup()`
 - [x] Wrote 17 tests: core consume, middleware, route wiring, edge cases
 - [x] All tests passing
+
+---
+
+## S3: Prompt Form UX Redesign
+> Status: **COMPLETE**
+> Commit: 973baa1
+
+### What was done
+- [x] Removed ALL per-prompt OK/submit buttons from 7 render methods in hml-prompt.js
+- [x] Removed `.submit-button` CSS styles
+- [x] Changed Enter key in _renderText, _renderNumber, _renderInput from `_submitAnswer()` to `_bufferAndAdvance()`
+- [x] Added `_bufferAnswer(answer)` — buffers answer + dispatches `prompt-answer-ready` event (bubbles, composed)
+- [x] Added `_bufferAndAdvance(answer)` — buffers, marks visually answered, dispatches `prompt-tab-forward`
+- [x] Added `getCurrentAnswer()` — returns answered/buffered/shadow DOM input value by type
+- [x] Non-text renders (color, checkbox, checkboxes, radio, select, range) call `_bufferAnswer` on change
+- [x] hero-chat: changed threshold from `prompts.length < 2` to `< 1` (show buttons for 1+ prompts)
+- [x] hero-chat: added early return if all prompts already answered
+- [x] hero-chat: button order changed to Ignore first, then Submit (not "Submit All")
+- [x] hero-chat: added `_setupPromptFocusChain()` — Enter advances to next unanswered prompt, then Submit button
+- [x] app.js: added `prompt-answer-ready` event listener (buffer only, no immediate submit)
+- [x] app.js: changed `prompt-submit` handler to buffer-only (removed `submitUserPromptAnswer` call)
+- [x] app.js: added `_collectUnbufferedAnswers()` — reads shadow DOM for unfilled prompts before batch submit
+- [x] app.js: `submitPromptBatch()` calls `_collectUnbufferedAnswers` before reading pending answers
+- [x] Created `spec/components/prompt-form-spec.mjs` — 26 tests (PROMPT-001 through PROMPT-007 + behavioral)
+- [x] All 1847 tests passing, 0 failures

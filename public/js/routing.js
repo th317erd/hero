@@ -25,6 +25,14 @@ function getRoute() {
   if (path === '/' || path === '')
     return { view: 'sessions' };
 
+  if (path === '/settings')
+    return { view: 'settings' };
+
+  let settingsTabMatch = path.match(/^\/settings\/([\w-]+)$/);
+
+  if (settingsTabMatch)
+    return { view: 'settings', tab: settingsTabMatch[1] };
+
   let sessionMatch = path.match(/^\/sessions\/(\d+)$/);
 
   if (sessionMatch)
@@ -77,6 +85,10 @@ async function handleRoute() {
       showView('chat');
       break;
 
+    case 'settings':
+      showView('settings', route);
+      break;
+
     default:
       showView('sessions');
   }
@@ -86,13 +98,23 @@ async function handleRoute() {
 // Views
 // ============================================================================
 
-function showView(viewName) {
+function showView(viewName, route) {
   elements.loginView.style.display    = (viewName === 'login') ? 'flex' : 'none';
   elements.sessionsView.style.display = (viewName === 'sessions') ? 'flex' : 'none';
   elements.chatView.style.display     = (viewName === 'chat') ? 'flex' : 'none';
 
+  if (elements.settingsView)
+    elements.settingsView.style.display = (viewName === 'settings') ? 'flex' : 'none';
+
+  // Pass tab to hero-settings component when settings view is active
+  if (viewName === 'settings') {
+    let settingsComponent = document.getElementById('settings');
+    if (settingsComponent)
+      settingsComponent.tab = route?.tab || 'profile';
+  }
+
   // Notify hero-header components of view change
   document.dispatchEvent(new CustomEvent('viewchange', {
-    detail: { view: viewName },
+    detail: { view: viewName, tab: route?.tab },
   }));
 }

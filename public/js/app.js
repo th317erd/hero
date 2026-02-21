@@ -318,22 +318,8 @@ function renderResponseAssertion(assertion) {
 // Auth
 // ============================================================================
 
-async function handleLogin(e) {
-  e.preventDefault();
-
-  let username = document.getElementById('username').value;
-  let password = document.getElementById('password').value;
-
-  elements.loginError.textContent = '';
-
-  try {
-    await login(username, password);
-    document.dispatchEvent(new CustomEvent('hero:authenticated'));
-    navigate('/');
-  } catch (error) {
-    elements.loginError.textContent = error.message;
-  }
-}
+// Login is handled by the hero-login component.
+// It dispatches hero:authenticated on success, which triggers navigation.
 
 async function handleLogout() {
   try {
@@ -1259,8 +1245,8 @@ async function loadAbilities() {
 // Event Listeners
 // ============================================================================
 
-// Login
-elements.loginForm.addEventListener('submit', handleLogin);
+// Login — hero-login component dispatches hero:authenticated on success
+document.addEventListener('hero:authenticated', () => navigate('/'));
 
 // Operations panel toggle
 elements.toggleOperations.addEventListener('click', () => {

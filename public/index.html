@@ -82,6 +82,8 @@
   <mythix-require src="@cdn/hero-input@1"></mythix-require>
   <mythix-require src="@cdn/hml-prompt@1"></mythix-require>
   <mythix-require src="@cdn/session-frames-provider@1"></mythix-require>
+  <mythix-require src="@cdn/hero-login@1"></mythix-require>
+  <mythix-require src="@cdn/hero-settings@1"></mythix-require>
 
   <hero-app id="app">
     <!-- WebSocket handler -->
@@ -100,25 +102,7 @@
 
     <!-- Login View -->
     <div id="login-view" class="view" data-view="login" style="display: none;">
-      <div class="login-container">
-        <div class="login-title">
-          <img src="assets/images/hero-cape.svg?v=1" alt="Hero" class="logo logo-lg">
-          <h1>Hero</h1>
-        </div>
-        <p class="login-subtitle">AI Agent Chat Interface</p>
-        <form id="login-form" autocomplete="off">
-          <div class="form-group">
-            <label for="username">Username</label>
-            <input type="text" id="username" name="username" required autocomplete="off">
-          </div>
-          <div class="form-group">
-            <label for="password">Password</label>
-            <input type="password" id="password" name="password" required autocomplete="off">
-          </div>
-          <div id="login-error" class="error-message"></div>
-          <button type="submit" class="button button-primary button-block">Log In</button>
-        </form>
-      </div>
+      <hero-login id="login-component"></hero-login>
     </div>
 
     <!-- Sessions List View -->
@@ -140,6 +124,12 @@
           <hero-input id="chat-input"></hero-input>
         </footer>
       </session-frames-provider>
+    </div>
+
+    <!-- Settings View -->
+    <div id="settings-view" class="view" data-view="settings" style="display: none;">
+      <hero-header id="settings-header"></hero-header>
+      <hero-settings id="settings"></hero-settings>
     </div>
 
     <!-- Running Operations Panel -->

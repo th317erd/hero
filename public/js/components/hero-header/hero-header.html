@@ -78,11 +78,13 @@
 
     /* Conditional visibility based on view */
     :host([view="sessions"]) .chat-only,
-    :host([view="login"]) .chat-only {
+    :host([view="login"]) .chat-only,
+    :host([view="settings"]) .chat-only {
       display: none !important;
     }
 
-    :host([view="chat"]) .sessions-only {
+    :host([view="chat"]) .sessions-only,
+    :host([view="settings"]) .sessions-only {
       display: none !important;
     }
 

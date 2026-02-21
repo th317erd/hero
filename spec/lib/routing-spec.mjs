@@ -29,6 +29,14 @@ function getRoute(pathname) {
   if (path === '/' || path === '')
     return { view: 'sessions' };
 
+  if (path === '/settings')
+    return { view: 'settings' };
+
+  let settingsTabMatch = path.match(/^\/settings\/([\w-]+)$/);
+
+  if (settingsTabMatch)
+    return { view: 'settings', tab: settingsTabMatch[1] };
+
   let sessionMatch = path.match(/^\/sessions\/(\d+)$/);
 
   if (sessionMatch)
@@ -82,6 +90,39 @@ describe('Route Parsing', () => {
       const route = getRoute('/sessions/42');
       assert.strictEqual(typeof route.sessionId, 'number');
       assert.strictEqual(route.sessionId, 42);
+    });
+  });
+
+  describe('Settings Route', () => {
+    it('should match /settings path', () => {
+      const route = getRoute('/settings');
+      assert.deepStrictEqual(route, { view: 'settings' });
+    });
+
+    it('should match /settings/profile', () => {
+      const route = getRoute('/settings/profile');
+      assert.deepStrictEqual(route, { view: 'settings', tab: 'profile' });
+    });
+
+    it('should match /settings/account', () => {
+      const route = getRoute('/settings/account');
+      assert.deepStrictEqual(route, { view: 'settings', tab: 'account' });
+    });
+
+    it('should match /settings/api-keys', () => {
+      const route = getRoute('/settings/api-keys');
+      assert.deepStrictEqual(route, { view: 'settings', tab: 'api-keys' });
+    });
+
+    it('should return tab name as string', () => {
+      const route = getRoute('/settings/profile');
+      assert.strictEqual(typeof route.tab, 'string');
+      assert.strictEqual(route.tab, 'profile');
+    });
+
+    it('should not match /settings/foo/bar (nested)', () => {
+      const route = getRoute('/settings/foo/bar');
+      assert.deepStrictEqual(route, { view: 'sessions' });
     });
   });
 
@@ -197,51 +238,65 @@ describe('View Display Logic', () => {
     elements.loginView.style.display    = (viewName === 'login') ? 'flex' : 'none';
     elements.sessionsView.style.display = (viewName === 'sessions') ? 'flex' : 'none';
     elements.chatView.style.display     = (viewName === 'chat') ? 'flex' : 'none';
+    if (elements.settingsView)
+      elements.settingsView.style.display = (viewName === 'settings') ? 'flex' : 'none';
+  }
+
+  function createViewElements(doc) {
+    return {
+      loginView:    doc.createElement('div'),
+      sessionsView: doc.createElement('div'),
+      chatView:     doc.createElement('div'),
+      settingsView: doc.createElement('div'),
+    };
   }
 
   it('should show only login view when view is login', () => {
     const doc = getDocument();
-    const elements = {
-      loginView: doc.createElement('div'),
-      sessionsView: doc.createElement('div'),
-      chatView: doc.createElement('div'),
-    };
+    const elements = createViewElements(doc);
 
     showView('login', elements);
 
     assert.strictEqual(elements.loginView.style.display, 'flex');
     assert.strictEqual(elements.sessionsView.style.display, 'none');
     assert.strictEqual(elements.chatView.style.display, 'none');
+    assert.strictEqual(elements.settingsView.style.display, 'none');
   });
 
   it('should show only sessions view when view is sessions', () => {
     const doc = getDocument();
-    const elements = {
-      loginView: doc.createElement('div'),
-      sessionsView: doc.createElement('div'),
-      chatView: doc.createElement('div'),
-    };
+    const elements = createViewElements(doc);
 
     showView('sessions', elements);
 
     assert.strictEqual(elements.loginView.style.display, 'none');
     assert.strictEqual(elements.sessionsView.style.display, 'flex');
     assert.strictEqual(elements.chatView.style.display, 'none');
+    assert.strictEqual(elements.settingsView.style.display, 'none');
   });
 
   it('should show only chat view when view is chat', () => {
     const doc = getDocument();
-    const elements = {
-      loginView: doc.createElement('div'),
-      sessionsView: doc.createElement('div'),
-      chatView: doc.createElement('div'),
-    };
+    const elements = createViewElements(doc);
 
     showView('chat', elements);
 
     assert.strictEqual(elements.loginView.style.display, 'none');
     assert.strictEqual(elements.sessionsView.style.display, 'none');
     assert.strictEqual(elements.chatView.style.display, 'flex');
+    assert.strictEqual(elements.settingsView.style.display, 'none');
+  });
+
+  it('should show only settings view when view is settings', () => {
+    const doc = getDocument();
+    const elements = createViewElements(doc);
+
+    showView('settings', elements);
+
+    assert.strictEqual(elements.loginView.style.display, 'none');
+    assert.strictEqual(elements.sessionsView.style.display, 'none');
+    assert.strictEqual(elements.chatView.style.display, 'none');
+    assert.strictEqual(elements.settingsView.style.display, 'flex');
   });
 });
 

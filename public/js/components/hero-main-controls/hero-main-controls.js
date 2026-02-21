@@ -127,6 +127,15 @@ export class HeroMainControls extends HeroComponent {
     }));
   }
 
+  goToSettings() {
+    this._dispatchMenuAction();
+    this.dispatchEvent(new CustomEvent('hero:navigate', {
+      detail: { path: '/settings' },
+      bubbles: true,
+      composed: true,
+    }));
+  }
+
   logout() {
     this._dispatchMenuAction();
     this.dispatchEvent(new CustomEvent('hero:logout', {

@@ -42,6 +42,16 @@ export function parseRoute(pathname, basePath = '') {
     return { view: 'sessions' };
   }
 
+  if (path === '/settings') {
+    return { view: 'settings' };
+  }
+
+  let settingsTabMatch = path.match(/^\/settings\/([\w-]+)$/);
+
+  if (settingsTabMatch) {
+    return { view: 'settings', tab: settingsTabMatch[1] };
+  }
+
   let sessionMatch = path.match(/^\/sessions\/(\d+)$/);
 
   if (sessionMatch) {
@@ -111,6 +121,7 @@ export class HeroApp extends HeroComponent {
     // Listen for custom events from child components (event hub pattern)
     this.addEventListener('hero:logout', () => this.logout());
     this.addEventListener('hero:navigate', (event) => this.navigate(event.detail.path));
+    this.addEventListener('hero:authenticated', () => this.navigate('/'));
     this.addEventListener('hero:show-modal', (event) => this._handleShowModal(event.detail));
     this.addEventListener('show-modal', (event) => this._handleShowModal(event.detail));
     this.addEventListener('hero:clear-messages', () => this._handleClearMessages());
@@ -226,6 +237,10 @@ export class HeroApp extends HeroComponent {
         this._showView('chat');
         break;
 
+      case 'settings':
+        this._showView('settings', { tab: route.tab });
+        break;
+
       default:
         this._showView('sessions');
     }
@@ -334,13 +349,14 @@ export class HeroApp extends HeroComponent {
   /**
    * Show a view and hide others.
    * @param {string} viewName
+   * @param {object} [options] - Additional route data (e.g., { tab })
    */
-  _showView(viewName) {
+  _showView(viewName, options) {
     this.#currentView = viewName;
 
     // Dispatch event for view changes
     this.dispatchEvent(new CustomEvent('viewchange', {
-      detail: { view: viewName },
+      detail: { view: viewName, ...options },
       bubbles: true,
     }));
 
@@ -350,6 +366,14 @@ export class HeroApp extends HeroComponent {
       let isActive = view.dataset.view === viewName;
       view.classList.toggle('active', isActive);
       view.style.display = isActive ? '' : 'none';
+    }
+
+    // Pass tab to hero-settings when settings view is active
+    if (viewName === 'settings') {
+      let settingsComponent = this.querySelector('hero-settings');
+      if (settingsComponent) {
+        settingsComponent.tab = options?.tab || 'profile';
+      }
     }
   }
 

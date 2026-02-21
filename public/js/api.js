@@ -262,6 +262,51 @@ const API = {
       return api('DELETE', `/uploads/${uploadId}`);
     },
   },
+
+  // --------------------------------------------------------------------------
+  // User Profile & Settings
+  // --------------------------------------------------------------------------
+  user: {
+    /**
+     * Get current user's profile.
+     * @returns {Promise<object>} Profile with displayName, email, usage stats
+     */
+    profile: () => api('GET', '/users/me/profile'),
+
+    /**
+     * Update current user's profile.
+     * @param {object} data - { displayName, email }
+     * @returns {Promise<object>}
+     */
+    updateProfile: (data) => api('PUT', '/users/me/profile', data),
+
+    /**
+     * Change current user's password.
+     * @param {object} data - { currentPassword, newPassword }
+     * @returns {Promise<object>}
+     */
+    changePassword: (data) => api('PUT', '/users/me/password', data),
+
+    /**
+     * List current user's API keys (no plaintext).
+     * @returns {Promise<{apiKeys: object[]}>}
+     */
+    apiKeys: () => api('GET', '/users/me/api-keys'),
+
+    /**
+     * Create a new API key. Returns plaintext once.
+     * @param {object} data - { name, scopes?, expiresInDays? }
+     * @returns {Promise<{key: string, id: number, name: string}>}
+     */
+    createApiKey: (data) => api('POST', '/users/me/api-keys', data),
+
+    /**
+     * Revoke an API key.
+     * @param {number} id - API key ID
+     * @returns {Promise<{success: boolean}>}
+     */
+    revokeApiKey: (id) => api('DELETE', `/users/me/api-keys/${id}`),
+  },
 };
 
 // Make API available globally

@@ -65,10 +65,10 @@ const elements = {
   loginView:    document.getElementById('login-view'),
   sessionsView: document.getElementById('sessions-view'),
   chatView:     document.getElementById('chat-view'),
+  settingsView: document.getElementById('settings-view'),
 
-  // Login
-  loginForm:   document.getElementById('login-form'),
-  loginError:  document.getElementById('login-error'),
+  // Login (hero-login component handles its own form)
+  loginComponent: document.getElementById('login-component'),
 
   // Sessions (hero-sessions-list component handles its own DOM)
   sessionsList: document.getElementById('sessions-list'),
