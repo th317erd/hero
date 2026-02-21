@@ -298,13 +298,13 @@
 ---
 
 ## S4: Wire BEFORE_TOOL Hook into Interaction Detector
-> Status: **IN PROGRESS**
+> Status: **COMPLETE**
 
-### Plan
-- [ ] Wire BEFORE_TOOL/AFTER_TOOL hooks in `server/lib/interactions/detector.mjs`
-- [ ] Write tests: PERM-001 thru PERM-006, GUARD-001/005/006, PLUGIN-001 thru PLUGIN-004, INT-001
-- [ ] Run full test suite
-- [ ] Commit
+### What was done
+- [x] Wire BEFORE_TOOL/AFTER_TOOL hooks in `server/lib/interactions/detector.mjs`
+- [x] Write 30 tests: PERM-001 thru PERM-006, GUARD-001/005/006, PLUGIN-001 thru PLUGIN-004, INT-001
+- [x] Run full test suite — 1772 tests passing, 0 failures
+- [x] Commit
 
 ---
 

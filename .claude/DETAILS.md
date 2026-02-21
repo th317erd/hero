@@ -369,9 +369,18 @@ All modal components migrated to split HTML/JS pattern:
 - `spec/lib/content-registry-spec.mjs` — 19 tests
 - `spec/routes/uploads-spec.mjs` — 16 tests
 
+### S4: Wire BEFORE_TOOL Hook (2026-02-20)
+- Wired `beforeTool()` + `afterTool()` hooks in `server/lib/interactions/detector.mjs`
+- Step 1.5: BEFORE_TOOL fires between permission check and bus.send
+- Step 5.5: AFTER_TOOL fires after successful execution
+- Hook can block execution (`{ blocked: true, reason }`) or modify tool data (`{ name, input }`)
+- Hook errors are non-fatal (logged, execution continues)
+- 30 new tests in `spec/lib/interactions/before-tool-hook-spec.mjs`
+- Test IDs: PERM-001 through PERM-006, GUARD-001/005/006, PLUGIN-001 through PLUGIN-004, INT-001
+
 ### Test Suite
 - Runner: `find spec -name '*-spec.mjs' | xargs node --test --test-force-exit`
-- Current: **1614 tests, 0 failures**
+- Current: **1772 tests, 0 failures**
 
 ### Pending (all phases complete — remaining deferred items)
 - Phase 1: Participant list sidebar, @mention autocomplete, WebSocket broadcast to all participants

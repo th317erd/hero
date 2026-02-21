@@ -19,6 +19,7 @@
 import { getInteractionBus, queueAgentMessage, TARGETS } from './bus.mjs';
 import { checkSystemMethodAllowed } from './functions/system.mjs';
 import { createRequestFrame, createResultFrame } from '../frames/broadcast.mjs';
+import { beforeTool, afterTool } from '../plugins/hooks.mjs';
 
 // Regex to find <interaction> tag starts (with or without attributes)
 // Handles both <interaction> and <interaction type="...">, since LLMs sometimes
@@ -321,6 +322,56 @@ export async function executeInteractions(interactionBlock, context) {
       }
     }
 
+    // Step 1.5: Execute BEFORE_TOOL hook (plugin permission gating)
+    // This allows plugins to inspect, modify, or block tool execution
+    // before it happens — analogous to BEFORE_COMMAND for commands.
+    let toolData = {
+      name:  interactionData.target_property,
+      input: interactionData.payload,
+    };
+
+    let hookContext = {
+      sessionId: context.sessionId,
+      userId:    context.userId,
+      agentId:   context.agentId,
+      targetId:  interactionData.target_id,
+    };
+
+    try {
+      let hookResult = await beforeTool(toolData, hookContext);
+
+      // If hook returns blocked: true, deny the interaction
+      if (hookResult && hookResult.blocked) {
+        let blockReason = hookResult.reason || 'Blocked by plugin';
+
+        queueAgentMessage(context.sessionId, agentInteractionId, 'interaction_update', {
+          status: 'denied',
+          reason: blockReason,
+        });
+
+        results.push({
+          interaction_id:  agentInteractionId,
+          target_id:       interactionData.target_id,
+          target_property: interactionData.target_property,
+          status:          'denied',
+          reason:          blockReason,
+        });
+
+        continue;
+      }
+
+      // If hook modified the tool data, apply the changes
+      if (hookResult && typeof hookResult === 'object' && !hookResult.blocked) {
+        if (hookResult.name)
+          interactionData.target_property = hookResult.name;
+        if (hookResult.input !== undefined)
+          interactionData.payload = hookResult.input;
+      }
+    } catch (hookError) {
+      // Hook errors should not break the pipeline — log and continue
+      console.error(`BEFORE_TOOL hook error for '${toolData.name}':`, hookError.message);
+    }
+
     // Step 2: Create REQUEST frame (before execution)
     if (canCreateFrames) {
       try {
@@ -408,6 +459,16 @@ export async function executeInteractions(interactionBlock, context) {
           requestFrameId:  requestFrame?.id,
         });
         continue;
+      }
+
+      // Step 5.5: Execute AFTER_TOOL hook (post-execution)
+      try {
+        await afterTool(
+          { name: interactionData.target_property, input: interactionData.payload, result },
+          hookContext,
+        );
+      } catch (afterHookError) {
+        console.error(`AFTER_TOOL hook error for '${interactionData.target_property}':`, afterHookError.message);
       }
 
       // Step 6: Queue completed status for agent
