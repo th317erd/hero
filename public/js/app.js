@@ -123,6 +123,11 @@ async function loadSession(sessionId) {
     renderMessages();
     scrollToBottom();
 
+    // Update participant sidebar
+    let participantList = document.getElementById('participant-list');
+    if (participantList && typeof participantList.setParticipants === 'function')
+      participantList.setParticipants(session.participants, session.id);
+
     // Focus input via hero-input component
     let heroInputEl = document.querySelector('hero-input');
     if (heroInputEl && typeof heroInputEl.focus === 'function')

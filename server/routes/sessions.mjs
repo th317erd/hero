@@ -149,6 +149,7 @@ router.get('/', (req, res) => {
           participantType: p.participantType,
           participantId:   p.participantId,
           role:            p.role,
+          alias:           p.alias,
         })),
         messageCount: s.message_count,
         preview:      preview,
@@ -224,6 +225,7 @@ router.post('/', (req, res) => {
         participantType: p.participantType,
         participantId:   p.participantId,
         role:            p.role,
+        alias:           p.alias,
       })),
       messageCount: 0,
       createdAt:    new Date().toISOString(),
@@ -274,8 +276,36 @@ router.get('/:id', (req, res) => {
     };
   });
 
-  // Load participants
+  // Load participants with enriched names/avatars
   let participants = getSessionParticipants(session.id, db);
+
+  let enrichedParticipants = participants.map((p) => {
+    let info = { name: null, avatarUrl: null };
+
+    if (p.participantType === 'agent') {
+      let agent = db.prepare('SELECT name, type, avatar_url FROM agents WHERE id = ?').get(p.participantId);
+      if (agent) {
+        info.name      = agent.name;
+        info.type      = agent.type;
+        info.avatarUrl = getAgentAvatar(agent);
+      }
+    } else {
+      let user = db.prepare('SELECT username, display_name FROM users WHERE id = ?').get(p.participantId);
+      if (user)
+        info.name = user.display_name || user.username;
+    }
+
+    return {
+      id:              p.id,
+      participantType: p.participantType,
+      participantId:   p.participantId,
+      role:            p.role,
+      alias:           p.alias,
+      name:            info.name,
+      type:            info.type || null,
+      avatarUrl:       info.avatarUrl,
+    };
+  });
 
   return res.json({
     id:              session.id,
@@ -290,12 +320,7 @@ router.get('/:id', (req, res) => {
       type:      session.agent_type,
       avatarUrl: getAgentAvatar({ name: session.agent_name, avatar_url: session.agent_avatar_url }),
     },
-    participants: participants.map((p) => ({
-      id:              p.id,
-      participantType: p.participantType,
-      participantId:   p.participantId,
-      role:            p.role,
-    })),
+    participants: enrichedParticipants,
     cost: {
       inputTokens:  session.input_tokens || 0,
       outputTokens: session.output_tokens || 0,

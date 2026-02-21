@@ -75,6 +75,7 @@ function createTestDatabase() {
       participant_type TEXT NOT NULL,
       participant_id   INTEGER NOT NULL,
       role             TEXT DEFAULT 'member',
+      alias            TEXT,
       joined_at        TEXT DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(session_id, participant_type, participant_id)
     );

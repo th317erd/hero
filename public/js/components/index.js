@@ -52,6 +52,7 @@ export { HeroModalAgentSettings as HeroModalAgentConfig } from './hero-modal-age
 // Page components (Shadow DOM - loaded via mythix-require for templates)
 export { HeroLogin } from './hero-login/hero-login.js';
 export { HeroSettings } from './hero-settings/hero-settings.js';
+export { HeroParticipantList } from './hero-participant-list/hero-participant-list.js';
 
 // NOTE: The following Shadow DOM components are loaded via mythix-require in index.html:
 // - hero-modal (and variants)

@@ -620,6 +620,13 @@ function getMigrations() {
         CREATE INDEX idx_uploads_session ON uploads(session_id);
       `,
     },
+    {
+      name: '022_participant_alias',
+      sql:  `
+        -- Per-session display alias for agents (e.g. "CodeReviewer" for test-claude)
+        ALTER TABLE session_participants ADD COLUMN alias TEXT;
+      `,
+    },
   ];
 }
 

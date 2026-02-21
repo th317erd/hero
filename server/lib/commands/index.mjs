@@ -21,6 +21,8 @@ import {
   addParticipant,
   removeParticipant,
   isParticipant,
+  promoteCoordinator,
+  findAgentByName,
   ParticipantType,
   ParticipantRole,
 } from '../participants/index.mjs';
@@ -595,13 +597,15 @@ registerCommand('participants', 'List all participants in the current session', 
     else if (participant.role === 'owner')
       roleTag = ' **[owner]**';
 
-    text += `- **${name}**${badge}${roleTag} (${participant.participantType})\n`;
+    let aliasTag = (participant.alias) ? ` aka **${participant.alias}**` : '';
+
+    text += `- **${name}**${badge}${aliasTag}${roleTag} (${participant.participantType})\n`;
   }
 
   return { success: true, content: text };
 });
 
-// /invite <agentId>
+// /invite <agent-name> [as:<alias>]
 registerCommand('invite', 'Add an agent to the current session', async (args, context) => {
   if (!context.sessionId) {
     return {
@@ -615,58 +619,117 @@ registerCommand('invite', 'Add an agent to the current session', async (args, co
   if (!input) {
     return {
       success: false,
-      error:   'Usage: /invite <agentId> [role]\n\nRoles: coordinator, member (default: member)',
+      error:   'Usage: /invite <agent-name> [as:<alias>]\n\nExamples:\n  /invite test-claude\n  /invite test-claude as:Coder',
     };
   }
 
-  let parts   = input.split(/\s+/);
-  let agentId = parseInt(parts[0], 10);
-  let role    = parts[1]?.toLowerCase() || 'member';
-
-  if (isNaN(agentId)) {
-    return {
-      success: false,
-      error:   `Invalid agent ID: "${parts[0]}"`,
-    };
-  }
-
-  if (!['coordinator', 'member'].includes(role)) {
-    return {
-      success: false,
-      error:   `Invalid role: "${role}". Must be "coordinator" or "member".`,
-    };
+  // Parse "as:<alias>" from the end
+  let alias     = null;
+  let aliasMatch = input.match(/\s+as:(\S+)\s*$/i);
+  if (aliasMatch) {
+    alias = aliasMatch[1];
+    input = input.slice(0, aliasMatch.index).trim();
   }
 
   let db = context.db || getDatabase();
+  let agent = null;
 
-  // Verify agent exists and belongs to user
-  let agent = db.prepare('SELECT id, name, type FROM agents WHERE id = ? AND user_id = ?')
-    .get(agentId, context.userId);
+  // Try numeric ID first (backwards compat), then name lookup
+  let numericId = parseInt(input, 10);
+  if (!isNaN(numericId) && String(numericId) === input) {
+    agent = db.prepare('SELECT id, name, type FROM agents WHERE id = ? AND user_id = ?')
+      .get(numericId, context.userId);
+  }
+
+  if (!agent) {
+    agent = findAgentByName(input, context.userId, db);
+  }
 
   if (!agent) {
     return {
       success: false,
-      error:   `Agent #${agentId} not found or does not belong to you.`,
+      error:   `Agent "${input}" not found. Use the agent's name (e.g., test-claude).`,
     };
   }
 
   // Check if already a participant
-  if (isParticipant(context.sessionId, ParticipantType.AGENT, agentId, db)) {
+  if (isParticipant(context.sessionId, ParticipantType.AGENT, agent.id, db)) {
     return {
       success: false,
       error:   `Agent "${agent.name}" is already a participant in this session.`,
     };
   }
 
-  addParticipant(context.sessionId, ParticipantType.AGENT, agentId, role, db);
+  addParticipant(context.sessionId, ParticipantType.AGENT, agent.id, 'member', db, alias);
 
+  let aliasNote = (alias) ? ` (alias: **${alias}**)` : '';
   return {
     success: true,
-    content: `Agent **${agent.name}** (${agent.type}) added as **${role}**.`,
+    content: `Agent **${agent.name}** (${agent.type}) added as **member**${aliasNote}.`,
   };
 });
 
-// /kick <agentId>
+// /promote <agent-name>
+registerCommand('promote', 'Change the active coordinator agent', async (args, context) => {
+  if (!context.sessionId) {
+    return {
+      success: false,
+      error:   'No active session.',
+    };
+  }
+
+  let input = args.trim();
+
+  if (!input) {
+    return {
+      success: false,
+      error:   'Usage: /promote <agent-name>\n\nPromotes an agent to coordinator. The current coordinator becomes a member.',
+    };
+  }
+
+  let db    = context.db || getDatabase();
+  let agent = null;
+
+  // Try numeric ID first, then name lookup
+  let numericId = parseInt(input, 10);
+  if (!isNaN(numericId) && String(numericId) === input) {
+    agent = db.prepare('SELECT id, name, type FROM agents WHERE id = ?').get(numericId);
+  }
+
+  if (!agent) {
+    agent = findAgentByName(input, context.userId, db);
+  }
+
+  if (!agent) {
+    return {
+      success: false,
+      error:   `Agent "${input}" not found.`,
+    };
+  }
+
+  let result = promoteCoordinator(context.sessionId, agent.id, db);
+
+  if (!result.promoted) {
+    return {
+      success: false,
+      error:   result.error,
+    };
+  }
+
+  let previousNote = '';
+  if (result.previousCoordinatorId) {
+    let prev = db.prepare('SELECT name FROM agents WHERE id = ?').get(result.previousCoordinatorId);
+    if (prev)
+      previousNote = ` (previously **${prev.name}**)`;
+  }
+
+  return {
+    success: true,
+    content: `**${agent.name}** is now the active coordinator${previousNote}.`,
+  };
+});
+
+// /kick <agent-name>
 registerCommand('kick', 'Remove an agent from the current session', async (args, context) => {
   if (!context.sessionId) {
     return {
@@ -680,40 +743,39 @@ registerCommand('kick', 'Remove an agent from the current session', async (args,
   if (!input) {
     return {
       success: false,
-      error:   'Usage: /kick <agentId>',
+      error:   'Usage: /kick <agent-name>',
     };
   }
 
-  let agentId = parseInt(input, 10);
+  let db    = context.db || getDatabase();
+  let agent = null;
 
-  if (isNaN(agentId)) {
-    return {
-      success: false,
-      error:   `Invalid agent ID: "${input}"`,
-    };
+  // Try numeric ID first, then name lookup
+  let numericId = parseInt(input, 10);
+  if (!isNaN(numericId) && String(numericId) === input) {
+    agent = db.prepare('SELECT id, name FROM agents WHERE id = ?').get(numericId);
   }
 
-  let db = context.db || getDatabase();
-
-  // Verify agent exists
-  let agent = db.prepare('SELECT id, name FROM agents WHERE id = ?').get(agentId);
+  if (!agent) {
+    agent = findAgentByName(input, context.userId, db);
+  }
 
   if (!agent) {
     return {
       success: false,
-      error:   `Agent #${agentId} not found.`,
+      error:   `Agent "${input}" not found.`,
     };
   }
 
   // Check if actually a participant
-  if (!isParticipant(context.sessionId, ParticipantType.AGENT, agentId, db)) {
+  if (!isParticipant(context.sessionId, ParticipantType.AGENT, agent.id, db)) {
     return {
       success: false,
       error:   `Agent "${agent.name}" is not a participant in this session.`,
     };
   }
 
-  let removed = removeParticipant(context.sessionId, ParticipantType.AGENT, agentId, db);
+  let removed = removeParticipant(context.sessionId, ParticipantType.AGENT, agent.id, db);
 
   if (!removed) {
     return {

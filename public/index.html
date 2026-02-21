@@ -84,6 +84,7 @@
   <mythix-require src="@cdn/session-frames-provider@1"></mythix-require>
   <mythix-require src="@cdn/hero-login@1"></mythix-require>
   <mythix-require src="@cdn/hero-settings@1"></mythix-require>
+  <mythix-require src="@cdn/hero-participant-list@1"></mythix-require>
 
   <hero-app id="app">
     <!-- WebSocket handler -->
@@ -116,14 +117,19 @@
     <!-- Chat View -->
     <div id="chat-view" class="view" data-view="chat" style="display: none;">
       <hero-header id="chat-header"></hero-header>
-      <session-frames-provider id="session-frames">
-        <main class="chat-main">
-          <hero-chat id="chat"></hero-chat>
-        </main>
-        <footer class="chat-footer">
-          <hero-input id="chat-input"></hero-input>
-        </footer>
-      </session-frames-provider>
+      <div class="chat-layout">
+        <session-frames-provider id="session-frames">
+          <main class="chat-main">
+            <hero-chat id="chat"></hero-chat>
+          </main>
+          <footer class="chat-footer">
+            <hero-input id="chat-input"></hero-input>
+          </footer>
+        </session-frames-provider>
+        <aside id="participant-sidebar" class="participant-sidebar">
+          <hero-participant-list id="participant-list"></hero-participant-list>
+        </aside>
+      </div>
     </div>
 
     <!-- Settings View -->

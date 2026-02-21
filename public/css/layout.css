@@ -169,6 +169,27 @@
   min-width: 150px;
 }
 
+/* Chat Layout with Sidebar */
+.chat-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chat-layout session-frames-provider {
+  flex: 1;
+  min-width: 0;
+}
+
+.participant-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border-color);
+  overflow-y: auto;
+}
+
 /* Settings View */
 .settings-main {
   flex: 1;
@@ -230,6 +251,10 @@
   }
 
   .session-select {
+    display: none;
+  }
+
+  .participant-sidebar {
     display: none;
   }
 }

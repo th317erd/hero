@@ -41,15 +41,16 @@ export const ParticipantRole = {
  * @param {number} participantId - User ID or Agent ID
  * @param {string} [role='member'] - Participant role
  * @param {Database} [database] - Optional database instance (for testing)
+ * @param {string} [alias=null] - Per-session display alias
  * @returns {Object} The created participant record
  */
-export function addParticipant(sessionId, participantType, participantId, role = 'member', database = null) {
+export function addParticipant(sessionId, participantType, participantId, role = 'member', database = null, alias = null) {
   let db = database || getDatabase();
 
   let result = db.prepare(`
-    INSERT INTO session_participants (session_id, participant_type, participant_id, role)
-    VALUES (?, ?, ?, ?)
-  `).run(sessionId, participantType, participantId, role);
+    INSERT INTO session_participants (session_id, participant_type, participant_id, role, alias)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(sessionId, participantType, participantId, role, alias);
 
   let row = db.prepare(`
     SELECT * FROM session_participants WHERE id = ?
@@ -394,8 +395,102 @@ function parseParticipantRow(row) {
     participantType: row.participant_type,
     participantId:   row.participant_id,
     role:            row.role,
+    alias:           row.alias || null,
     joinedAt:        row.joined_at,
   };
+}
+
+/**
+ * Promote an agent to coordinator, demoting the current coordinator to member.
+ * Atomic: runs in a transaction.
+ *
+ * @param {number} sessionId - Session ID
+ * @param {number} agentId - Agent ID to promote
+ * @param {Database} [database] - Optional database instance (for testing)
+ * @returns {{ promoted: boolean, previousCoordinatorId: number|null }}
+ */
+export function promoteCoordinator(sessionId, agentId, database = null) {
+  let db = database || getDatabase();
+
+  // Verify agent is a participant
+  let participant = db.prepare(`
+    SELECT id, role FROM session_participants
+    WHERE session_id = ? AND participant_type = 'agent' AND participant_id = ?
+  `).get(sessionId, agentId);
+
+  if (!participant)
+    return { promoted: false, previousCoordinatorId: null, error: 'Agent is not a participant in this session' };
+
+  if (participant.role === 'coordinator')
+    return { promoted: false, previousCoordinatorId: null, error: 'Agent is already the coordinator' };
+
+  // Find current coordinator
+  let currentCoordinator = db.prepare(`
+    SELECT participant_id FROM session_participants
+    WHERE session_id = ? AND participant_type = 'agent' AND role = 'coordinator'
+    LIMIT 1
+  `).get(sessionId);
+
+  let previousCoordinatorId = currentCoordinator?.participant_id || null;
+
+  // Atomic swap: demote old coordinator, promote new
+  let promote = db.transaction(() => {
+    if (previousCoordinatorId) {
+      db.prepare(`
+        UPDATE session_participants SET role = 'member'
+        WHERE session_id = ? AND participant_type = 'agent' AND participant_id = ?
+      `).run(sessionId, previousCoordinatorId);
+    }
+
+    db.prepare(`
+      UPDATE session_participants SET role = 'coordinator'
+      WHERE session_id = ? AND participant_type = 'agent' AND participant_id = ?
+    `).run(sessionId, agentId);
+  });
+
+  promote();
+
+  return { promoted: true, previousCoordinatorId };
+}
+
+/**
+ * Update a participant's alias.
+ *
+ * @param {number} sessionId - Session ID
+ * @param {string} participantType - 'user' or 'agent'
+ * @param {number} participantId - User ID or Agent ID
+ * @param {string|null} alias - New alias (null to clear)
+ * @param {Database} [database] - Optional database instance (for testing)
+ * @returns {boolean} True if updated
+ */
+export function updateParticipantAlias(sessionId, participantType, participantId, alias, database = null) {
+  let db = database || getDatabase();
+
+  let result = db.prepare(`
+    UPDATE session_participants
+    SET alias = ?
+    WHERE session_id = ? AND participant_type = ? AND participant_id = ?
+  `).run(alias, sessionId, participantType, participantId);
+
+  return result.changes > 0;
+}
+
+/**
+ * Find an agent by name (case-insensitive) for a given user.
+ *
+ * @param {string} name - Agent name to search for
+ * @param {number} userId - Owner user ID
+ * @param {Database} [database] - Optional database instance (for testing)
+ * @returns {Object|null} Agent record or null
+ */
+export function findAgentByName(name, userId, database = null) {
+  let db = database || getDatabase();
+
+  return db.prepare(`
+    SELECT id, name, type, avatar_url
+    FROM agents
+    WHERE user_id = ? AND LOWER(name) = LOWER(?)
+  `).get(userId, name) || null;
 }
 
 export default {
@@ -413,4 +508,7 @@ export default {
   getParticipantSessions,
   loadSessionWithAgent,
   createSessionWithParticipants,
+  promoteCoordinator,
+  updateParticipantAlias,
+  findAgentByName,
 };

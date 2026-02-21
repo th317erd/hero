@@ -79,6 +79,7 @@ export function createTestDatabase() {
       participant_type TEXT NOT NULL CHECK(participant_type IN ('user', 'agent')),
       participant_id INTEGER NOT NULL,
       role TEXT DEFAULT 'member' CHECK(role IN ('owner', 'coordinator', 'member')),
+      alias TEXT,
       joined_at TEXT DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(session_id, participant_type, participant_id)
     );
