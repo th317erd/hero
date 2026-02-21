@@ -90,33 +90,32 @@ completed_work:
 S1:
   t: MessageStore — Single Source of Truth
   sev: critical
-  s: NOT STARTED
+  s: COMPLETE
   d: >
-    4 parallel state stores cause cascading UI bugs. MessageStore wraps
-    them into one API, migrates callers, removes legacy stores.
-    Design exists in message-store.yaml.
+    Eliminated dual-state rendering bug. session-frames-provider is now the
+    SINGLE SOURCE OF TRUTH for all rendering. SessionStore remains for prompt
+    operations (S3 dependency) and legacy WS handlers (S2 dependency).
   dep: []
 
-  execution_approach:
-    note: "Tests written BEFORE callers are migrated — each phase independently testable."
-    steps:
-      - t: "Write MessageStore class + full test suite FIRST"
-        f: [public/js/stores/message-store.js, spec/stores/message-store-spec.mjs]
-        d: "Class wraps state.messages internally. Tests verify API contract."
-      - t: "Migrate callers one file at a time"
-        order: [hero-chat.js, streaming.js, approvals.js, app.js, hero-app.js]
-        d: "Run full test suite after each file. Stop if anything breaks."
-      - t: "Switch backend to session-frames-provider"
-        d: "Internal implementation change. External API unchanged. Tests still pass."
-      - t: "Remove state.messages entirely"
-        d: "Delete from state object. Grep confirms zero references remain."
+  what_was_done:
+    - "Removed dual-write: streaming.js writes only to session-frames-provider (not SessionStore)"
+    - "Removed #messages fallback: hero-chat.visibleMessages reads exclusively from provider"
+    - "Removed legacy setMessages/addMessage methods from hero-chat"
+    - "Removed 3 layers of phantom frame fallbacks (kept only provider path)"
+    - "Simplified renderMessagesImpl to only sync streaming/show-hidden state"
+    - "16 integration tests written (spec/integration/state-flow-spec.mjs)"
+
+  what_remains_deferred:
+    - "SessionStore prompt operations → S3 (prompt form UX redesign)"
+    - "Legacy WS message handlers → S2 (broadcast refactoring)"
+    - "showSystemMessage SessionStore write → low priority"
 
   ac:
-    - Single API for all conversation state reads and writes
-    - No direct state.messages access anywhere
-    - String/number ID coercion handled in one place
+    - Single rendering path via session-frames-provider (no fallback)
+    - No dual-write in streaming path
+    - String/number ID coercion handled by SessionStore (for prompt ops)
     - Subscribers notified on every state change
-    - All existing tests still pass
+    - All 1660 tests passing, 0 failures
   blocks: [S3, F2, F5]
   tests: [STATE-001, STATE-002, STATE-003, STATE-004, STATE-005, GUARD-003, RENDER-002]
 

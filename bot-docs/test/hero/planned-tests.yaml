@@ -166,31 +166,31 @@ message_store:
   tests:
     - id: STATE-001
       t: GlobalState.heroSessions → sidebar update
-      s: pending
+      s: DONE
       f: spec/integration/state-flow-spec.mjs
       d: "Given hero-sidebar mounted, when GlobalState.heroSessions changes, then sidebar re-renders"
 
     - id: STATE-002
       t: Frames added to provider → chat re-renders
-      s: pending
+      s: DONE
       f: spec/integration/state-flow-spec.mjs
       d: "Given hero-chat mounted, when provider receives new frame, then chat shows new message"
 
     - id: STATE-003
       t: GlobalState.user changes → avatar updates
-      s: pending
+      s: DONE
       f: spec/integration/state-flow-spec.mjs
       d: "Given hero-chat mounted, when user changes, then avatar reflects new name"
 
     - id: STATE-004
       t: Session switch clears and reloads state
-      s: pending
+      s: DONE
       f: spec/integration/state-flow-spec.mjs
       d: "Given session A active, when switching to B, then frames reload, chat re-renders"
 
     - id: STATE-005
       t: Optimistic frame → real frame replacement
-      s: pending
+      s: DONE
       f: spec/integration/state-flow-spec.mjs
       d: "Given optimistic frame, when real arrives via WS, then optimistic removed"
 
@@ -546,7 +546,7 @@ standalone:
 
     # Render (written with relevant work item)
     - { id: RENDER-001, t: "_renderMessage correct structure", work_item: F1 }
-    - { id: RENDER-002, t: "_renderStreamingMessage has typing indicator", work_item: S1 }
+    - { id: RENDER-002, t: "_renderStreamingMessage has typing indicator", work_item: S1, s: DONE }
     - { id: RENDER-003, t: "_renderResultFrame hides success", work_item: S7, regression: "result-json-blob" }
     - { id: RENDER-004, t: "_renderRequestFrame shows action label", work_item: S7 }
     - { id: RENDER-006, t: "Hero-sidebar filters by search", work_item: standalone }
@@ -555,7 +555,7 @@ standalone:
 
     # Existing guards (written with relevant work item)
     - { id: GUARD-002, t: "Result frames hidden in render", work_item: S7, regression: true }
-    - { id: GUARD-003, t: "User avatar uses actual username", work_item: S1, regression: true }
+    - { id: GUARD-003, t: "User avatar uses actual username", work_item: S1, regression: true, s: DONE }
     - { id: GUARD-004, t: "Create agent no auto-open session modal", work_item: standalone, regression: true }
     - { id: GUARD-009, t: "Encrypted fields never leak plaintext", work_item: F6 }
 

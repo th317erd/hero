@@ -61,8 +61,6 @@ export class HeroChat extends HeroComponent {
   static tagName = 'hero-chat';
 
   // Component state (session-level)
-  // NOTE: #messages kept for backwards compatibility only
-  #messages = [];
   #showHiddenMessages = false;
   #streamingMessage = null;
   #unsubscribers = [];
@@ -117,11 +115,10 @@ export class HeroChat extends HeroComponent {
   /**
    * Get visible messages (filtered by hidden state).
    * Reads from session-frames-provider (SINGLE SOURCE OF TRUTH).
-   * Falls back to #messages for backwards compatibility.
    * @returns {Array}
    */
   get visibleMessages() {
-    let messages;
+    let messages = [];
     const provider = this.framesProvider;
 
     // Read from provider (single source of truth)
@@ -142,11 +139,6 @@ export class HeroChat extends HeroComponent {
           messages = displayableFrames.map((f) => this._frameToMessage(f, compiled));
         }
       }
-    }
-
-    // Fall back to #messages for backwards compatibility
-    if (!messages || messages.length === 0) {
-      messages = this.#messages;
     }
 
     return (this.#showHiddenMessages)
@@ -494,27 +486,6 @@ export class HeroChat extends HeroComponent {
   // ---------------------------------------------------------------------------
   // Public Methods
   // ---------------------------------------------------------------------------
-
-  /**
-   * Set messages array.
-   * @param {Array} messages
-   */
-  setMessages(messages) {
-    this.#messages = messages;
-    // Let content growth detection handle scrolling
-    this.renderDebounced();
-  }
-
-  /**
-   * Add a message.
-   * @param {object} message
-   */
-  addMessage(message) {
-    this.#messages.push(message);
-    this.renderDebounced();
-    // Force scroll when user sends a message
-    setTimeout(() => this.forceScrollToBottom(), 50);
-  }
 
   /**
    * Set streaming message state.

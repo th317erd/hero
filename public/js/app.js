@@ -147,6 +147,9 @@ const RENDER_MAX_WAIT_MS = 100;  // Max time before forced render
 
 /**
  * The actual render implementation.
+ * Session-frames-provider is the SINGLE SOURCE OF TRUTH for rendering.
+ * This function only syncs ancillary state (streaming, show-hidden) and
+ * triggers a re-render on hero-chat. It does NOT push messages to hero-chat.
  * @private
  */
 function renderMessagesImpl() {
@@ -162,29 +165,20 @@ function renderMessagesImpl() {
     renderMaxWaitTimer = null;
   }
 
-  // Get messages from SessionStore
-  const session = getCurrentSessionMessages();
-  const allMessages = session ? session.getAll({ includeHidden: true }) : [];
-
-  // Update hero-chat component
-  if (!elements.heroChat || typeof elements.heroChat.setMessages !== 'function')
+  if (!elements.heroChat)
     return;
 
   // Sync show-hidden state
-  elements.heroChat.setShowHiddenMessages(state.showHiddenMessages);
+  if (typeof elements.heroChat.setShowHiddenMessages === 'function')
+    elements.heroChat.setShowHiddenMessages(state.showHiddenMessages);
 
-  // Update messages and streaming state
-  elements.heroChat.setMessages(allMessages);
-  elements.heroChat.setStreaming(state.streamingMessage);
+  // Sync streaming state
+  if (typeof elements.heroChat.setStreaming === 'function')
+    elements.heroChat.setStreaming(state.streamingMessage);
 
-  // Attach event handlers for user prompt elements
-  allMessages.forEach((message) => {
-    if (message.id) {
-      let messageElement = document.getElementById(`message-${message.id}`);
-      if (messageElement)
-        attachUserPromptHandlers(messageElement, message.id);
-    }
-  });
+  // Trigger a re-render (hero-chat reads from session-frames-provider)
+  if (typeof elements.heroChat.renderDebounced === 'function')
+    elements.heroChat.renderDebounced();
 }
 
 /**

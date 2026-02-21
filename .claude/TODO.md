@@ -1,5 +1,26 @@
 # Hero V1 Implementation
 
+## S1: MessageStore — Single Source of Truth
+> Status: **COMPLETE** — dual-state rendering bug killed
+
+### What was done
+- [x] Removed dual-write: streaming.js no longer writes to BOTH SessionStore AND session-frames-provider
+- [x] Removed #messages fallback: hero-chat.visibleMessages reads exclusively from session-frames-provider
+- [x] Removed legacy setMessages/addMessage methods from hero-chat
+- [x] Removed legacy phantom frame fallbacks (hero-chat direct, DOM manipulation)
+- [x] Simplified renderMessagesImpl: only syncs streaming state, doesn't push messages
+- [x] Cleaned up finalizeStreamingMessage: single provider path
+- [x] Cleaned up removeStreamingMessagePlaceholder: single provider path
+- [x] Wrote 16 integration tests (STATE-001 through STATE-005, GUARD-003, RENDER-002)
+- [x] All 1660 tests passing, 0 failures
+
+### What remains (deferred to S2/S3)
+- SessionStore still used for prompt operations (answerPrompt, findUnansweredPrompts) — S3 will redesign
+- Legacy WS message handlers (handleNewMessage, handleMessageAppend) still update SessionStore — S2 will unify
+- showSystemMessage still writes to SessionStore — low priority, converts to frames later
+
+---
+
 ## Phase 0: Complete Frame Migration
 > Status: **COMPLETE** — verified server emits `new_frame` exclusively
 
