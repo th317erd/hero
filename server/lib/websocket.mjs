@@ -4,8 +4,17 @@ import { WebSocketServer } from 'ws';
 import { verifyToken } from '../auth.mjs';
 import { answerQuestion, cancelQuestion } from './assertions/pending-questions.mjs';
 import { handleApprovalResponse, cancelApproval } from './abilities/approval.mjs';
-import { handlePermissionResponse, cancelPermissionPrompt } from './permissions/prompt.mjs';
 import { handleQuestionAnswer as handleAbilityQuestionAnswer, cancelQuestion as cancelAbilityQuestion } from './abilities/question.mjs';
+
+// Lazy-loaded to avoid circular dependency:
+// prompt.mjs → broadcast.mjs → websocket.mjs → prompt.mjs
+let _permissionPrompt = null;
+function getPermissionPrompt() {
+  if (!_permissionPrompt) {
+    _permissionPrompt = import('./permissions/prompt.mjs');
+  }
+  return _permissionPrompt;
+}
 import { getInteractionBus } from './interactions/bus.mjs';
 import { getSessionFunctions, getUserFunctions } from './interactions/registry.mjs';
 import { getParticipantsByType } from './participants/index.mjs';
@@ -99,7 +108,7 @@ export function initWebSocket(server) {
     }
 
     // Handle incoming messages
-    ws.on('message', (data) => {
+    ws.on('message', async (data) => {
       try {
         let message = JSON.parse(data.toString());
 
@@ -183,7 +192,8 @@ export function initWebSocket(server) {
           // Permission prompt responses
           case 'permission_prompt_response':
             if (message.promptId && message.answer) {
-              let promptResult = handlePermissionResponse(
+              let permModule  = await getPermissionPrompt();
+              let promptResult = permModule.handlePermissionResponse(
                 message.promptId,
                 message.answer,
               );
@@ -199,7 +209,8 @@ export function initWebSocket(server) {
 
           case 'permission_prompt_cancel':
             if (message.promptId) {
-              cancelPermissionPrompt(message.promptId);
+              let permModule = await getPermissionPrompt();
+              permModule.cancelPermissionPrompt(message.promptId);
 
               ws.send(JSON.stringify({
                 type:     'permission_prompt_cancel_result',

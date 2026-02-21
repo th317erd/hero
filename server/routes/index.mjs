@@ -4,6 +4,7 @@ import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.mjs';
 import { rateLimit } from '../middleware/rate-limit.mjs';
 
+import { getDatabase } from '../database.mjs';
 import authRoutes from './auth.mjs';
 import agentsRoutes from './agents.mjs';
 import sessionsRoutes from './sessions.mjs';
@@ -52,9 +53,24 @@ router.use('/users', usersRoutes);
 router.use('/uploads', uploadsRoutes);       // File serving: /uploads/:id
 router.use('/sessions', uploadsRoutes);      // Upload + list: /sessions/:id/uploads
 
-// Health check
+// Health check — no auth required
 router.get('/health', (req, res) => {
-  res.json({ status: 'ok' });
+  let dbStatus = 'unknown';
+
+  try {
+    let db  = getDatabase();
+    let row = db.prepare('SELECT 1 AS ok').get();
+    dbStatus = (row && row.ok === 1) ? 'ok' : 'error';
+  } catch (error) {
+    dbStatus = 'error';
+  }
+
+  res.json({
+    status:  'ok',
+    version: '1.0.0',
+    uptime:  process.uptime(),
+    db:      dbStatus,
+  });
 });
 
 // SSE test endpoint

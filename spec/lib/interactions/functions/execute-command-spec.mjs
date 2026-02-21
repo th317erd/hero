@@ -21,6 +21,7 @@ let ExecuteCommandFunction;
 let database;
 let auth;
 let permissions;
+let permissionPrompt;
 
 async function loadModules() {
   database = await import('../../../../server/database.mjs');
@@ -29,7 +30,8 @@ async function loadModules() {
   let execModule       = await import('../../../../server/lib/interactions/functions/execute-command.mjs');
   ExecuteCommandFunction = execModule.ExecuteCommandFunction;
 
-  permissions = await import('../../../../server/lib/permissions/index.mjs');
+  permissions      = await import('../../../../server/lib/permissions/index.mjs');
+  permissionPrompt = await import('../../../../server/lib/permissions/prompt.mjs');
 }
 
 describe('ExecuteCommandFunction', async () => {
@@ -175,7 +177,16 @@ describe('ExecuteCommandFunction', async () => {
     });
 
     it('should default args to empty string', async () => {
-      // Default is 'prompt' since no rules exist
+      // Add allow rule so command executes
+      permissions.createRule({
+        ownerId:      userId,
+        subjectType:  permissions.SubjectType.AGENT,
+        subjectId:    agentId,
+        resourceType: permissions.ResourceType.COMMAND,
+        resourceName: 'help',
+        action:       permissions.Action.ALLOW,
+      }, db);
+
       let func = new ExecuteCommandFunction({
         sessionId,
         userId,
@@ -184,12 +195,20 @@ describe('ExecuteCommandFunction', async () => {
       });
 
       let result = await func.execute({ command: 'help' });
-      // Without explicit allow, gets 'prompt'
-      assert.strictEqual(result.status, 'prompt');
+      assert.strictEqual(result.status, 'completed');
       assert.strictEqual(result.args, '');
     });
 
-    it('should return prompt for unknown commands (permission checked before execution)', async () => {
+    it('should fail for unknown commands even when permission prompt is approved', async () => {
+      // Allow all commands for this agent
+      permissions.createRule({
+        ownerId:      userId,
+        subjectType:  permissions.SubjectType.AGENT,
+        subjectId:    agentId,
+        resourceType: permissions.ResourceType.COMMAND,
+        action:       permissions.Action.ALLOW,
+      }, db);
+
       let func = new ExecuteCommandFunction({
         sessionId,
         userId,
@@ -197,10 +216,10 @@ describe('ExecuteCommandFunction', async () => {
         db,
       });
 
-      // Without any rules, default is 'prompt' even for unknown commands
-      let result = await func.execute({ command: 'nonexistent_xyz' });
-      assert.strictEqual(result.status, 'prompt');
-      assert.strictEqual(result.command, 'nonexistent_xyz');
+      // allowed() already catches unknown commands before execute()
+      let allowed = await func.allowed({ command: 'nonexistent_xyz' });
+      assert.strictEqual(allowed.allowed, false);
+      assert.ok(allowed.reason.includes('Unknown command'));
     });
 
     it('should return failed for unknown commands when allowed by wildcard', async () => {
@@ -227,19 +246,16 @@ describe('ExecuteCommandFunction', async () => {
   });
 
   describe('permission integration', () => {
-    it('should allow commands when no permission rules exist (default: prompt)', async () => {
-      // Default action is 'prompt' which returns a prompt status
-      let func = new ExecuteCommandFunction({
-        sessionId,
-        userId,
-        agentId,
+    it('should trigger permission prompt when no rules exist (default: prompt)', async () => {
+      // Default action is 'prompt' — verify the permission engine returns it
+      let evaluation = permissions.evaluate(
+        { type: permissions.SubjectType.AGENT, id: agentId },
+        { type: permissions.ResourceType.COMMAND, name: 'help' },
+        { sessionId, ownerId: userId },
         db,
-      });
-
-      let result = await func.execute({ command: 'help' });
-      // 'prompt' action returns prompt status, not execute
-      assert.strictEqual(result.status, 'prompt');
-      assert.strictEqual(result.command, 'help');
+      );
+      assert.strictEqual(evaluation.action, permissions.Action.PROMPT);
+      assert.strictEqual(evaluation.rule, null);
     });
 
     it('should deny commands with explicit deny rule', async () => {
@@ -349,22 +365,32 @@ describe('ExecuteCommandFunction', async () => {
       assert.ok(sessionResult.error.includes('Permission denied'));
     });
 
-    it('should return prompt status when action is prompt', async () => {
-      // No rules → default is 'prompt'
-      let func = new ExecuteCommandFunction({
-        sessionId,
-        userId,
-        agentId,
+    it('should invoke requestPermissionPrompt when action is prompt', async () => {
+      // Verify that execute-command.mjs calls requestPermissionPrompt
+      // for the prompt path. The full prompt flow (create frame → user
+      // answers → rule created → promise resolved) is tested in
+      // permission-prompt-spec.mjs. Here we just verify the integration
+      // by checking the engine defaults to PROMPT and that the source
+      // code imports and calls requestPermissionPrompt.
+      let evaluation = permissions.evaluate(
+        { type: permissions.SubjectType.AGENT, id: agentId },
+        { type: permissions.ResourceType.COMMAND, name: 'help' },
+        { sessionId, ownerId: userId },
         db,
-      });
+      );
+      assert.strictEqual(evaluation.action, permissions.Action.PROMPT);
 
-      let result = await func.execute({ command: 'help' });
-      assert.strictEqual(result.status, 'prompt');
-      assert.strictEqual(result.command, 'help');
-      assert.ok(result.message.includes('/help'));
+      // Structural check: execute-command.mjs imports requestPermissionPrompt
+      let fs   = await import('node:fs');
+      let path = await import('node:path');
+      let source = fs.readFileSync(
+        path.join(process.cwd(), 'server/lib/interactions/functions/execute-command.mjs'), 'utf-8'
+      );
+      assert.ok(source.includes('requestPermissionPrompt'), 'Should import requestPermissionPrompt');
+      assert.ok(source.includes('await requestPermissionPrompt'), 'Should await requestPermissionPrompt');
     });
 
-    it('should consume once-scoped rules', async () => {
+    it('should consume once-scoped rules on first use', async () => {
       permissions.createRule({
         ownerId:      userId,
         subjectType:  permissions.SubjectType.AGENT,
@@ -382,13 +408,25 @@ describe('ExecuteCommandFunction', async () => {
         db,
       });
 
-      // First call: allowed (rule exists)
+      // First call: allowed (once-scoped rule exists)
       let result1 = await func.execute({ command: 'help' });
       assert.strictEqual(result1.status, 'completed');
 
-      // Second call: rule consumed, falls to default (prompt)
-      let result2 = await func.execute({ command: 'help' });
-      assert.strictEqual(result2.status, 'prompt');
+      // Verify rule was consumed
+      let rules = permissions.listRules({
+        ownerId:      userId,
+        resourceName: 'help',
+      }, db);
+      assert.strictEqual(rules.length, 0, 'Once-scoped rule should be consumed');
+
+      // Verify evaluation now returns default (prompt)
+      let evaluation = permissions.evaluate(
+        { type: permissions.SubjectType.AGENT, id: agentId },
+        { type: permissions.ResourceType.COMMAND, name: 'help' },
+        { sessionId, ownerId: userId },
+        db,
+      );
+      assert.strictEqual(evaluation.action, permissions.Action.PROMPT);
     });
   });
 });

@@ -499,6 +499,44 @@
 
 ---
 
+## F2: Permission Prompts as Channel-Wide Forms
+> Status: **COMPLETE**
+
+### What was done
+- [x] Created `server/lib/permissions/prompt.mjs` — Permission prompt request/response system
+  - `requestPermissionPrompt(subject, resource, context)` — creates system message frame with `<hml-prompt>` (radio type), returns Promise
+  - `handlePermissionResponse(promptId, answer)` — resolves pending promise, creates permission rule
+  - `isPermissionPrompt(promptId)` — identifies `perm-*` prompt IDs
+  - `cancelPermissionPrompt(promptId)` — resolves with deny
+  - SHA-256 request hash for integrity
+  - 5-minute default timeout
+  - Options: Allow once / Allow for session / Always allow / Deny
+- [x] Wired `execute-command.mjs`: `Action.PROMPT` now calls `requestPermissionPrompt()` and awaits response
+  - Removed dead-end `{status: 'prompt'}` return
+  - If user denies, returns `{status: 'failed'}` with "Permission denied by user"
+  - If user approves, proceeds to execute the command
+- [x] Wired `prompt-update.mjs`: Intercepts `perm-*` prompt answers after frame update
+  - Calls `handlePermissionResponse()` which creates the permission rule and resolves the promise
+- [x] Added WebSocket handler for `permission_prompt_response` and `permission_prompt_cancel` (prior session, websocket.mjs)
+  - Lazy-loaded imports to avoid circular dependency: prompt.mjs → broadcast.mjs → websocket.mjs → prompt.mjs
+  - Made WS message handler async for lazy import support
+- [x] Updated 5 execute-command-spec tests: old dead-end `status: 'prompt'` assertions → new prompt flow
+- [x] Created `spec/lib/permission-prompt-spec.mjs` — 42 tests (PERMUI-001 through INT-003)
+  - PERMUI-001: Module structure (10 tests)
+  - PERMUI-002: handlePermissionResponse resolves promise (6 tests)
+  - PERMUI-003: Rule creation for each answer type (4 tests)
+  - PERMUI-004: Timeout behavior (1 test)
+  - PERMUI-005: isPermissionPrompt identification (2 tests)
+  - PERMUI-006: cancelPermissionPrompt (3 tests)
+  - PERMUI-007: Duplicate resolution prevention (1 test)
+  - INT-001: execute-command.mjs wiring (5 tests)
+  - INT-002: prompt-update.mjs interception (5 tests)
+  - INT-003: Created rules integrate with evaluate() (3 tests)
+  - Edge cases: empty/null answers (2 tests)
+- [x] All 2061 tests passing, 0 failures
+
+---
+
 ## F4: Client Page Routing + Settings UI
 > Status: **COMPLETE**
 
@@ -514,3 +552,40 @@
 - [x] Created `spec/components/settings-spec.mjs` — 70 structural tests (ROUTE-001 through API-001, component registration, behavioral validation)
 - [x] Added 6 settings route tests + updated view display tests in `spec/lib/routing-spec.mjs`
 - [x] All 1428 tests passing, 0 failures
+
+---
+
+## X3: Health Check Endpoint Enhancement
+> Status: **COMPLETE**
+
+### What was done
+- [x] Enhanced `/health` endpoint in `server/routes/index.mjs` — now returns version, uptime, db connectivity
+- [x] Added `getDatabase` import and try/catch DB connectivity check (`SELECT 1 AS ok`)
+- [x] Returns `{ status: 'ok', version: '1.0.0', uptime: process.uptime(), db: 'ok'|'error' }`
+- [x] Created `spec/routes/health-spec.mjs` — 7 structural tests
+- [x] All tests passing
+
+---
+
+## F6: API Key Scope Enforcement
+> Status: **COMPLETE**
+
+### What was done
+- [x] Added `SCOPE_MAP` array in `server/middleware/auth.mjs` — maps HTTP method + path to required scopes
+  - Sessions: read:sessions (GET), write:sessions (POST/PUT/DELETE)
+  - Agents: read:agents (GET), write:agents (POST/PUT/DELETE)
+  - Permissions: read:permissions (GET), write:permissions (POST/DELETE)
+  - Users/profile: read:profile (GET), write:profile (PUT)
+- [x] Added `checkApiKeyScopes(scopes, method, path)` function — pure, testable
+  - Empty scopes = full access (backwards compatible)
+  - No matching rule = allow (unscoped endpoints like /health, /help)
+- [x] Wired into `requireAuth` middleware — returns 403 for insufficient scope
+- [x] Exported `checkApiKeyScopes` and `SCOPE_MAP` as named + default exports
+- [x] Created `spec/middleware/auth-scope-spec.mjs` — 39 tests (GUARD-009)
+  - Empty/null/undefined scopes → full access
+  - Per-resource scope enforcement (sessions, agents, permissions, profile)
+  - Multiple scopes on a single key
+  - Unscoped endpoints passthrough
+  - SCOPE_MAP structure validation
+  - Export wiring verification
+- [x] All 2122 tests passing, 0 failures
