@@ -2,6 +2,7 @@
  * Tests for hero-chat.js
  *
  * Tests HeroChat component:
+ * - Source integrity (private field declarations)
  * - Message list rendering
  * - Message visibility filtering
  * - Scroll behavior
@@ -10,6 +11,43 @@
 
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert';
+import fs from 'node:fs';
+
+// ============================================================================
+// CHAT-SRC: Source integrity — every private field used is declared
+// ============================================================================
+
+describe('CHAT-SRC: hero-chat.js source integrity', () => {
+  let source;
+
+  beforeEach(() => {
+    source = fs.readFileSync('public/js/components/hero-chat/hero-chat.js', 'utf8');
+  });
+
+  it('should declare every private field that is used', () => {
+    // Extract all private field USAGES: this.#fieldName
+    let usageMatches = source.matchAll(/this\.#(\w+)/g);
+    let usedFields   = new Set([...usageMatches].map((m) => m[1]));
+
+    // Extract all private field DECLARATIONS: #fieldName = or #fieldName;
+    // Class private fields are declared at the top of the class body
+    let declMatches    = source.matchAll(/^\s+#(\w+)\s*[=;]/gm);
+    let declaredFields = new Set([...declMatches].map((m) => m[1]));
+
+    // Also include private METHOD declarations: #methodName(
+    let methodMatches   = source.matchAll(/^\s+#(\w+)\s*\(/gm);
+    let declaredMethods = new Set([...methodMatches].map((m) => m[1]));
+
+    let allDeclared = new Set([...declaredFields, ...declaredMethods]);
+
+    for (let field of usedFields) {
+      assert.ok(
+        allDeclared.has(field),
+        `Private field '#${field}' is used (this.#${field}) but never declared in the class`,
+      );
+    }
+  });
+});
 
 // Mock DynamicProperty
 const mockDynamicProperty = {

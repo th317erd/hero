@@ -460,8 +460,6 @@ export class HeroChat extends HeroComponent {
    * @param {object} session
    */
   async _loadSession(session) {
-    // Reset local state (backwards compatibility)
-    this.#messages = session.messages || [];
     this.#streamingMessage = null;
 
     // Provider handles frame loading via GlobalState.currentSession subscription
@@ -478,7 +476,6 @@ export class HeroChat extends HeroComponent {
    * Clear session state.
    */
   _clearSession() {
-    this.#messages = [];
     this.#streamingMessage = null;
     this.render();
   }
