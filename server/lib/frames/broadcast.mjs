@@ -9,7 +9,7 @@ import { randomUUID } from 'node:crypto';
 
 import { createFrame, FrameType, AuthorType } from './index.mjs';
 import { sanitizeHtml } from '../html-sanitizer.mjs';
-import { broadcastToUser } from '../websocket.mjs';
+import { broadcastToSession } from '../websocket.mjs';
 
 // Debug logging
 const DEBUG = process.env.DEBUG === 'true' || process.env.DEBUG === '1';
@@ -71,9 +71,9 @@ export function createAndBroadcastFrame(options, db = null) {
     skipBroadcast,
   });
 
-  // Broadcast to WebSocket clients
-  if (!skipBroadcast && userId) {
-    broadcastToUser(userId, {
+  // Broadcast to ALL session participants via WebSocket
+  if (!skipBroadcast && sessionId) {
+    broadcastToSession(sessionId, {
       type: 'new_frame',
       sessionId,
       frame: {

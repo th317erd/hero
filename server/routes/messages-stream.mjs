@@ -23,7 +23,7 @@ import { executePipeline } from '../lib/pipeline/index.mjs';
 import { getStartupAbilities, getAbility } from '../lib/abilities/registry.mjs';
 import { checkConditionalAbilities, formatConditionalInstructions } from '../lib/abilities/index.mjs';
 import { checkApprovalRequired, requestApproval } from '../lib/abilities/approval.mjs';
-import { broadcastToUser } from '../lib/websocket.mjs';
+import { broadcastToSession } from '../lib/websocket.mjs';
 import { detectInteractions, executeInteractions, formatInteractionFeedback, searchWeb } from '../lib/interactions/index.mjs';
 import { checkCompaction } from '../lib/compaction.mjs';
 import { loadFramesForContext } from '../lib/frames/context.mjs';
@@ -258,7 +258,7 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
     }
 
     // Also broadcast to WebSocket for other connected clients
-    broadcastToUser(req.user.id, {
+    broadcastToSession(parseInt(req.params.sessionId, 10), {
       type:      `stream_${event}`,
       sessionId: req.params.sessionId,
       ...data,

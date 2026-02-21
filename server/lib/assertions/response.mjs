@@ -1,6 +1,6 @@
 'use strict';
 
-import { broadcastToUser } from '../websocket.mjs';
+import { broadcastToSession } from '../websocket.mjs';
 
 /**
  * Response assertion handler.
@@ -28,7 +28,7 @@ export default {
     let { id, name, message } = assertion;
 
     // Broadcast message to user via WebSocket
-    broadcastToUser(context.userId, {
+    broadcastToSession(context.sessionId, {
       type:        'message_append',
       messageId:   context.messageId,
       assertionId: id,

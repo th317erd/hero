@@ -7,6 +7,7 @@ import { handleApprovalResponse, cancelApproval } from './abilities/approval.mjs
 import { handleQuestionAnswer as handleAbilityQuestionAnswer, cancelQuestion as cancelAbilityQuestion } from './abilities/question.mjs';
 import { getInteractionBus } from './interactions/bus.mjs';
 import { getSessionFunctions, getUserFunctions } from './interactions/registry.mjs';
+import { getParticipantsByType } from './participants/index.mjs';
 
 // Connected clients (userId -> Set of WebSocket connections)
 const clients = new Map();
@@ -28,7 +29,12 @@ export function initWebSocket(server) {
 
     // When interaction bus needs user input, broadcast via WebSocket
     bus.on('user_interaction', (interaction) => {
-      if (interaction.user_id) {
+      if (interaction.session_id) {
+        broadcastToSession(interaction.session_id, {
+          type:        'interaction_request',
+          interaction: interaction,
+        });
+      } else if (interaction.user_id) {
         broadcastToUser(interaction.user_id, {
           type:        'interaction_request',
           interaction: interaction,
@@ -266,6 +272,33 @@ export function broadcastToUser(userId, message) {
 }
 
 /**
+ * Broadcast a message to all connected user participants in a session.
+ *
+ * Looks up all user-type participants for the given session and broadcasts
+ * to each of their connected WebSocket clients. This is the primary
+ * broadcast function — ALL session events go to ALL participants.
+ *
+ * @param {number} sessionId - Session ID
+ * @param {object} message - Message to send
+ */
+export function broadcastToSession(sessionId, message) {
+  let participants = getParticipantsByType(sessionId, 'user');
+  let payload = JSON.stringify(message);
+
+  for (let participant of participants) {
+    let userClients = clients.get(participant.participantId);
+
+    if (!userClients)
+      continue;
+
+    for (let ws of userClients) {
+      if (ws.readyState === ws.OPEN)
+        ws.send(payload);
+    }
+  }
+}
+
+/**
  * Get the number of connected clients for a user.
  *
  * @param {number} userId - User ID
@@ -275,12 +308,9 @@ export function getClientCount(userId) {
   return clients.get(userId)?.size || 0;
 }
 
-// Alias for compatibility
-export const broadcast = broadcastToUser;
-
 export default {
   initWebSocket,
   broadcastToUser,
-  broadcast,
+  broadcastToSession,
   getClientCount,
 };

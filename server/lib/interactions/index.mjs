@@ -144,16 +144,22 @@ export function initializeInteractions(options = {}) {
 /**
  * Connect the interaction bus to WebSocket for user interactions.
  *
- * @param {Function} broadcast - Function to broadcast to user (userId, message)
+ * @param {Function} broadcastToSession - Function to broadcast to session (sessionId, message)
+ * @param {Function} broadcastToUser - Fallback for interactions without session context (userId, message)
  * @returns {Function} Handler for incoming WebSocket messages
  */
-export function connectToWebSocket(broadcast) {
+export function connectToWebSocket(broadcastToSession, broadcastToUser) {
   let bus = _getInteractionBus();
 
   // When an interaction needs user input, broadcast via WebSocket
   bus.on('user_interaction', (interaction) => {
-    if (interaction.user_id) {
-      broadcast(interaction.user_id, {
+    if (interaction.session_id) {
+      broadcastToSession(interaction.session_id, {
+        type:        'interaction_request',
+        interaction: interaction,
+      });
+    } else if (interaction.user_id && broadcastToUser) {
+      broadcastToUser(interaction.user_id, {
         type:        'interaction_request',
         interaction: interaction,
       });

@@ -1,6 +1,6 @@
 'use strict';
 
-import { broadcastToUser } from '../websocket.mjs';
+import { broadcastToSession } from '../websocket.mjs';
 
 /**
  * TODO assertion handler.
@@ -45,8 +45,8 @@ export default {
       status: (validStatuses.includes(item.status)) ? item.status : 'pending',
     }));
 
-    // Broadcast todo element to user via WebSocket
-    broadcastToUser(context.userId, {
+    // Broadcast todo element to all session participants via WebSocket
+    broadcastToSession(context.sessionId, {
       type:      'element_new',
       messageId: context.messageId,
       element: {
@@ -77,14 +77,14 @@ export default {
  * Helper to broadcast a TODO item status update.
  * Call this from operation handlers to update task progress.
  *
- * @param {number} userId - User ID to broadcast to
+ * @param {number} sessionId - Session ID to broadcast to
  * @param {string} messageId - Message ID containing the TODO
  * @param {string} elementId - The TODO element ID
  * @param {string} itemId - The item ID to update
  * @param {string} status - New status (pending, in_progress, completed)
  */
-export function updateTodoItem(userId, messageId, elementId, itemId, status) {
-  broadcastToUser(userId, {
+export function updateTodoItem(sessionId, messageId, elementId, itemId, status) {
+  broadcastToSession(sessionId, {
     type:      'todo_item_update',
     messageId,
     elementId,

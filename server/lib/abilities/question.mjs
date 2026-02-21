@@ -6,7 +6,7 @@
 // Handles asking users questions with different answer types.
 
 import { randomUUID } from 'crypto';
-import { broadcast } from '../websocket.mjs';
+import { broadcastToSession } from '../websocket.mjs';
 
 // In-memory pending questions (questionId -> resolver)
 const pendingQuestions = new Map();
@@ -92,8 +92,8 @@ export async function askQuestion(prompt, options, context) {
   if (!questionTypes[type])
     throw new Error(`Invalid question type: ${type}`);
 
-  // Broadcast question to user via WebSocket
-  broadcast(context.userId, {
+  // Broadcast question to all session participants via WebSocket
+  broadcastToSession(context.sessionId, {
     type:         'ability_question',
     questionId:   questionId,
     questionType: type,
@@ -124,10 +124,11 @@ export async function askQuestion(prompt, options, context) {
         if (pendingQuestions.has(questionId)) {
           pendingQuestions.delete(questionId);
 
-          // Broadcast timeout notification
-          broadcast(context.userId, {
+          // Broadcast timeout notification to all session participants
+          broadcastToSession(context.sessionId, {
             type:       'ability_question_timeout',
             questionId: questionId,
+            sessionId:  context.sessionId,
           });
 
           resolve(defaultValue);

@@ -8,7 +8,7 @@
 
 import { InteractionFunction, PERMISSION } from '../function.mjs';
 import { getDatabase } from '../../../database.mjs';
-import { broadcastToUser } from '../../websocket.mjs';
+import { broadcastToSession } from '../../websocket.mjs';
 
 /**
  * PromptUpdate Function class.
@@ -243,11 +243,9 @@ export class PromptUpdateFunction extends InteractionFunction {
     }
     db.prepare('UPDATE frames SET payload = ? WHERE id = ?').run(JSON.stringify(framePayload), message_id);
 
-    // Broadcast the frame update via WebSocket so clients re-render immediately
-    // The context contains userId from the interaction
-    let userId = this.context?.userId;
-    if (userId) {
-      broadcastToUser(userId, {
+    // Broadcast the frame update to all session participants via WebSocket
+    if (frame.session_id) {
+      broadcastToSession(frame.session_id, {
         type:          'frame_update',
         sessionId:     frame.session_id,
         targetFrameId: message_id,

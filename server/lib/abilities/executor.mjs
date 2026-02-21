@@ -7,7 +7,7 @@
 
 import { getAbility } from './registry.mjs';
 import { checkApprovalRequired, requestApproval, grantSessionApproval } from './approval.mjs';
-import { broadcast } from '../websocket.mjs';
+import { broadcastToSession } from '../websocket.mjs';
 import { injectProcesses, buildProcessMap } from '../processes/index.mjs';
 
 /**
@@ -34,8 +34,8 @@ export async function executeAbility(abilityName, params, context) {
     };
   }
 
-  // Broadcast execution start
-  broadcast(context.userId, {
+  // Broadcast execution start to all session participants
+  broadcastToSession(context.sessionId, {
     type:        'ability_execution_start',
     abilityName: ability.name,
     abilityType: ability.type,
@@ -58,7 +58,7 @@ export async function executeAbility(abilityName, params, context) {
       );
 
       if (approval.status !== 'approved') {
-        broadcast(context.userId, {
+        broadcastToSession(context.sessionId, {
           type:        'ability_execution_denied',
           abilityName: ability.name,
           reason:      approval.reason,
@@ -93,8 +93,8 @@ export async function executeAbility(abilityName, params, context) {
       };
     }
 
-    // Broadcast execution complete
-    broadcast(context.userId, {
+    // Broadcast execution complete to all session participants
+    broadcastToSession(context.sessionId, {
       type:        'ability_execution_complete',
       abilityName: ability.name,
       abilityType: ability.type,
@@ -105,8 +105,8 @@ export async function executeAbility(abilityName, params, context) {
     return result;
 
   } catch (error) {
-    // Broadcast execution error
-    broadcast(context.userId, {
+    // Broadcast execution error to all session participants
+    broadcastToSession(context.sessionId, {
       type:        'ability_execution_error',
       abilityName: ability.name,
       error:       error.message,

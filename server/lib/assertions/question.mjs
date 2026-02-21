@@ -1,6 +1,6 @@
 'use strict';
 
-import { broadcastToUser } from '../websocket.mjs';
+import { broadcastToSession } from '../websocket.mjs';
 import {
   setPendingQuestion,
   hasPendingQuestion,
@@ -57,7 +57,7 @@ export default {
     }
 
     // Broadcast question to user via WebSocket
-    broadcastToUser(context.userId, {
+    broadcastToSession(context.sessionId, {
       type:        'question_prompt',
       messageId:   context.messageId,
       assertionId: id,

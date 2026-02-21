@@ -1,6 +1,6 @@
 'use strict';
 
-import { broadcastToUser } from '../websocket.mjs';
+import { broadcastToSession } from '../websocket.mjs';
 
 /**
  * Thinking assertion handler.
@@ -28,7 +28,7 @@ export default {
     let { id, name, message } = assertion;
 
     // Broadcast thinking status to user via WebSocket
-    broadcastToUser(context.userId, {
+    broadcastToSession(context.sessionId, {
       type:        'assertion_update',
       messageId:   context.messageId,
       assertionId: id,

@@ -1,6 +1,6 @@
 'use strict';
 
-import { broadcastToUser } from '../websocket.mjs';
+import { broadcastToSession } from '../websocket.mjs';
 
 /**
  * Progress assertion handler.
@@ -30,8 +30,8 @@ export default {
     // Normalize percentage to 0-100
     let normalizedPercentage = Math.max(0, Math.min(100, Number(percentage) || 0));
 
-    // Broadcast progress element to user via WebSocket
-    broadcastToUser(context.userId, {
+    // Broadcast progress element to all session participants via WebSocket
+    broadcastToSession(context.sessionId, {
       type:      'element_new',
       messageId: context.messageId,
       element: {
@@ -56,13 +56,13 @@ export default {
  * Helper to broadcast a progress update.
  * Call this from operation handlers to update progress.
  *
- * @param {number} userId - User ID to broadcast to
+ * @param {number} sessionId - Session ID to broadcast to
  * @param {string} messageId - Message ID containing the progress
  * @param {string} elementId - The progress element ID
  * @param {object} updates - Fields to update (percentage, label, status)
  */
-export function updateProgress(userId, messageId, elementId, updates) {
-  broadcastToUser(userId, {
+export function updateProgress(sessionId, messageId, elementId, updates) {
+  broadcastToSession(sessionId, {
     type:      'element_update',
     messageId,
     elementId,

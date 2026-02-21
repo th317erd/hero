@@ -297,6 +297,28 @@
 
 ---
 
+## S2: WebSocket Broadcast to All Channel Participants
+> Status: **COMPLETE**
+
+### What was done
+- [x] Added `broadcastToSession(sessionId, message)` to `server/lib/websocket.mjs`
+- [x] Looks up all user-type participants via `getParticipantsByType(sessionId, 'user')`
+- [x] Converted ALL 22+ broadcast call sites from `broadcastToUser`/`broadcast` to `broadcastToSession`:
+  - `server/lib/frames/broadcast.mjs` — createAndBroadcastFrame
+  - `server/lib/assertions/` — thinking, progress, link, question, response, todo
+  - `server/lib/abilities/` — approval, executor, question
+  - `server/lib/compaction.mjs` — compaction complete broadcast
+  - `server/lib/interactions/functions/prompt-update.mjs` — frame update broadcast
+  - `server/routes/messages-stream.mjs` — streaming error broadcast
+  - `server/lib/websocket.mjs` — interaction bus handler (session_id preferred, user_id fallback)
+  - `server/lib/interactions/index.mjs` — connectToWebSocket signature updated
+- [x] Removed `broadcast` alias export from websocket.mjs (dead code)
+- [x] Changed `updateProgress` and `updateTodoItem` helper signatures: userId → sessionId
+- [x] Wrote 18 tests: PARTY-005, BCAST-001, BCAST-002, INT-005, function contracts
+- [x] All 1799 tests passing, 0 failures
+
+---
+
 ## S4: Wire BEFORE_TOOL Hook into Interaction Detector
 > Status: **COMPLETE**
 

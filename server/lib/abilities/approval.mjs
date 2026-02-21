@@ -7,7 +7,7 @@
 
 import { randomUUID, createHash } from 'crypto';
 import { getDatabase } from '../../database.mjs';
-import { broadcast } from '../websocket.mjs';
+import { broadcastToSession } from '../websocket.mjs';
 
 // In-memory pending approvals (executionId -> resolver + security context)
 const pendingApprovals = new Map();
@@ -142,8 +142,8 @@ export async function requestApproval(ability, params, context, timeout = 0) {
     JSON.stringify(params)
   );
 
-  // Broadcast approval request to user via WebSocket
-  broadcast(context.userId, {
+  // Broadcast approval request to all session participants via WebSocket
+  broadcastToSession(context.sessionId, {
     type:        'ability_approval_request',
     executionId: executionId,
     requestHash: requestHash,

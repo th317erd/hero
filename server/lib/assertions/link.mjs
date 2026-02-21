@@ -1,6 +1,6 @@
 'use strict';
 
-import { broadcastToUser } from '../websocket.mjs';
+import { broadcastToSession } from '../websocket.mjs';
 
 /**
  * Link assertion handler.
@@ -61,7 +61,7 @@ export default {
     }
 
     // Broadcast link element to user via WebSocket
-    broadcastToUser(context.userId, {
+    broadcastToSession(context.sessionId, {
       type:        'element_new',
       messageId:   context.messageId,
       element: {

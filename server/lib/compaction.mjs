@@ -23,7 +23,7 @@ import {
   FrameType,
 } from './frames/index.mjs';
 import { createCompactFrame } from './frames/broadcast.mjs';
-import { broadcastToUser } from './websocket.mjs';
+import { broadcastToSession } from './websocket.mjs';
 
 // Default settings (can be overridden per-agent)
 const DEFAULT_MIN_THRESHOLD = 15;  // Start debounced compaction
@@ -165,7 +165,7 @@ async function performCompaction(sessionId, userId, agent) {
     });
 
     // Broadcast to user that compaction happened
-    broadcastToUser(userId, {
+    broadcastToSession(sessionId, {
       type:         'compaction_complete',
       sessionId:    sessionId,
       messageCount: messageCount,
