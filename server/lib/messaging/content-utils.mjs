@@ -43,9 +43,9 @@ export function deduplicateParagraphs(text) {
 export function stripInteractionTags(text) {
   if (!text) return text;
 
-  // Match <interaction>...</interaction> including content
+  // Match <interaction>...</interaction> including content (with or without attributes)
   // Uses non-greedy match and handles multiline
-  let result = text.replace(/<interaction>[\s\S]*?<\/interaction>/g, '');
+  let result = text.replace(/<interaction(?:\s[^>]*)?>[\s\S]*?<\/interaction>/g, '');
 
   // Clean up extra whitespace left behind
   result = result.replace(/\n{3,}/g, '\n\n').trim();
@@ -70,12 +70,12 @@ export function replaceInteractionTagsWithNote(text) {
   if (!text) return text;
 
   // Check if this contains an update_prompt interaction
-  let hasUpdatePrompt = /<interaction>[\s\S]*?"target_property":\s*"update_prompt"[\s\S]*?<\/interaction>/i.test(text);
+  let hasUpdatePrompt = /<interaction(?:\s[^>]*)?>[\s\S]*?"target_property":\s*"update_prompt"[\s\S]*?<\/interaction>/i.test(text);
 
   if (hasUpdatePrompt) {
     // Replace update_prompt interaction with a note
     let result = text.replace(
-      /<interaction>[\s\S]*?<\/interaction>/g,
+      /<interaction(?:\s[^>]*)?>[\s\S]*?<\/interaction>/g,
       '\n\n[System: This prompt answer was submitted via the inline input and has already been processed. Do NOT send an update_prompt interaction - the prompt is already updated.]'
     );
     return result.replace(/\n{3,}/g, '\n\n').trim();

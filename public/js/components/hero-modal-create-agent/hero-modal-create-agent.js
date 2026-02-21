@@ -160,10 +160,6 @@ export class HeroModalCreateAgent extends HeroModal {
       this.setGlobal('agents', agents);
 
       this.close();
-
-      document.dispatchEvent(new CustomEvent('show-modal', {
-        detail: { modal: 'create-session' },
-      }));
     } catch (error) {
       this.error = error.message;
     }

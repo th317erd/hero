@@ -62,7 +62,7 @@ The <thinking> block will be shown to the user in a collapsible "thinking" displ
       let { userMessage, sessionID, testDb } = context;
 
       // If the user's message already contains an interaction tag, they're using IPC
-      if (userMessage.includes('<interaction>')) {
+      if (userMessage.includes('<interaction')) {
         return { matches: false };
       }
 

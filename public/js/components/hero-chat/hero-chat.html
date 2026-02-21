@@ -47,20 +47,25 @@
   hero-chat .message-header {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     font-size: 12px;
     font-weight: 600;
     color: var(--text-muted, #6b7280);
-    margin-bottom: 4px;
-    padding: 0 8px;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   }
 
   hero-chat .message-avatar {
-    width: 20px;
-    height: 20px;
-    border-radius: 4px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
     object-fit: cover;
     flex-shrink: 0;
+  }
+
+  hero-chat .header-name {
+    line-height: 22px;
   }
 
   hero-chat .message-attachments {

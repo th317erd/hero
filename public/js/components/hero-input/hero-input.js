@@ -30,6 +30,8 @@ export class HeroInput extends HeroComponent {
   #maxHeight = 150;
   #unsubscribers = [];
   #pendingFiles = [];
+  #draftTimer = null;
+  #DRAFT_DEBOUNCE_MS = 100;
 
   // ---------------------------------------------------------------------------
   // Shadow DOM
@@ -112,6 +114,7 @@ export class HeroInput extends HeroComponent {
       this.subscribeGlobal('currentSession', () => {
         this._updateDisabledState();
         this._updateButtonState();
+        this._restoreDraft();
         this.focus();
       })
     );
@@ -119,6 +122,7 @@ export class HeroInput extends HeroComponent {
     // Initial state update
     this._updateDisabledState();
     this._updateButtonState();
+    this._restoreDraft();
   }
 
   /**
@@ -192,8 +196,9 @@ export class HeroInput extends HeroComponent {
     if (!content) return;
     if (!this.currentSession) return;
 
-    // Clear input immediately
+    // Clear input and draft
     this.clear();
+    this._clearDraft();
 
     // Commands are now handled server-side - send them like regular messages
     // The server will intercept /command patterns and execute them
@@ -221,9 +226,10 @@ export class HeroInput extends HeroComponent {
       return;
     }
 
-    // Escape clears input
+    // Escape clears input and draft
     if (e.key === 'Escape') {
       this.clear();
+      this._clearDraft();
       return;
     }
   }
@@ -241,6 +247,9 @@ export class HeroInput extends HeroComponent {
 
     // Enable scrolling when content exceeds max height
     textarea.style.overflowY = (textarea.scrollHeight > this.#maxHeight) ? 'auto' : 'hidden';
+
+    // Save draft (debounced)
+    this._saveDraftDebounced();
   }
 
   /**
@@ -443,6 +452,68 @@ export class HeroInput extends HeroComponent {
       bar.appendChild(chip);
     });
   }
+
+  // ---------------------------------------------------------------------------
+  // Draft Persistence (sessionStorage, keyed by session ID)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Get the sessionStorage key for the current session's draft.
+   * @returns {string|null}
+   */
+  _draftKey() {
+    let sessionId = this.currentSession?.id;
+    return sessionId ? `hero-draft-${sessionId}` : null;
+  }
+
+  /**
+   * Save draft to sessionStorage (debounced).
+   */
+  _saveDraftDebounced() {
+    clearTimeout(this.#draftTimer);
+    this.#draftTimer = setTimeout(() => this._saveDraft(), this.#DRAFT_DEBOUNCE_MS);
+  }
+
+  /**
+   * Save current textarea value to sessionStorage.
+   */
+  _saveDraft() {
+    let key   = this._draftKey();
+    let value = this.value;
+
+    if (!key) return;
+
+    if (value)
+      sessionStorage.setItem(key, value);
+    else
+      sessionStorage.removeItem(key);
+  }
+
+  /**
+   * Restore draft from sessionStorage into the textarea.
+   */
+  _restoreDraft() {
+    let key = this._draftKey();
+    if (!key) return;
+
+    let draft = sessionStorage.getItem(key);
+    if (draft) {
+      this.value = draft;  // triggers autoResize via setter
+    }
+  }
+
+  /**
+   * Clear draft from sessionStorage.
+   */
+  _clearDraft() {
+    let key = this._draftKey();
+    if (key)
+      sessionStorage.removeItem(key);
+  }
+
+  // ---------------------------------------------------------------------------
+  // UI State Updates
+  // ---------------------------------------------------------------------------
 
   /**
    * Update send button state.

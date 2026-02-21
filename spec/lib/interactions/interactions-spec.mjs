@@ -586,6 +586,94 @@ Second search:
       assert.equal(result.interactions[0].interaction_id, 'edge-case');
       assert.ok(result.interactions[0].payload.message.includes('</interaction>'));
     });
+
+    // =========================================================================
+    // Attribute-format interaction tags (LLM format deviation)
+    // =========================================================================
+
+    it('should detect <interaction> with HTML attributes and JSON body', () => {
+      let content = `<interaction type="websearch">
+{"interaction_id": "ws-1", "target_id": "@system", "target_property": "websearch", "payload": {"query": "latest news"}}
+</interaction>`;
+
+      let result = detectInteractions(content);
+      assert.ok(result);
+      assert.equal(result.interactions.length, 1);
+      assert.equal(result.interactions[0].target_property, 'websearch');
+      assert.equal(result.interactions[0].payload.query, 'latest news');
+    });
+
+    it('should detect <interaction> with attributes and empty body (attribute fallback)', () => {
+      let content = '<interaction type="websearch" query="best running shoes"></interaction>';
+
+      let result = detectInteractions(content);
+      assert.ok(result);
+      assert.equal(result.interactions.length, 1);
+      assert.equal(result.interactions[0].target_property, 'websearch');
+      assert.equal(result.interactions[0].payload.query, 'best running shoes');
+      assert.equal(result.interactions[0].target_id, '@system');
+    });
+
+    it('should detect <interaction> with attributes and text body as query fallback', () => {
+      let content = '<interaction type="websearch">what is the weather today</interaction>';
+
+      let result = detectInteractions(content);
+      assert.ok(result);
+      assert.equal(result.interactions.length, 1);
+      assert.equal(result.interactions[0].target_property, 'websearch');
+      assert.equal(result.interactions[0].payload.query, 'what is the weather today');
+    });
+
+    it('should prefer JSON body over attributes when both present', () => {
+      let content = `<interaction type="websearch" query="from attrs">
+{"interaction_id": "ws-1", "target_id": "@system", "target_property": "websearch", "payload": {"query": "from json"}}
+</interaction>`;
+
+      let result = detectInteractions(content);
+      assert.ok(result);
+      assert.equal(result.interactions[0].payload.query, 'from json');
+    });
+
+    it('should generate interaction_id for attribute-format interactions', () => {
+      let content = '<interaction type="websearch" query="test"></interaction>';
+
+      let result = detectInteractions(content);
+      assert.ok(result);
+      assert.ok(result.interactions[0].interaction_id);
+      assert.ok(result.interactions[0].interaction_id.startsWith('attr-'));
+    });
+
+    it('should handle interaction with custom target_id in attributes', () => {
+      let content = '<interaction type="echo" target_id="@custom" id="custom-1"></interaction>';
+
+      let result = detectInteractions(content);
+      assert.ok(result);
+      assert.equal(result.interactions[0].target_id, '@custom');
+      assert.equal(result.interactions[0].interaction_id, 'custom-1');
+    });
+
+    it('should handle multiple attribute-format interactions interlaced with text', () => {
+      let content = `Let me search for that:
+
+<interaction type="websearch" query="topic one"></interaction>
+
+And also:
+
+<interaction type="websearch" query="topic two"></interaction>`;
+
+      let result = detectInteractions(content);
+      assert.ok(result);
+      assert.equal(result.interactions.length, 2);
+      assert.equal(result.interactions[0].payload.query, 'topic one');
+      assert.equal(result.interactions[1].payload.query, 'topic two');
+    });
+
+    it('should return null for attribute-format without type', () => {
+      let content = '<interaction query="test"></interaction>';
+
+      let result = detectInteractions(content);
+      assert.equal(result, null);
+    });
   });
 
   describe('executeInteractions', () => {

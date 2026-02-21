@@ -20,8 +20,10 @@ import { getInteractionBus, queueAgentMessage, TARGETS } from './bus.mjs';
 import { checkSystemMethodAllowed } from './functions/system.mjs';
 import { createRequestFrame, createResultFrame } from '../frames/broadcast.mjs';
 
-// Regex to find <interaction> tag starts
-const INTERACTION_START_REGEX = /<interaction>\s*/g;
+// Regex to find <interaction> tag starts (with or without attributes)
+// Handles both <interaction> and <interaction type="...">, since LLMs sometimes
+// add HTML attributes despite being instructed to use plain <interaction> tags.
+const INTERACTION_START_REGEX = /<interaction(?:\s[^>]*)?>[\s]*/g;
 
 // Maximum parse attempts per tag to prevent infinite loops
 const MAX_PARSE_ATTEMPTS = 5;
@@ -134,11 +136,61 @@ function validateInteraction(interaction) {
 }
 
 /**
+ * Parse HTML attributes from an <interaction> opening tag into an interaction object.
+ * Handles the case where the LLM uses HTML attribute format instead of JSON body:
+ *   <interaction type="websearch" query="latest news"></interaction>
+ *
+ * @param {string} openingTag - The full matched opening tag (e.g., '<interaction type="websearch">')
+ * @param {string} bodyContent - Content between opening and closing tags
+ * @returns {Object|null} Parsed interaction object, or null if not parseable
+ */
+function parseAttributeInteraction(openingTag, bodyContent) {
+  // Extract attributes from the opening tag
+  let attributeRegex = /(\w+)=["']([^"']*)["']/g;
+  let attributes     = {};
+  let attrMatch;
+
+  while ((attrMatch = attributeRegex.exec(openingTag)) !== null) {
+    attributes[attrMatch[1]] = attrMatch[2];
+  }
+
+  // Need at least a type/target_property to build an interaction
+  let targetProperty = attributes.type || attributes.target_property;
+  if (!targetProperty)
+    return null;
+
+  // Build a standard interaction object from attributes
+  let interaction = {
+    interaction_id:  attributes.interaction_id || attributes.id || `attr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    target_id:       attributes.target_id || '@system',
+    target_property: targetProperty,
+    payload:         {},
+  };
+
+  // Populate payload from remaining attributes
+  for (let [key, value] of Object.entries(attributes)) {
+    if (['type', 'target_property', 'target_id', 'interaction_id', 'id'].includes(key))
+      continue;
+    interaction.payload[key] = value;
+  }
+
+  // If there's body content that's not JSON, use it as the primary payload value
+  let trimmedBody = (bodyContent || '').trim();
+  if (trimmedBody && !trimmedBody.startsWith('{') && !trimmedBody.startsWith('[')) {
+    interaction.payload.query = interaction.payload.query || trimmedBody;
+  }
+
+  return interaction;
+}
+
+/**
  * Detect interaction tags anywhere in the response.
  * Pattern: <interaction>JSON</interaction> (can appear multiple times, interlaced with text)
  *
- * Handles edge cases where JSON payload contains </interaction> sequences by finding
- * the closing tag that produces valid JSON.
+ * Handles edge cases:
+ * - JSON payload containing </interaction> sequences
+ * - <interaction> tags with HTML attributes (LLM format deviation)
+ * - Empty body with attributes: <interaction type="websearch" query="..."></interaction>
  *
  * Interaction format:
  *   Single: { interaction_id, target_id, target_property, payload }
@@ -158,42 +210,53 @@ export function detectInteractions(content) {
   INTERACTION_START_REGEX.lastIndex = 0;
 
   while ((match = INTERACTION_START_REGEX.exec(text)) !== null) {
-    let startIndex = match.index + match[0].length;
+    let openingTag = match[0];
+    let startIndex = match.index + openingTag.length;
 
     // Find valid closing that produces valid JSON
     let result = findValidClosing(text, startIndex);
 
-    if (!result) {
-      continue; // No valid closing found for this tag
-    }
+    if (result) {
+      let parsed = result.json;
 
-    let parsed = result.json;
-
-    // Single interaction object
-    if (!Array.isArray(parsed)) {
-      // Strip security-sensitive properties that agents cannot set
-      let clean = stripSensitiveProperties(parsed);
-      if (validateInteraction(clean)) {
-        allInteractions.push(clean);
-      }
-    } else {
-      // Array of interactions
-      for (let interaction of parsed) {
-        // Strip security-sensitive properties that agents cannot set
-        let clean = stripSensitiveProperties(interaction);
-        if (validateInteraction(clean)) {
+      // Single interaction object
+      if (!Array.isArray(parsed)) {
+        let clean = stripSensitiveProperties(parsed);
+        if (validateInteraction(clean))
           allInteractions.push(clean);
+      } else {
+        // Array of interactions
+        for (let interaction of parsed) {
+          let clean = stripSensitiveProperties(interaction);
+          if (validateInteraction(clean))
+            allInteractions.push(clean);
         }
       }
+
+      // Move past this tag to avoid re-matching
+      INTERACTION_START_REGEX.lastIndex = result.endIndex;
+      continue;
     }
 
-    // Move past this tag to avoid re-matching
-    INTERACTION_START_REGEX.lastIndex = result.endIndex;
+    // JSON parsing failed — try attribute-based fallback
+    // This handles: <interaction type="websearch" query="...">body text</interaction>
+    let closeIndex = text.indexOf('</interaction>', startIndex);
+    if (closeIndex !== -1) {
+      let bodyContent = text.slice(startIndex, closeIndex).trim();
+      let attrInteraction = parseAttributeInteraction(openingTag, bodyContent);
+
+      if (attrInteraction) {
+        let clean = stripSensitiveProperties(attrInteraction);
+        if (validateInteraction(clean))
+          allInteractions.push(clean);
+      }
+
+      INTERACTION_START_REGEX.lastIndex = closeIndex + '</interaction>'.length;
+    }
   }
 
-  if (allInteractions.length === 0) {
+  if (allInteractions.length === 0)
     return null;
-  }
 
   return {
     mode:         (allInteractions.length === 1) ? 'single' : 'sequential',

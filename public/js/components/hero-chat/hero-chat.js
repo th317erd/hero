@@ -213,6 +213,19 @@ export class HeroChat extends HeroComponent {
   }
 
   /**
+   * Get user avatar URL.
+   * Generates a default SVG avatar for the current user.
+   * @returns {string}
+   */
+  get userAvatarUrl() {
+    let user     = GlobalState.user?.valueOf();
+    let username = user?.username || 'You';
+    let initial  = username.charAt(0).toUpperCase();
+    let color    = '#6366f1';  // Indigo — distinct from agent palette
+    return `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" rx="20" fill="${color}"/><text x="20" y="26" font-family="Arial,sans-serif" font-size="18" font-weight="bold" fill="white" text-anchor="middle">${initial}</text></svg>`)}`;
+  }
+
+  /**
    * Get the messages container element (for external insertions).
    * @returns {HTMLElement|null}
    */
@@ -1131,11 +1144,26 @@ export class HeroChat extends HeroComponent {
       .message-assistant { align-self: flex-start; }
 
       .message-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
         font-size: 12px;
         font-weight: 600;
         color: var(--text-muted, #6b7280);
-        margin-bottom: 4px;
-        padding: 0 8px;
+        margin-bottom: 8px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      }
+
+      .message-avatar {
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+
+      .header-name {
+        line-height: 22px;
       }
 
       .message-bubble {
@@ -1583,11 +1611,16 @@ export class HeroChat extends HeroComponent {
 
     const queuedBadge = (message.queued) ? '<span class="queued-badge">Queued</span>' : '';
 
-    // Avatar for assistant messages
-    let avatarHtml = '';
-    if (message.role !== 'user' && this.agentAvatarUrl) {
-      avatarHtml = `<img class="message-avatar" src="${this._escapeAttr(this.agentAvatarUrl)}" alt="">`;
+    // Avatar for both user and assistant messages
+    let avatarUrl = '';
+    if (message.role === 'user') {
+      avatarUrl = this.userAvatarUrl;
+    } else if (this.agentAvatarUrl) {
+      avatarUrl = this.agentAvatarUrl;
     }
+    let avatarHtml = (avatarUrl)
+      ? `<img class="message-avatar" src="${this._escapeAttr(avatarUrl)}" alt="">`
+      : '';
 
     // Render content
     const contentHtml = this._renderContent(message);
@@ -1604,8 +1637,8 @@ export class HeroChat extends HeroComponent {
            data-message-id="${messageId}"
            data-frame-id="${frameId}"
            id="${(messageId) ? `message-${messageId}` : ''}">
-        <div class="message-header">${avatarHtml}${roleLabel} ${queuedBadge}${typeBadge}</div>
         <div class="message-bubble">
+          <div class="message-header">${avatarHtml}<span class="header-name">${roleLabel}</span> ${queuedBadge}${typeBadge}</div>
           <div class="message-content">${contentHtml}</div>
           ${attachmentsHtml}
         </div>
@@ -1674,33 +1707,33 @@ export class HeroChat extends HeroComponent {
 
     // Determine if success or failure
     let isSuccess = (status === 'completed');
-    let statusIcon = (isSuccess) ? '✓' : '✗';
-    let statusClass = (isSuccess) ? 'result-success' : 'result-error';
 
-    // Format the result content
+    // Hide successful result frames — the REQUEST frame already shows what happened.
+    // Only show failures so errors are visible.
+    if (isSuccess)
+      return '';
+
+    // Format the error content
     let contentHtml = '';
     if (typeof data === 'string') {
       contentHtml = escapeHtml(data);
-    } else if (data.content) {
-      // Truncate long content
-      let content = data.content;
-      if (content.length > 500) {
-        content = content.slice(0, 500) + '\n... [truncated]';
-      }
-      contentHtml = escapeHtml(content);
     } else if (data.error) {
       contentHtml = `<span class="result-error-text">Error: ${escapeHtml(data.error)}</span>`;
+    } else if (data.content) {
+      let content = data.content;
+      if (content.length > 500)
+        content = content.slice(0, 500) + '\n... [truncated]';
+      contentHtml = escapeHtml(content);
     } else {
-      // Show summary for complex results
       contentHtml = escapeHtml(JSON.stringify(data, null, 2).slice(0, 300));
     }
 
     return `
-      <div class="message message-result ${statusClass}" data-message-id="${message.id}" data-frame-id="${message.frameId}">
+      <div class="message message-result result-error" data-message-id="${message.id}" data-frame-id="${message.frameId}">
         <div class="result-frame">
           <div class="result-header">
-            <span class="result-icon">${statusIcon}</span>
-            <span class="result-status">${(isSuccess) ? 'Completed' : 'Failed'}</span>
+            <span class="result-icon">✗</span>
+            <span class="result-status">Failed</span>
           </div>
           <div class="result-content"><pre>${contentHtml}</pre></div>
         </div>
@@ -1891,10 +1924,14 @@ export class HeroChat extends HeroComponent {
   _renderStreamingMessage() {
     let streaming = this.#streamingMessage;
 
+    let agentAvatar = (this.agentAvatarUrl)
+      ? `<img class="message-avatar" src="${this._escapeAttr(this.agentAvatarUrl)}" alt="">`
+      : '';
+
     return `
       <div class="message message-assistant streaming" id="streaming-message">
-        <div class="message-header">${this.agentName}</div>
         <div class="message-bubble">
+          <div class="message-header">${agentAvatar}<span class="header-name">${this.agentName}</span></div>
           <div class="message-content">${this._renderMarkup(streaming.content || '')}</div>
           <div class="typing-indicator">
             <span></span><span></span><span></span>
@@ -1916,11 +1953,15 @@ export class HeroChat extends HeroComponent {
     const isComplete = phantom.complete || false;
     const completeClass = (isComplete) ? 'complete' : 'streaming';
 
+    let agentAvatar = (this.agentAvatarUrl)
+      ? `<img class="message-avatar" src="${this._escapeAttr(this.agentAvatarUrl)}" alt="">`
+      : '';
+
     // Always render typing indicator - CSS hides it when .complete class is present
     return `
       <div class="message message-assistant ${completeClass}" id="phantom-frame">
-        <div class="message-header">${this.agentName}</div>
         <div class="message-bubble">
+          <div class="message-header">${agentAvatar}<span class="header-name">${this.agentName}</span></div>
           <div class="message-content">${this._renderMarkup(content)}</div>
           <div class="typing-indicator">
             <span></span><span></span><span></span>

@@ -20,8 +20,9 @@ import { requireAuth, getDataKey } from '../middleware/auth.mjs';
 import { buildContext } from '../lib/pipeline/context.mjs';
 import { createStreamParser } from '../lib/markup/stream-parser.mjs';
 import { executePipeline } from '../lib/pipeline/index.mjs';
-import { getStartupAbilities } from '../lib/abilities/registry.mjs';
+import { getStartupAbilities, getAbility } from '../lib/abilities/registry.mjs';
 import { checkConditionalAbilities, formatConditionalInstructions } from '../lib/abilities/index.mjs';
+import { checkApprovalRequired, requestApproval } from '../lib/abilities/approval.mjs';
 import { broadcastToUser } from '../lib/websocket.mjs';
 import { detectInteractions, executeInteractions, formatInteractionFeedback, searchWeb } from '../lib/interactions/index.mjs';
 import { checkCompaction } from '../lib/compaction.mjs';
@@ -421,8 +422,8 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
     // Process any interactions in the user message (e.g., prompt updates)
     // User interactions are "secure" because they come directly from an authenticated user
     console.log('[Stream] User message content preview:', content.substring(0, 200));
-    console.log('[Stream] User message has <interaction>:', content.includes('<interaction>'));
-    if (content.includes('<interaction>')) {
+    console.log('[Stream] User message has <interaction>:', content.includes('<interaction'));
+    if (content.includes('<interaction')) {
       let userInteractionBlock = detectInteractions(content);
       console.log('[Stream] User interaction block:', userInteractionBlock ? `found ${userInteractionBlock.interactions.length}` : 'none');
       if (userInteractionBlock && userInteractionBlock.interactions.length > 0) {
@@ -585,8 +586,38 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
           await new Promise(resolve => setImmediate(resolve));
           console.log(`[Stream] T+${Date.now() - t0}ms: Yielded event loop`);
 
-          // Execute websearch (interaction_started was already sent in element_start)
-          let result = await searchWeb(query);
+          // Check if websearch requires approval
+          let websearchAbility = getAbility('websearch');
+          let needsApproval    = websearchAbility
+            ? await checkApprovalRequired(websearchAbility, { userId: req.user.id, sessionId: parseInt(req.params.sessionId, 10) })
+            : false;
+
+          let result;
+          if (needsApproval) {
+            console.log(`[Stream] T+${Date.now() - t0}ms: Requesting approval for websearch`);
+            let approvalResult = await requestApproval(
+              websearchAbility,
+              { query },
+              { userId: req.user.id, sessionId: parseInt(req.params.sessionId, 10) },
+            );
+
+            if (approvalResult.status !== 'approved') {
+              console.log(`[Stream] T+${Date.now() - t0}ms: Websearch ${approvalResult.status}`);
+              sendEvent('interaction_result', {
+                messageId,
+                interactionId:  pending.interactionId,
+                targetProperty: 'websearch',
+                status:         'denied',
+                result:         { error: `Websearch ${approvalResult.status}: ${approvalResult.reason || 'User denied'}` },
+              });
+              pendingWebsearches.delete(data.id);
+              return;
+            }
+            console.log(`[Stream] T+${Date.now() - t0}ms: Websearch approved`);
+          }
+
+          // Execute websearch
+          result = await searchWeb(query);
           console.log(`[Stream] T+${Date.now() - t0}ms: searchWeb completed`);
 
           // Send interaction_result
@@ -834,7 +865,7 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
     // =========================================================================
     console.log('[Stream] Checking for interactions, aborted:', aborted, 'contentLength:', fullContent?.length);
     console.log('[Stream] Content preview:', fullContent?.slice(0, 500));
-    console.log('[Stream] Has <interaction> tag:', fullContent?.includes('<interaction>'));
+    console.log('[Stream] Has <interaction tag:', fullContent?.includes('<interaction'));
     console.log('[Stream] Has <websearch> tag:', fullContent?.includes('<websearch>'));
     if (!aborted && fullContent) {
       let interactionBlock = detectInteractions(fullContent);

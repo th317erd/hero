@@ -234,7 +234,7 @@ function processThinkingElements(container) {
         <summary class="hml-thinking-header">
           <span class="hml-thinking-brain">🧠</span>
           <span class="hml-thinking-title">${escapeHtml(title)}</span>
-          <span class="hml-thinking-toggle">▼</span>
+          <span class="hml-thinking-toggle"></span>
         </summary>
         <div class="hml-thinking-content">
           ${content}

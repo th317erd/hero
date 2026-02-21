@@ -1,0 +1,621 @@
+# Phase-by-Phase Critical Review
+# Each phase analyzed with @test_protocol + @best_test AGIS thinking.
+# Identifies: missing tests, security gaps, stability risks, future concerns.
+
+dt: 2026-02-20
+method: "@test_protocol + @best_test AGIS analysis"
+
+# =============================================================================
+# PHASE 0: FRAME MIGRATION
+# =============================================================================
+
+phase_0:
+  t: Frame Migration
+  s: COMPLETE
+
+  test_protocol:
+    hypothesis: >
+      Frames are the SOLE source of truth. No legacy code path bypasses
+      frames for conversation storage or retrieval.
+    existing_coverage: >
+      88 tests across 5 spec files. Strong CRUD coverage. Frame types,
+      compilation, pagination, search all tested in isolation.
+    false_confidence: >
+      Testing frame CRUD proves the frame SYSTEM works. It does NOT prove
+      all CONSUMERS use the frame system. There could be legacy code that
+      reads from state.messages or writes to a dropped table. The tests
+      prove the hammer works but not that the carpenter uses it.
+
+  best_test:
+    current_approach: "Unit tests for frame CRUD, broadcast helpers, context building"
+    whats_wrong: >
+      No test verifies that the streaming route ACTUALLY creates frames.
+      No test verifies that legacy WS events (new_message, message_append)
+      are dead. No test verifies that compaction builds from frames only.
+    better_test: >
+      Route-level test: POST to streaming endpoint → verify frame exists
+      in DB with correct type, author, payload. Already planned as STREAM-001/002.
+
+  new_tests:
+    - id: FRAME-001
+      t: No legacy message table exists
+      d: "Given current DB schema, then no 'messages' table exists (dropped in migration 015)"
+      type: unit
+
+    - id: FRAME-002
+      t: Frame timestamps are monotonically increasing
+      d: "Given 100 rapid frame creates, then all timestamps are strictly ascending and unique"
+      type: property
+
+    - id: FRAME-003
+      t: Compaction context includes all post-compact frames
+      d: "Given compact frame at time T, when loading context, then all frames after T are included"
+      type: integration
+
+  plan_observations: []
+
+# =============================================================================
+# PHASE 1: MULTI-PARTY SESSIONS
+# =============================================================================
+
+phase_1:
+  t: Multi-party Sessions
+  s: SERVER COMPLETE, CLIENT PARTIAL
+
+  test_protocol:
+    hypothesis: >
+      Sessions support 0-N participants. The coordinator agent responds to
+      unaddressed messages. Participant changes are immediately reflected.
+    existing_coverage: >
+      47 unit + 68 integration tests. Participant CRUD is solid. Route
+      tests verify sessions API works with participants.
+    false_confidence: >
+      Testing participant CRUD doesn't prove the messaging pipeline loads
+      the correct agent. The streaming route calls loadSessionWithAgent() —
+      does it ACTUALLY use the coordinator? What if there's no coordinator?
+      What if there are two?
+
+  best_test:
+    current_approach: "Participant CRUD + route-level session tests"
+    whats_wrong: >
+      No test verifies the streaming route uses loadSessionWithAgent
+      correctly. No test for multi-agent session behavior. No test for
+      session access control (can user A see user B's session?).
+    better_test: >
+      Route-level test: create session with coordinator + member, send
+      message, verify COORDINATOR agent pipeline invoked (not member).
+
+  new_tests:
+    - id: PARTY-001
+      t: loadSessionWithAgent returns coordinator agent
+      d: "Given session with coordinator and member, then loadSessionWithAgent returns coordinator"
+      type: unit
+
+    - id: PARTY-002
+      t: Session with no coordinator returns graceful error
+      d: "Given session with only member-role agents, when message sent, then error returned (no coordinator)"
+      type: integration
+
+    - id: PARTY-003
+      t: User cannot access non-participant session
+      d: "Given session owned by user A, when user B requests it, then 404 or 403"
+      type: security
+
+    - id: PARTY-004
+      t: Removing coordinator mid-session prevents further messages
+      d: "Given active session, when coordinator removed, then next message returns error"
+      type: integration
+
+    - id: PARTY-005
+      t: WebSocket broadcast targets all user participants
+      d: "Given 2 users in session, when frame created, then both users' WS connections receive event"
+      type: integration
+      note: "Currently deferred — critical for multi-party to actually work"
+
+  plan_observations:
+    - >
+      Multi-party sessions are SERVER COMPLETE but functionally broken for
+      real-time use because WS broadcast only targets the originating user.
+      This needs to be priority for client parity work.
+
+# =============================================================================
+# PHASE 2: PERMISSIONS SYSTEM
+# =============================================================================
+
+phase_2:
+  t: Permissions System
+  s: CORE COMPLETE
+
+  test_protocol:
+    hypothesis: >
+      Every action goes through permission evaluation. Default is 'prompt'.
+      Most-specific rule wins. Deny beats allow at same specificity.
+    existing_coverage: >
+      65 engine + 7 integration + 68 route = 140 tests. Strong isolation
+      coverage of the evaluation logic.
+    false_confidence: >
+      The engine is only wired to BEFORE_COMMAND hook. Interaction function
+      execution (websearch, etc.) bypasses permissions entirely. Testing
+      the engine proves it EVALUATES correctly, not that it's APPLIED
+      everywhere. The websearch approval bypass bug proves this gap.
+
+  best_test:
+    current_approach: "Engine evaluation tests + route-level CRUD tests"
+    whats_wrong: >
+      No test verifies that ALL entry points go through permission check.
+      The streaming route manually added approval checking for websearch
+      as a bolt-on fix. There should be a systematic test that verifies
+      every executable action has a permission gate.
+    better_test: >
+      For each registered interaction function, verify permission evaluation
+      occurs before execution. For each command, verify BEFORE_COMMAND fires.
+      For each tool, verify BEFORE_TOOL fires (currently missing).
+
+  new_tests:
+    - id: PERM-001
+      t: BEFORE_TOOL hook fires for interaction functions
+      d: "Given interaction function registered, when executed, then BEFORE_TOOL hook fires with function name"
+      type: integration
+      note: "Currently deferred — CRITICAL to close permission bypass gap"
+
+    - id: PERM-002
+      t: Direct function call without hook fails safely
+      d: "Given function called without going through hook system, then execution still requires permission"
+      type: security
+      note: "Defense in depth"
+
+    - id: PERM-003
+      t: 'once' scope rules consumed after use
+      d: "Given rule with scope='once', when evaluated and matched, then rule deleted from DB after use"
+      type: unit
+
+    - id: PERM-004
+      t: Session-scoped rules don't leak across sessions
+      d: "Given allow rule for session 5, when evaluating in session 6, then rule not matched"
+      type: unit
+
+    - id: PERM-005
+      t: Non-owner cannot create rules for other users
+      d: "Given user A, when creating rule with owner_id=user B, then rejected"
+      type: security
+
+    - id: PERM-006
+      t: Concurrent evaluations are deterministic
+      d: "Given same rule set, when 10 concurrent evaluate() calls with same input, then all return same result"
+      type: property
+
+  plan_observations:
+    - >
+      The permission system has a fundamental integration gap: it only
+      gates COMMANDS, not TOOLS/FUNCTIONS. This means any interaction
+      function (websearch, delegate, execute_command) runs without
+      permission evaluation. Wiring BEFORE_TOOL is a security priority.
+    - >
+      The manual websearch approval fix in messages-stream.mjs is a
+      workaround, not a solution. When new functions are added, someone
+      has to remember to add approval checking manually. Systematic
+      gating is needed.
+
+# =============================================================================
+# PHASE 3: AGENT ROLES & COORDINATION
+# =============================================================================
+
+phase_3:
+  t: Agent Roles & Coordination
+  s: CORE COMPLETE
+
+  test_protocol:
+    hypothesis: >
+      Coordinators delegate to members. Recursion is bounded. Agents
+      can execute commands with permission gating.
+    existing_coverage: >
+      16 delegate + 17 execute-command + 14 coordination = 47 tests.
+    false_confidence: >
+      Delegation tests use mock agents with canned responses. Real agents
+      are non-deterministic. More importantly: what happens when an agent
+      API call FAILS mid-delegation? Are orphaned request frames left?
+      What about memory accumulation in deep chains?
+
+  best_test:
+    current_approach: "Function-level tests with mocked agents"
+    whats_wrong: >
+      No failure-mode testing for delegation chains. No test for what
+      happens when the member agent is unreachable. No test for memory
+      pressure from deep chains. No defined behavior for multiple
+      coordinators.
+    better_test: >
+      Error injection tests: delegation to agent that throws → verify
+      cleanup. Chain of 10 delegations → verify memory doesn't grow
+      linearly. Two coordinators in session → verify defined behavior.
+
+  new_tests:
+    - id: COORD-001
+      t: Delegation failure cleans up frames
+      d: "Given delegation to member, when member agent throws, then request frame has result with error, no orphaned frames"
+      type: integration
+
+    - id: COORD-002
+      t: Delegation result references request via parent_id
+      d: "Given successful delegation, then result frame.parent_id === request frame.id"
+      type: unit
+
+    - id: COORD-003
+      t: Self-approval prevention
+      d: "Given agent triggers action needing approval, when same agent tries to approve, then rejected"
+      type: security
+      note: "Deferred but security-critical"
+
+    - id: COORD-004
+      t: Multiple coordinators have defined behavior
+      d: "Given session with 2 coordinators, when message received, then exactly one responds (not both, not neither)"
+      type: integration
+      note: "Currently undefined — needs design decision"
+
+    - id: COORD-005
+      t: Delegation context is bounded
+      d: "Given deep conversation history, when delegating, then member receives limited context (not full history)"
+      type: unit
+
+  plan_observations:
+    - >
+      Multi-coordinator behavior is undefined. The plan says "they discuss
+      via frames before delegating" but no protocol exists. This needs a
+      design decision before implementation can be considered complete.
+    - >
+      Self-approval prevention (COORD-003) is deferred but should be
+      high priority for security. Without it, an agent can approve its
+      own destructive actions.
+
+# =============================================================================
+# PHASE 4: COMMANDS + PLUGIN HARDENING
+# =============================================================================
+
+phase_4:
+  t: Commands + Plugin Hardening
+  s: CORE COMPLETE
+
+  test_protocol:
+    hypothesis: >
+      Commands are discoverable and executable. Plugin lifecycle is clean.
+      Hot-reload produces no state leaks.
+    existing_coverage: >
+      36 command + 27 plugin + 34 enhanced loader = 97 tests.
+    false_confidence: >
+      Plugin tests verify load/unload in isolation. No test verifies
+      that hooks fire at the right POINT in the message pipeline. A hook
+      registered as BEFORE_USER_MESSAGE should fire BEFORE the agent
+      call — but nothing verifies timing.
+
+  best_test:
+    current_approach: "Plugin loading mechanics + command handler tests"
+    whats_wrong: >
+      No test verifies hook timing (BEFORE fires before, AFTER fires
+      after). No test for plugin error isolation (hook throws → pipeline
+      continues). No test for hot-reload during active processing.
+    better_test: >
+      Timeline test: register plugin with BEFORE hook that logs timestamp,
+      make agent call, verify hook timestamp < agent call timestamp.
+
+  new_tests:
+    - id: PLUGIN-001
+      t: BEFORE_USER_MESSAGE hook fires before agent call
+      d: "Given plugin registered, when message sent, then hook fires before agent.sendMessage()"
+      type: integration
+
+    - id: PLUGIN-002
+      t: Hook that throws doesn't block pipeline
+      d: "Given plugin hook that throws Error, when message sent, then agent still receives message"
+      type: stability
+
+    - id: PLUGIN-003
+      t: Hook can modify message content
+      d: "Given BEFORE_USER_MESSAGE hook that transforms content, then agent receives transformed content"
+      type: integration
+
+    - id: PLUGIN-004
+      t: Hot-reload preserves no stale state
+      d: "Given plugin loaded, when reloaded, then old hooks removed AND new hooks active AND no duplicates"
+      type: stability
+
+  plan_observations: []
+
+# =============================================================================
+# PHASE 5: HML FORMS + INFINITE SCROLL
+# =============================================================================
+
+phase_5:
+  t: HML Forms + Infinite Scroll
+  s: CORE COMPLETE
+
+  test_protocol:
+    hypothesis: >
+      Pagination returns correct frame windows. Search finds content
+      across sessions. Batch prompts submit atomically.
+    existing_coverage: >
+      12 pagination + 17 search + 13 route = 42 tests.
+    false_confidence: >
+      Pagination tests verify the SQL logic. But they don't test the
+      edge case of frames with identical timestamps (the sequence counter
+      handles this, but is it tested through pagination?).
+
+  best_test:
+    current_approach: "DB-level pagination + search logic"
+    whats_wrong: >
+      No edge case for same-timestamp frames. No test for search
+      respecting session ownership. No test for batch submission
+      atomicity (partial failure scenario).
+    better_test: >
+      Create 10 frames in same millisecond → paginate → verify all
+      returned in correct order with no duplicates or gaps.
+
+  new_tests:
+    - id: SCROLL-001
+      t: Same-timestamp frames paginate correctly
+      d: "Given 10 frames created in same ms, when paginating with limit 5, then 2 pages with no duplicates"
+      type: edge-case
+
+    - id: SCROLL-002
+      t: Search respects session ownership
+      d: "Given user A's session with 'secret' in frames, when user B searches 'secret', then no results"
+      type: security
+
+    - id: SCROLL-003
+      t: Batch prompt submission atomicity
+      d: "Given 3 prompts, when submitting and 2nd fails, then no partial results persisted"
+      type: integration
+
+  plan_observations: []
+
+# =============================================================================
+# PHASE 6: AUTH ENHANCEMENT
+# =============================================================================
+
+phase_6:
+  t: Auth Enhancement
+  s: CORE COMPLETE, UI PENDING
+
+  test_protocol:
+    hypothesis: >
+      Magic links are single-use and time-limited. API keys grant
+      correct access level. No credential leakage.
+    existing_coverage: >
+      22 magic link + 29 API key + 12 route = 63 tests.
+    false_confidence: >
+      Tests verify the happy path and basic error paths. But do they
+      verify that API key plaintext is NEVER stored? That magic link
+      token entropy is sufficient? That expired tokens are cleaned up
+      under concurrent access?
+
+  best_test:
+    current_approach: "Token generation/verification unit tests"
+    whats_wrong: >
+      No test for token entropy (brute-force resistance). No test
+      verifying plaintext API key never appears in DB. No rate
+      limiting tests (probably not implemented).
+    better_test: >
+      DB inspection test: create API key → SELECT * from api_keys →
+      verify no column contains the plaintext key.
+
+  new_tests:
+    - id: AUTH-001
+      t: API key plaintext never in DB
+      d: "Given API key created, when querying DB directly, then no column contains plaintext key value"
+      type: security
+
+    - id: AUTH-002
+      t: Magic link token entropy
+      d: "Given 1000 generated tokens, then all unique AND minimum 128 bits of randomness"
+      type: security
+
+    - id: AUTH-003
+      t: API key auth prevents agent decryption
+      d: "Given API key auth (no user secret), when accessing agent API key, then decryption not possible"
+      type: security
+
+    - id: AUTH-004
+      t: Expired cleanup under concurrent access
+      d: "Given expired tokens, when 2 concurrent cleanExpiredTokens() calls, then no errors"
+      type: stability
+
+  plan_observations:
+    - >
+      No rate limiting exists for magic link requests or API key creation.
+      An attacker could request millions of magic links. This needs at
+      minimum a per-IP or per-email rate limit.
+    - >
+      No audit logging for security events. Failed login attempts,
+      magic link usage, API key creation/revocation should be logged.
+
+# =============================================================================
+# PHASE 7: SERVER-AUTHORITATIVE HARDENING
+# =============================================================================
+
+phase_7:
+  t: Server-Authoritative Hardening
+  s: CORE COMPLETE
+
+  test_protocol:
+    hypothesis: >
+      Approvals can't be replayed. Cross-user hijacking impossible.
+      Agents can't spoof sender_id.
+    existing_coverage: >
+      16 approval + 10 bus = 26 tests.
+    false_confidence: >
+      Tests verify hash matching and ownership in isolation. But the
+      WebSocket handler that receives approval responses — does IT
+      pass the correct security context? A test could pass in isolation
+      but the WS handler could pass the wrong userId.
+
+  best_test:
+    current_approach: "Approval hash + bus verification unit tests"
+    whats_wrong: >
+      No test traces the full path: WS message received → security
+      context extracted → approval handler called with correct params.
+      The unit tests trust that the caller passes correct data, but
+      the caller (websocket.mjs) is untested.
+    better_test: >
+      WS mock test: send approval response via mock WS → verify
+      handleApprovalResponse called with { userId, requestHash } from
+      the authenticated WS connection (not from the message body).
+
+  new_tests:
+    - id: SEC-001
+      t: WS approval handler passes authenticated userId
+      d: "Given WS connection for user 5, when approval response received, then handleApprovalResponse gets userId=5"
+      type: integration
+
+    - id: SEC-002
+      t: WS message from unauthenticated connection rejected
+      d: "Given WS connection without valid token, when any message sent, then connection closed"
+      type: security
+
+    - id: SEC-003
+      t: WS message targeting wrong session silently ignored
+      d: "Given user subscribed to session 1, when WS message references session 2, then no effect"
+      type: security
+
+    - id: SEC-004
+      t: Frame creation only through server API
+      d: "Given attempt to create frame via WS message, then rejected (frames are server-created only)"
+      type: security
+
+  plan_observations:
+    - >
+      websocket.mjs is complex (handles auth, subscriptions, interactions,
+      approvals, questions) and has ZERO tests. It's a security-critical
+      module. The WS mock infrastructure already exists — just needs tests.
+
+# =============================================================================
+# PHASE 8: FILE UPLOADS, AVATARS, RICH CONTENT
+# =============================================================================
+
+phase_8:
+  t: File Uploads, Avatars, Rich Content
+  s: CORE COMPLETE
+
+  test_protocol:
+    hypothesis: >
+      Uploads are validated and access-controlled. Avatars are deterministic.
+      Content types are extensible.
+    existing_coverage: >
+      22 avatar + 19 content + 16 upload = 57 tests.
+    false_confidence: >
+      Upload tests verify the DB operations. Do they verify the multer
+      middleware rejects oversized files? Do they verify path traversal
+      in filenames? The DB tests pass but a malicious upload might bypass
+      the middleware validation.
+
+  best_test:
+    current_approach: "DB operations + avatar generation + registry CRUD"
+    whats_wrong: >
+      No test for malicious filename sanitization. No test for MIME type
+      spoofing. No test for upload serving with ownership verification
+      at the route level.
+    better_test: >
+      Route-level test: upload file as user A → try to download as user B
+      → verify 403.
+
+  new_tests:
+    - id: UPLOAD-001
+      t: Path traversal in filename sanitized
+      d: "Given upload with filename '../../../etc/passwd', then stored with safe filename"
+      type: security
+
+    - id: UPLOAD-002
+      t: MIME type spoofing rejected
+      d: "Given .jpg file with text/html content-type, then rejected or type corrected"
+      type: security
+
+    - id: UPLOAD-003
+      t: Cross-user upload access denied
+      d: "Given user A's upload, when user B requests GET /api/uploads/:id, then 403"
+      type: security
+
+    - id: UPLOAD-004
+      t: Upload exceeding size limit rejected
+      d: "Given file >10MB, when uploaded, then 413 response"
+      type: validation
+
+    - id: UPLOAD-005
+      t: Session deletion cascades to uploads
+      d: "Given session with uploads, when session deleted, then uploads removed from DB and disk"
+      type: data-integrity
+
+  plan_observations: []
+
+# =============================================================================
+# CROSS-CUTTING CONCERNS
+# =============================================================================
+
+cross_cutting:
+  security:
+    tested:
+      - HTML sanitization (105 tests — excellent)
+      - Encryption at rest (17 tests)
+      - sender_id stripping (in interactions-spec)
+      - Approval hash verification (16 tests)
+    gaps:
+      - No rate limiting anywhere (magic links, login, API requests)
+      - No audit logging for security events
+      - websocket.mjs completely untested (auth, message routing)
+      - No SQL injection verification tests (parameterized queries assumed)
+      - No CSRF protection verification
+      - Upload MIME/path validation untested at route level
+
+  stability:
+    tested:
+      - Frame compilation with various inputs
+      - Plugin dependency resolution
+      - Error handling in interaction functions
+    gaps:
+      - No server crash recovery tests
+      - No memory pressure tests (large conversations, deep delegation)
+      - No concurrent access tests (multiple users, same session)
+      - No graceful shutdown test
+      - No resource cleanup verification (DB connections, file handles)
+      - Plugin error isolation during hooks untested
+
+  scalability:
+    current:
+      - SQLite WAL mode (good for reads)
+      - Frame pagination (prevents loading full history)
+      - Compaction (reduces context window)
+      - Streaming architecture (SSE per client)
+    concerns:
+      - SQLite single-writer bottleneck (OK for V1, blocks V2)
+      - No connection pooling (single DB connection)
+      - No caching layer (every request hits DB)
+      - WebSocket reconnect spam indicates connection management issues
+      - No queue system for agent API calls (direct in-request)
+
+  future_proofing:
+    good:
+      - Plugin system is extensible
+      - Content type registry allows new renderers
+      - Agent abstraction allows new providers
+      - Permission system is general-purpose
+    missing:
+      - No database migration rollback mechanism
+      - No feature flags system
+      - No A/B testing infrastructure
+      - No API versioning
+      - No health check endpoint
+      - No structured logging (console.log throughout)
+      - No metrics/observability
+
+# =============================================================================
+# SUMMARY: NEW TESTS FROM THIS REVIEW
+# =============================================================================
+
+new_test_count:
+  phase_0: 3
+  phase_1: 5
+  phase_2: 6
+  phase_3: 5
+  phase_4: 4
+  phase_5: 3
+  phase_6: 4
+  phase_7: 4
+  phase_8: 5
+  total_new: 39
+  combined_with_planned: 84  # 45 from planned-tests.yaml + 39 from review

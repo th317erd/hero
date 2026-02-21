@@ -235,3 +235,41 @@
 - [ ] Message visibility / screenshots (plugin)
 - [ ] Agent avatar picker UI in create/edit modal
 - [ ] Rich content renderer implementations (map, chart — plugin territory)
+
+---
+
+## Bug Fixes (Post-Phase 8)
+
+### Interaction Detection Fix — DONE
+- [x] Fixed `<interaction>` tag detection failing when agent uses HTML attributes (e.g. `<interaction type="websearch">`)
+- [x] Updated regex in `detector.mjs` to handle optional attributes: `/<interaction(?:\s[^>]*)?>[\s]*/g`
+- [x] Added attribute-format fallback parser (`parseAttributeInteraction()`)
+- [x] Updated `content-utils.mjs` strip/replace functions to match attribute-format tags
+- [x] Updated `includes('<interaction>')` → `includes('<interaction')` in messages-stream, builtin.mjs
+- [x] 8 new interaction detection tests (98 total in interactions-spec)
+- [x] All 1630 tests passing
+
+### UI Fixes — DONE
+- [x] Moved avatar + username header INSIDE chat bubble (was outside/above)
+- [x] Updated `_renderMessage()`, `_renderStreamingMessage()`, `_renderPhantomFrame()` in hero-chat.js
+- [x] Added default user avatar (indigo SVG with initial) via `userAvatarUrl` getter
+- [x] Updated shadow DOM styles (border-bottom separator, 22px round avatar, flex alignment)
+- [x] Updated document-scope styles in hero-chat.html to match
+- [x] Removed trailing ▼ chevron from Reflection (`<hml-thinking>`) in markup.js
+- [x] Browser-verified: all 3 fixes working correctly
+
+### Websearch Permissions Fix — DONE
+- [x] Streaming websearch path was bypassing approval system — called `searchWeb()` directly
+- [x] Added `checkApprovalRequired()` + `requestApproval()` integration in `messages-stream.mjs`
+- [x] Now gates websearch execution on user approval (approve/deny/remember for session)
+- [x] Denied searches send `interaction_result` with status 'denied' and error message
+
+### Result Frame Cleanup — DONE
+- [x] Successful RESULT frames now hidden (return empty string from `_renderResultFrame()`)
+- [x] Failed RESULT frames still visible with error details
+- [x] REQUEST frame already shows the action nicely — no need to duplicate with JSON blob
+
+### User Avatar Fix — DONE
+- [x] Avatar initial now derives from actual username (`GlobalState.user`) not "You"
+- [x] User "wyatt" → "W", user "claude" → "C"
+- [x] All 1672 tests passing
