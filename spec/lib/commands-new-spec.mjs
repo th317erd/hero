@@ -141,28 +141,28 @@ describe('New Commands (Phase 4)', async () => {
       );
     });
 
-    it('should support role argument', async () => {
+    it('should support alias via as: syntax', async () => {
       let context = { sessionId, userId, db };
-      let result  = await commands.executeCommand('invite', `${agent2Id} coordinator`, context);
+      let result  = await commands.executeCommand('invite', `${agent2Id} as:Helper`, context);
 
       assert.strictEqual(result.success, true);
-      assert.ok(result.content.includes('coordinator'));
+      assert.ok(result.content.includes('Helper'));
     });
 
-    it('should reject invalid agent ID', async () => {
+    it('should reject unknown agent name', async () => {
       let context = { sessionId, userId, db };
       let result  = await commands.executeCommand('invite', 'abc', context);
 
       assert.strictEqual(result.success, false);
-      assert.ok(result.error.includes('Invalid agent ID'));
+      assert.ok(result.error.includes('not found'));
     });
 
-    it('should reject invalid role', async () => {
+    it('should reject unknown agent name with extra args', async () => {
       let context = { sessionId, userId, db };
       let result  = await commands.executeCommand('invite', `${agent2Id} admin`, context);
 
       assert.strictEqual(result.success, false);
-      assert.ok(result.error.includes('Invalid role'));
+      assert.ok(result.error.includes('not found'));
     });
 
     it('should reject already-participant agent', async () => {
@@ -232,12 +232,12 @@ describe('New Commands (Phase 4)', async () => {
       assert.ok(result.error.includes('not a participant'));
     });
 
-    it('should reject invalid agent ID', async () => {
+    it('should reject unknown agent name', async () => {
       let context = { sessionId, userId, db };
       let result  = await commands.executeCommand('kick', 'abc', context);
 
       assert.strictEqual(result.success, false);
-      assert.ok(result.error.includes('Invalid agent ID'));
+      assert.ok(result.error.includes('not found'));
     });
 
     it('should fail without args', async () => {

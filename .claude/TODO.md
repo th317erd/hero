@@ -441,6 +441,27 @@
 
 ---
 
+## F1: Active Coordinator Model + /promote + /invite as:alias
+> Status: **COMPLETE**
+
+### What was done (prior session + this session)
+- [x] Migration 022: `alias TEXT` column on `session_participants`
+- [x] `promoteCoordinator()` — atomic transaction: demote old coordinator → promote new
+- [x] `updateParticipantAlias()` — set/clear per-session alias
+- [x] `findAgentByName()` — case-insensitive lookup by name+userId
+- [x] `parseParticipantRow` includes `alias` field
+- [x] `addParticipant` accepts optional `alias` parameter
+- [x] `/promote <agent-name>` command — name-based and ID-based lookup, shows previous coordinator
+- [x] `/invite <agent-name> [as:<alias>]` — name-based with optional alias, always adds as member
+- [x] `/kick <agent-name>` — updated to accept name (backwards-compatible with numeric ID)
+- [x] `/participants` — shows alias ("aka **alias**") when set
+- [x] Create Session modal — Primary Agent dropdown + Sub-Agents multi-select (prior session)
+- [x] Updated 3 stale command tests (old /invite role param → alias, old "Invalid agent ID" → "not found")
+- [x] Created `spec/lib/f1-coordinator-spec.mjs` — 40 tests (PARTY-001 through RENDER-001)
+- [x] All 1498 tests passing, 0 failures
+
+---
+
 ## F4: Client Page Routing + Settings UI
 > Status: **COMPLETE**
 
