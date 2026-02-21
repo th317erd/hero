@@ -429,15 +429,24 @@ router.post('/:sessionId/messages/stream', async (req, res) => {
     // Store user message as frame (strip interaction tags for display - they're processed separately)
     // Keep raw content for interaction processing below
     let displayContent = stripInteractionTags(content);
-    createUserMessageFrame({
-      sessionId: parseInt(req.params.sessionId, 10),
-      userId:    req.user.id,
-      content:   displayContent,
-      hidden:    false,
-      targetIds: mentioned ? [`agent:${mentioned.agentId}`] : undefined,
-    });
+    try {
+      createUserMessageFrame({
+        sessionId: parseInt(req.params.sessionId, 10),
+        userId:    req.user.id,
+        content:   displayContent,
+        hidden:    false,
+        targetIds: mentioned ? [`agent:${mentioned.agentId}`] : undefined,
+      });
+    } catch (frameError) {
+      console.error('[Stream] Failed to create user message frame:', frameError.message);
+      // Continue — message can still be processed even if frame storage fails
+    }
 
-    db.prepare('UPDATE sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(req.params.sessionId);
+    try {
+      db.prepare('UPDATE sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(req.params.sessionId);
+    } catch (dbError) {
+      console.error('[Stream] Failed to update session timestamp:', dbError.message);
+    }
 
     // Process any interactions in the user message (e.g., prompt updates)
     // User interactions are "secure" because they come directly from an authenticated user

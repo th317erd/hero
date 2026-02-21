@@ -64,12 +64,19 @@ export async function handleCommandInterception({ content, sessionId, userId, da
     });
 
     // Permission check: evaluate whether this subject can execute this command
-    let permission = evaluate(
-      { type: SubjectType.USER, id: userId },
-      { type: ResourceType.COMMAND, name: parsed.name },
-      { sessionId, ownerId: userId },
-      db,
-    );
+    let permission;
+    try {
+      permission = evaluate(
+        { type: SubjectType.USER, id: userId },
+        { type: ResourceType.COMMAND, name: parsed.name },
+        { sessionId, ownerId: userId },
+        db,
+      );
+    } catch (permError) {
+      // Fail-safe to deny on permission engine error
+      console.error(`[Security] Permission evaluation error for command '${parsed.name}':`, permError.message);
+      permission = { action: Action.DENY, rule: null };
+    }
 
     if (permission.action === Action.DENY) {
       createAgentMessageFrame({

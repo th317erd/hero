@@ -449,8 +449,23 @@ export async function executeInteractions(interactionBlock, context) {
 
         // action === 'allow' — fall through to execution
       } catch (permError) {
-        // Permission errors should not break the pipeline — log and continue
-        console.error(`Permission evaluation error for '${interactionData.target_property}':`, permError.message);
+        // Permission errors fail-safe to DENY — never allow on error
+        console.error(`[Security] Permission evaluation error for '${interactionData.target_property}':`, permError.message);
+
+        queueAgentMessage(context.sessionId, agentInteractionId, 'interaction_update', {
+          status: 'denied',
+          reason: 'Permission check failed — denied for safety',
+        });
+
+        results.push({
+          interaction_id:  agentInteractionId,
+          target_id:       interactionData.target_id,
+          target_property: interactionData.target_property,
+          status:          'denied',
+          reason:          'Permission check failed — denied for safety',
+        });
+
+        continue;
       }
     }
 

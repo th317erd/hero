@@ -256,7 +256,14 @@ export class DelegateFunction extends InteractionFunction {
     // Send task to member agent
     // -----------------------------------------------------------------------
     try {
-      let response = await agent.sendMessage(messages, {});
+      // Delegation timeout: 120 seconds to prevent indefinite blocking
+      let DELEGATION_TIMEOUT_MS = 120_000;
+      let response = await Promise.race([
+        agent.sendMessage(messages, {}),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Delegation timed out after 120 seconds')), DELEGATION_TIMEOUT_MS),
+        ),
+      ]);
 
       // Extract text content from response
       let responseContent = '';

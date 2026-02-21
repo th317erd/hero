@@ -410,6 +410,22 @@ function matchConditions(conditions, context) {
 // ============================================================================
 
 /**
+ * Safely parse JSON — returns null on failure instead of throwing.
+ * Prevents malformed conditions data from crashing the permission engine.
+ *
+ * @param {string} str - JSON string
+ * @returns {Object|null}
+ */
+function safeParseJSON(str) {
+  try {
+    return JSON.parse(str);
+  } catch {
+    console.error('[Security] Malformed JSON in permission rule conditions:', str);
+    return null;
+  }
+}
+
+/**
  * Deserialize a rule row from the database.
  *
  * @param {object} row - Raw DB row
@@ -426,7 +442,7 @@ function deserializeRule(row) {
     resourceName: row.resource_name,
     action:       row.action,
     scope:        row.scope,
-    conditions:   (row.conditions) ? JSON.parse(row.conditions) : null,
+    conditions:   (row.conditions) ? safeParseJSON(row.conditions) : null,
     priority:     row.priority,
     createdAt:    row.created_at,
   };

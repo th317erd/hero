@@ -633,6 +633,7 @@ describe('Permission Engine Edge Cases (PERM-003 through PERM-006)', () => {
     testDb.prepare("INSERT INTO agents (id, user_id, name) VALUES (1, 1, 'test-agent')").run();
     testDb.prepare("INSERT INTO sessions (id, user_id, agent_id, name) VALUES (1, 1, 1, 'Session A')").run();
     testDb.prepare("INSERT INTO sessions (id, user_id, agent_id, name) VALUES (2, 1, 1, 'Session B')").run();
+    // No wildcard allow rule here — PERM tests create their own specific rules
 
     return testDb;
   }
@@ -1231,11 +1232,28 @@ describe('Frame creation with BEFORE_TOOL/AFTER_TOOL hooks', () => {
       CREATE INDEX idx_frames_session ON frames(session_id, timestamp);
       CREATE INDEX idx_frames_parent ON frames(parent_id);
       CREATE INDEX idx_frames_type ON frames(type);
+
+      CREATE TABLE permission_rules (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        owner_id      INTEGER,
+        session_id    INTEGER,
+        subject_type  TEXT NOT NULL DEFAULT '*',
+        subject_id    INTEGER,
+        resource_type TEXT NOT NULL DEFAULT '*',
+        resource_name TEXT,
+        action        TEXT NOT NULL DEFAULT 'prompt',
+        scope         TEXT NOT NULL DEFAULT 'permanent',
+        conditions    TEXT,
+        priority      INTEGER NOT NULL DEFAULT 0,
+        created_at    TEXT DEFAULT CURRENT_TIMESTAMP
+      );
     `);
 
     testDb.prepare("INSERT INTO users (id, username) VALUES (1, 'testuser')").run();
     testDb.prepare("INSERT INTO agents (id, user_id, name) VALUES (1, 1, 'test-agent')").run();
     testDb.prepare("INSERT INTO sessions (id, user_id, agent_id, name) VALUES (1, 1, 1, 'Test Session')").run();
+    // Wildcard allow rule — tests focus on frame/hook integration, not permission gating
+    testDb.prepare("INSERT INTO permission_rules (subject_type, resource_type, action) VALUES ('*', '*', 'allow')").run();
 
     return testDb;
   }
