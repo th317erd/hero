@@ -438,3 +438,21 @@
 - [x] app.js: `submitPromptBatch()` calls `_collectUnbufferedAnswers` before reading pending answers
 - [x] Created `spec/components/prompt-form-spec.mjs` — 26 tests (PROMPT-001 through PROMPT-007 + behavioral)
 - [x] All 1847 tests passing, 0 failures
+
+---
+
+## F4: Client Page Routing + Settings UI
+> Status: **COMPLETE**
+
+### What was done
+- [x] Added settings view div to `public/index.html` (hero-header + hero-settings in data-view="settings")
+- [x] Added `<mythix-require src="@cdn/hero-settings@1">` to index.html
+- [x] Added `export { HeroSettings }` to `public/js/components/index.js`
+- [x] Added `.settings-main` CSS to `public/css/layout.css`
+- [x] Added Settings button to `hero-main-controls.html` (horizontal + vertical layouts)
+- [x] Added `goToSettings()` method to `hero-main-controls.js`
+- [x] Fixed bug in hero-settings.js: `_bindForms()` profile form submit was calling nonexistent `saveProfile()` → fixed to `_handleProfileSubmit()`
+- [x] Pre-existing from prior session: hero-settings component (JS + HTML), routing.js routes, hero-app.js routes, state.js settingsView, API.user namespace
+- [x] Created `spec/components/settings-spec.mjs` — 70 structural tests (ROUTE-001 through API-001, component registration, behavioral validation)
+- [x] Added 6 settings route tests + updated view display tests in `spec/lib/routing-spec.mjs`
+- [x] All 1428 tests passing, 0 failures
