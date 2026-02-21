@@ -611,3 +611,31 @@
   - SCOPE_MAP structure validation
   - Export wiring verification
 - [x] All 2122 tests passing, 0 failures
+
+---
+
+## X2: Audit Logging
+> Status: **COMPLETE**
+
+### What was done
+- [x] Created `server/lib/audit.mjs` — structured audit logger
+  - `AuditEvent` enum: 10 event types (login, permission, API key, approval)
+  - `audit(event, details, database)` — dual output: JSON to stdout + SQLite persistence
+  - `getAuditLogs(filters, database)` — query helper with eventType/userId/limit filters
+  - Test mode: `_enableTestMode()` → in-memory buffer, `_disableTestMode()`, `_getTestBuffer()`
+  - DB persistence is best-effort (never breaks the caller on failure)
+- [x] Migration 023: `audit_logs` table with indexes on event_type, user_id, timestamp
+- [x] Wired 6 integration points:
+  - `server/routes/auth.mjs` — LOGIN_SUCCESS, LOGIN_FAILURE (with IP address)
+  - `server/lib/permissions/index.mjs` — PERMISSION_ALLOW, PERMISSION_DENY, PERMISSION_PROMPT (with subject/resource/ruleId)
+  - `server/routes/users.mjs` — API_KEY_CREATE, API_KEY_REVOKE (with userId, keyId, name, scopes)
+  - `server/middleware/auth.mjs` — API_KEY_USE (with userId, keyName, method, path, IP; denied flag for scope violations)
+  - `server/lib/abilities/approval.mjs` — APPROVAL_GRANT, APPROVAL_DENY (with userId, agentId, sessionId, executionId, abilityName)
+- [x] Created `spec/lib/audit-spec.mjs` — 36 tests (AUDIT-001 through AUDIT-006)
+  - AUDIT-001: AuditEvent enum (3 tests — all types, frozen, count)
+  - AUDIT-002: Test mode buffer (7 tests — enable, capture, multi, disable, re-enable)
+  - AUDIT-003: Entry structure (6 tests — flag, event, timestamp, spread, empty, nested)
+  - AUDIT-004: DB persistence (4 tests — insert, JSON details, null fields, error resilience)
+  - AUDIT-005: getAuditLogs query (10 tests — all, order, filters, limit, deserialize, camelCase)
+  - AUDIT-006: Integration wiring (6 tests — permissions evaluate, approval grant/deny/unknown)
+- [x] All 2192 tests passing, 0 failures

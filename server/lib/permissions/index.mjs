@@ -19,6 +19,7 @@
 // Priority field is a tiebreaker within the same specificity tier.
 
 import { getDatabase } from '../../database.mjs';
+import { audit, AuditEvent } from '../audit.mjs';
 
 // ============================================================================
 // Constants
@@ -234,8 +235,14 @@ export function evaluate(subject, resource, context = {}, database) {
   let db    = database || getDatabase();
   let rules = findMatchingRules(subject, resource, context, db);
 
-  if (rules.length === 0)
+  if (rules.length === 0) {
+    audit(AuditEvent.PERMISSION_PROMPT, {
+      subject:  { type: subject.type, id: subject.id },
+      resource: { type: resource.type, name: resource.name },
+      reason:   'no matching rules',
+    });
     return { action: DEFAULT_ACTION, rule: null };
+  }
 
   // Score each rule by specificity
   let scored = rules.map((rule) => ({
@@ -268,6 +275,22 @@ export function evaluate(subject, resource, context = {}, database) {
   // Consume 'once' scoped rules after evaluation
   if (winner.scope === Scope.ONCE)
     deleteRule(winner.id, db);
+
+  // Audit the permission decision
+  let auditEventMap = {
+    [Action.ALLOW]:  AuditEvent.PERMISSION_ALLOW,
+    [Action.DENY]:   AuditEvent.PERMISSION_DENY,
+    [Action.PROMPT]: AuditEvent.PERMISSION_PROMPT,
+  };
+
+  let auditEventType = auditEventMap[winner.action];
+  if (auditEventType) {
+    audit(auditEventType, {
+      subject:  { type: subject.type, id: subject.id },
+      resource: { type: resource.type, name: resource.name },
+      ruleId:   winner.id,
+    });
+  }
 
   return { action: winner.action, rule: winner };
 }

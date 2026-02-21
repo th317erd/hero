@@ -627,6 +627,26 @@ function getMigrations() {
         ALTER TABLE session_participants ADD COLUMN alias TEXT;
       `,
     },
+    {
+      name: '023_audit_logs',
+      sql:  `
+        CREATE TABLE audit_logs (
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
+          timestamp   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          event_type  TEXT NOT NULL,
+          user_id     INTEGER,
+          agent_id    INTEGER,
+          session_id  INTEGER,
+          ip_address  TEXT,
+          details     TEXT,
+          created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX idx_audit_logs_event_type ON audit_logs(event_type);
+        CREATE INDEX idx_audit_logs_user_id    ON audit_logs(user_id);
+        CREATE INDEX idx_audit_logs_timestamp  ON audit_logs(timestamp);
+      `,
+    },
   ];
 }
 

@@ -2,6 +2,7 @@
 
 import { verifyToken, getUserById } from '../auth.mjs';
 import { validateApiKey } from '../lib/auth/api-keys.mjs';
+import { audit, AuditEvent } from '../lib/audit.mjs';
 import config from '../config.mjs';
 
 /**
@@ -123,10 +124,27 @@ export function requireAuth(req, res, next) {
     // Enforce scopes if the key has them
     let scopes = apiKeyUser.apiKey?.scopes || [];
     if (!checkApiKeyScopes(scopes, req.method, req.originalUrl || req.path)) {
+      audit(AuditEvent.API_KEY_USE, {
+        userId:    apiKeyUser.id,
+        keyName:   apiKeyUser.apiKey?.name,
+        method:    req.method,
+        path:      req.originalUrl || req.path,
+        ipAddress: req.ip || req.socket?.remoteAddress || 'unknown',
+        denied:    true,
+        reason:    'insufficient_scope',
+      });
       return res.status(403).json({
         error: 'Insufficient API key scope for this resource',
       });
     }
+
+    audit(AuditEvent.API_KEY_USE, {
+      userId:    apiKeyUser.id,
+      keyName:   apiKeyUser.apiKey?.name,
+      method:    req.method,
+      path:      req.originalUrl || req.path,
+      ipAddress: req.ip || req.socket?.remoteAddress || 'unknown',
+    });
 
     req.user = apiKeyUser;
     return next();

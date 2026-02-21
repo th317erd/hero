@@ -8,6 +8,7 @@ import { changePassword, getUserById } from '../auth.mjs';
 import { createApiKey, listApiKeys, revokeApiKey } from '../lib/auth/api-keys.mjs';
 import { generateMagicLink, verifyMagicLink, sendEmail } from '../lib/auth/magic-links.mjs';
 import { authenticateUser, generateToken } from '../auth.mjs';
+import { audit, AuditEvent } from '../lib/audit.mjs';
 import config from '../config.mjs';
 
 const router = Router();
@@ -206,6 +207,7 @@ router.post('/me/api-keys', requireAuth, apiKeyLimiter, (req, res) => {
 
   try {
     let result = createApiKey(req.user.id, name, { scopes, expiresAt });
+    audit(AuditEvent.API_KEY_CREATE, { userId: req.user.id, keyId: result.id, name, scopes: scopes || [] });
     res.status(201).json(result);
   } catch (error) {
     console.error('API key creation error:', error);
@@ -224,6 +226,7 @@ router.delete('/me/api-keys/:id', requireAuth, (req, res) => {
   if (!deleted)
     return res.status(404).json({ error: 'API key not found' });
 
+  audit(AuditEvent.API_KEY_REVOKE, { userId: req.user.id, keyId });
   res.json({ success: true });
 });
 

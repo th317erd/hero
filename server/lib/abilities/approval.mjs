@@ -8,6 +8,7 @@
 import { randomUUID, createHash } from 'crypto';
 import { getDatabase } from '../../database.mjs';
 import { broadcastToSession } from '../websocket.mjs';
+import { audit, AuditEvent } from '../audit.mjs';
 
 // In-memory pending approvals (executionId -> resolver + security context)
 const pendingApprovals = new Map();
@@ -240,6 +241,17 @@ export function handleApprovalResponse(executionId, approved, reason, rememberFo
     SET status = ?, resolved_at = CURRENT_TIMESTAMP
     WHERE execution_id = ?
   `).run(status, executionId);
+
+  // Audit the approval decision
+  let auditEvent = (approved) ? AuditEvent.APPROVAL_GRANT : AuditEvent.APPROVAL_DENY;
+  audit(auditEvent, {
+    userId:      pending.userId,
+    agentId:     pending.agentId,
+    sessionId:   pending.context.sessionId || null,
+    executionId: executionId,
+    abilityName: pending.ability.name,
+    reason:      reason || null,
+  });
 
   // Grant session approval if requested
   if (approved && rememberForSession && pending.context.sessionId) {

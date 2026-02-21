@@ -4,6 +4,7 @@ import { Router } from 'express';
 import { authenticateUser, generateToken } from '../auth.mjs';
 import { optionalAuth } from '../middleware/auth.mjs';
 import { rateLimit } from '../middleware/rate-limit.mjs';
+import { audit, AuditEvent } from '../lib/audit.mjs';
 import config from '../config.mjs';
 
 const router = Router();
@@ -29,9 +30,12 @@ router.post('/login', loginLimiter, async (req, res) => {
   try {
     let user = await authenticateUser(username, password);
 
-    if (!user)
+    if (!user) {
+      audit(AuditEvent.LOGIN_FAILURE, { username, ip: req.ip });
       return res.status(401).json({ error: 'Invalid credentials' });
+    }
 
+    audit(AuditEvent.LOGIN_SUCCESS, { userId: user.id, username: user.username, ip: req.ip });
     let token = generateToken(user);
 
     res.cookie('token', token, {
