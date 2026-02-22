@@ -1193,6 +1193,18 @@ export class HeroChat extends HeroComponent {
         border-bottom-right-radius: 4px;
       }
 
+      .message-user .message-header {
+        color: rgba(255, 255, 255, 0.85);
+      }
+
+      .message-user .message-footer {
+        border-top-color: rgba(255, 255, 255, 0.15);
+      }
+
+      .message-user .footer-meta {
+        color: rgba(255, 255, 255, 0.7);
+      }
+
       .message-assistant .message-bubble {
         border-bottom-left-radius: 4px;
       }
@@ -1528,12 +1540,13 @@ export class HeroChat extends HeroComponent {
 
       .prompt-batch-submit,
       .prompt-batch-ignore {
-        padding: 4px 12px;
-        border-radius: 4px;
+        padding: 8px 16px;
+        border-radius: var(--radius-sm, 4px);
         border: 1px solid var(--border-color, #3d3d5c);
         background: var(--bg-tertiary, #2a2a3e);
         color: var(--text-primary, #e0e0e0);
-        font-size: 12px;
+        font-size: 14px;
+        font-weight: 500;
         cursor: pointer;
         transition: background 0.15s;
       }

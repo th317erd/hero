@@ -570,6 +570,12 @@ class HmlPrompt extends MythixUIComponent {
 
     let input = this.shadowRoot.querySelector('.input-generic');
 
+    // Buffer on change so picker-based inputs (time, date, etc.) are captured
+    input.addEventListener('change', () => {
+      let answer = input.value.trim();
+      if (answer) this._bufferAnswer(answer);
+    });
+
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         if (!consumeEvent(e)) return;
@@ -759,6 +765,9 @@ class HmlPrompt extends MythixUIComponent {
 
     let input = this.shadowRoot.querySelector('.input-range');
     let valueLabel = this.shadowRoot.querySelector('.range-value');
+
+    // Buffer the default value immediately so untouched sliders are captured
+    this._bufferAnswer(String(defVal));
 
     input.addEventListener('input', () => {
       valueLabel.textContent = input.value;

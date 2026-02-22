@@ -207,8 +207,8 @@ describe('PROMPT-006: _bufferAnswer dispatches prompt-answer-ready', () => {
       hmlPromptSource.includes("'prompt-answer-ready'"),
       '_bufferAnswer should dispatch prompt-answer-ready event'
     );
-    // Verify the event is in _bufferAnswer context
-    const bufferStart = hmlPromptSource.indexOf('_bufferAnswer(answer)');
+    // Verify the event is in _bufferAnswer method definition
+    const bufferStart = hmlPromptSource.indexOf('_bufferAnswer(answer) {');
     const bufferEnd = hmlPromptSource.indexOf('_bufferAndAdvance(', bufferStart);
     const bufferSection = hmlPromptSource.slice(bufferStart, bufferEnd);
 

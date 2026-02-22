@@ -88,6 +88,10 @@
       display: none !important;
     }
 
+    :host(:not([view="settings"])) .settings-only {
+      display: none !important;
+    }
+
     :host([view="login"]) .header {
       display: none !important;
     }
@@ -223,6 +227,10 @@
       <!-- Sessions view: logo + "Hero" -->
       <img src="/hero/assets/images/hero-cape.svg?v=1" alt="Hero" class="logo sessions-only">
       <h1 class="header-title sessions-only">Hero</h1>
+
+      <!-- Settings view: back button + "Settings" -->
+      <button class="back-button settings-only" data-event-onclick="goBack" title="Back to sessions">&larr;</button>
+      <h1 class="header-title settings-only">Settings</h1>
     </div>
 
     <div class="header-actions desktop-actions">

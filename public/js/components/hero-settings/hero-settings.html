@@ -5,7 +5,8 @@
 <style data-for="hero-settings">
   hero-settings {
     display: block;
-    height: 100%;
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
   }
 </style>
@@ -345,12 +346,6 @@
   </style>
 
   <div class="settings-container">
-    <!-- Header -->
-    <div class="settings-header">
-      <button type="button" id="back-button" class="back-button" data-event-onclick="goBack">&#8592; Back</button>
-      <h1>Settings</h1>
-    </div>
-
     <!-- Tabs -->
     <div class="tabs">
       <button type="button" class="tab active" data-tab="profile" data-event-click="switchTab">Profile</button>

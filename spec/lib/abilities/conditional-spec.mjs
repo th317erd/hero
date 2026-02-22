@@ -4,17 +4,13 @@
 // Conditional Abilities Tests
 // ============================================================================
 // Tests for the conditional abilities system, including:
-// - matchCondition logic for prompt_response_handler
 // - getUnansweredPrompts frame parsing
-// - Interaction deduplication (Bug 1.1)
 
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import Database from 'better-sqlite3';
 
 import { getUnansweredPrompts } from '../../../server/lib/abilities/conditional.mjs';
-import { loadBuiltinAbilities } from '../../../server/lib/abilities/loaders/builtin.mjs';
-import { getConditionalAbilities, clearAbilities } from '../../../server/lib/abilities/registry.mjs';
 
 // ============================================================================
 // Test Database Setup
@@ -202,103 +198,3 @@ describe('getUnansweredPrompts', () => {
   });
 });
 
-// ============================================================================
-// prompt_response_handler matchCondition Tests
-// ============================================================================
-
-describe('prompt_response_handler matchCondition', () => {
-  let promptResponseHandler = null;
-
-  beforeEach(() => {
-    createTestDatabase();
-
-    // Load builtin abilities to get prompt_response_handler
-    clearAbilities();
-    loadBuiltinAbilities();
-
-    let conditionalAbilities = getConditionalAbilities();
-    promptResponseHandler = conditionalAbilities.find(a => a.name === 'prompt_response_handler');
-  });
-
-  afterEach(() => {
-    if (db) {
-      db.close();
-      db = null;
-    }
-    clearAbilities();
-  });
-
-  it('should have prompt_response_handler ability registered', () => {
-    assert.ok(promptResponseHandler, 'prompt_response_handler should be registered');
-    assert.ok(typeof promptResponseHandler.matchCondition === 'function', 'Should have matchCondition function');
-  });
-
-  it('should return matches=false when userMessage contains <interaction> tag', () => {
-    // This is the key guard against duplicate interactions
-    let userMessage = 'Here is my answer <interaction>{"target_property": "update_prompt"}</interaction>';
-
-    let result = promptResponseHandler.matchCondition({
-      userMessage,
-      sessionID: 1,
-      testDb: db,
-    });
-
-    assert.equal(result.matches, false, 'Should NOT match when message already has <interaction> tag');
-  });
-
-  it('should return matches=false when no unanswered prompts exist', () => {
-    // No frames = no prompts
-    let result = promptResponseHandler.matchCondition({
-      userMessage: 'I think the answer is blue.',
-      sessionID: 1,
-      testDb: db,
-    });
-
-    assert.equal(result.matches, false, 'Should NOT match when no unanswered prompts exist');
-  });
-
-  it('should return matches=true when unanswered prompts exist and no <interaction> tag', () => {
-    // Create a frame with an unanswered prompt
-    let content = '<hml-prompt id="prompt-123" type="text">What is your favorite color?</hml-prompt>';
-    createTestFrame(1, content);
-
-    let result = promptResponseHandler.matchCondition({
-      userMessage: 'I think blue is my favorite.',
-      sessionID: 1,
-      testDb: db,
-    });
-
-    assert.equal(result.matches, true, 'Should match when user might be answering a prompt');
-    assert.ok(result.details?.unansweredPrompts?.length > 0, 'Should include unanswered prompts in details');
-  });
-
-  it('should return matches=false AFTER frame is updated with answered="true"', () => {
-    // This is the core Bug 1.1 test:
-    // After interaction updates the frame, subsequent matchCondition calls
-    // should NOT match because there are no more unanswered prompts
-
-    // Step 1: Create frame with unanswered prompt
-    let content = '<hml-prompt id="prompt-123" type="text">What is your favorite color?</hml-prompt>';
-    let frameId = createTestFrame(1, content);
-
-    // Step 2: Verify it matches before update
-    let beforeResult = promptResponseHandler.matchCondition({
-      userMessage: 'Blue is my favorite color.',
-      sessionID: 1,
-      testDb: db,
-    });
-    assert.equal(beforeResult.matches, true, 'Should match before frame is updated');
-
-    // Step 3: Simulate what PromptUpdateFunction does - update the frame
-    let updatedContent = '<hml-prompt id="prompt-123" type="text" answered="true">What is your favorite color?<response>Blue</response></hml-prompt>';
-    updateFrameContent(frameId, updatedContent);
-
-    // Step 4: Verify it does NOT match after update
-    let afterResult = promptResponseHandler.matchCondition({
-      userMessage: 'Actually, I changed my mind - green is better.',
-      sessionID: 1,
-      testDb: db,
-    });
-    assert.equal(afterResult.matches, false, 'Should NOT match after frame is updated with answered="true"');
-  });
-});

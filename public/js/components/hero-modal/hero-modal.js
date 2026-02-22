@@ -94,6 +94,26 @@ export const MODAL_STYLES = `
     padding-top: 0;
     padding-bottom: 0;
     overflow: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--bg-tertiary, #2a2a3e) var(--bg-primary, #0f0f1a);
+  }
+
+  dialog > main::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  dialog > main::-webkit-scrollbar-track {
+    background: var(--bg-primary, #0f0f1a);
+  }
+
+  dialog > main::-webkit-scrollbar-thumb {
+    background: var(--bg-tertiary, #2a2a3e);
+    border-radius: 4px;
+  }
+
+  dialog > main::-webkit-scrollbar-thumb:hover {
+    background: var(--accent, #e94560);
   }
 
   dialog > footer {
