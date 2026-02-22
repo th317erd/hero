@@ -938,34 +938,28 @@ export class HeroChat extends HeroComponent {
     if (prompts.length < 1)
       return;
 
-    // Check if buttons already exist
-    if (element.querySelector('.prompt-batch-actions'))
-      return;
-
     // Skip if all prompts are already answered
     let unanswered = Array.from(prompts).filter((p) => !p.isAnswered);
     if (unanswered.length === 0)
       return;
 
-    let actionsDiv = document.createElement('div');
-    actionsDiv.className = 'prompt-batch-actions';
-    let countLabel = (prompts.length === 1) ? '1 prompt' : `${prompts.length} prompts`;
-    actionsDiv.innerHTML = `
-      <span class="prompt-batch-count">${countLabel}</span>
-      <button class="prompt-batch-ignore" title="Ignore all prompts">Ignore</button>
-      <button class="prompt-batch-submit" title="Submit all answers">Submit</button>
-    `;
+    // Find the pre-rendered footer-actions inside the bubble and reveal it
+    let footerActions = element.querySelector('.footer-actions');
+    if (!footerActions)
+      return;
 
-    // Bind events
-    let submitBtn = actionsDiv.querySelector('.prompt-batch-submit');
-    let ignoreBtn = actionsDiv.querySelector('.prompt-batch-ignore');
+    footerActions.style.display = 'flex';
+
+    // Wire click handlers on existing buttons
+    let submitBtn = footerActions.querySelector('.prompt-batch-submit');
+    let ignoreBtn = footerActions.querySelector('.prompt-batch-ignore');
 
     submitBtn.addEventListener('click', () => {
       if (typeof window.submitPromptBatch === 'function')
         window.submitPromptBatch(frameId);
 
       // Hide buttons after action
-      actionsDiv.classList.add('prompt-batch-done');
+      footerActions.style.display = 'none';
     });
 
     ignoreBtn.addEventListener('click', () => {
@@ -976,15 +970,8 @@ export class HeroChat extends HeroComponent {
       prompts.forEach((p) => p.setAttribute('ignored', ''));
 
       // Hide buttons after action
-      actionsDiv.classList.add('prompt-batch-done');
+      footerActions.style.display = 'none';
     });
-
-    // Insert after the message bubble
-    let bubble = element.querySelector('.message-bubble');
-    if (bubble)
-      bubble.after(actionsDiv);
-    else
-      element.appendChild(actionsDiv);
 
     // Setup Enter-to-tab-forward focus management
     this._setupPromptFocusChain(element, prompts, submitBtn);
@@ -1269,11 +1256,24 @@ export class HeroChat extends HeroComponent {
 
       .message-content pre code { background: none; padding: 0; }
 
-      .message-timestamp {
+      .message-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 8px;
+        padding-top: 6px;
+        border-top: 1px solid rgba(255, 255, 255, 0.06);
+      }
+
+      .footer-meta {
         font-size: 11px;
         color: var(--text-muted, #6b7280);
-        margin-top: 4px;
-        padding: 0 8px;
+      }
+
+      .footer-actions {
+        display: none;
+        gap: 8px;
+        align-items: center;
       }
 
       .tool-call {
@@ -1526,25 +1526,6 @@ export class HeroChat extends HeroComponent {
         overflow-y: auto;
       }
 
-      /* Prompt batch actions */
-      .prompt-batch-actions {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 8px;
-        margin-top: 4px;
-      }
-
-      .prompt-batch-actions.prompt-batch-done {
-        display: none;
-      }
-
-      .prompt-batch-count {
-        font-size: 12px;
-        color: var(--text-muted, #6b7280);
-        margin-right: auto;
-      }
-
       .prompt-batch-submit,
       .prompt-batch-ignore {
         padding: 4px 12px;
@@ -1654,9 +1635,9 @@ export class HeroChat extends HeroComponent {
     // Render attachments
     const attachmentsHtml = this._renderAttachments(message);
 
-    // Token estimate
+    // Token estimate + footer
     const tokenEstimate = this._estimateTokens(message);
-    const timestampHtml = this._renderTimestamp(message, tokenEstimate);
+    const footerHtml = this._renderFooter(message, tokenEstimate);
 
     return `
       <div class="message ${roleClass}${queuedClass}${hiddenClass}${errorClass}"
@@ -1667,8 +1648,8 @@ export class HeroChat extends HeroComponent {
           <div class="message-header">${avatarHtml}<span class="header-name">${roleLabel}</span> ${queuedBadge}${typeBadge}</div>
           <div class="message-content">${contentHtml}</div>
           ${attachmentsHtml}
+          ${footerHtml}
         </div>
-        ${timestampHtml}
       </div>
     `;
   }
@@ -2019,22 +2000,27 @@ export class HeroChat extends HeroComponent {
   }
 
   /**
-   * Render timestamp with token count.
+   * Render message footer with timestamp, token count, and hidden action buttons.
    * @param {object} message
    * @param {number} tokenEstimate
    * @returns {string}
    */
-  _renderTimestamp(message, tokenEstimate) {
+  _renderFooter(message, tokenEstimate) {
     let timeStr  = (message.createdAt) ? formatRelativeDate(message.createdAt) : 'just now';
     let tokenStr = formatTokenCount(tokenEstimate);
 
-    if (tokenEstimate > 0) {
-      return `<div class="message-timestamp">${timeStr} / ~${tokenStr} tokens</div>`;
-    } else if (message.createdAt) {
-      return `<div class="message-timestamp">${timeStr}</div>`;
-    }
+    let metaText = (tokenEstimate > 0)
+      ? `${timeStr} / ~${tokenStr} tokens`
+      : timeStr;
 
-    return '';
+    return `
+      <div class="message-footer">
+        <span class="footer-meta">${metaText}</span>
+        <div class="footer-actions" style="display:none">
+          <button class="prompt-batch-ignore" title="Ignore all prompts">Ignore</button>
+          <button class="prompt-batch-submit" title="Submit all answers">Submit</button>
+        </div>
+      </div>`;
   }
 }
 

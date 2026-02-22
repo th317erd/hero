@@ -69,17 +69,18 @@ describe('PROMPT-002: Single prompt message has Ignore / Submit', () => {
     );
   });
 
-  it('should have Ignore button before Submit button in template', () => {
-    const templateMatch = heroChatSource.match(/actionsDiv\.innerHTML\s*=\s*`([\s\S]*?)`;/);
-    assert.ok(templateMatch, 'Should have actionsDiv.innerHTML template');
+  it('should have Ignore button before Submit button in footer template', () => {
+    // Buttons are now rendered in _renderFooter's template
+    let footerStart = heroChatSource.indexOf('_renderFooter(message, tokenEstimate) {');
+    assert.ok(footerStart > -1, 'Should have _renderFooter method');
 
-    const template = templateMatch[1];
-    const ignoreInTemplate = template.indexOf('prompt-batch-ignore');
-    const submitInTemplate = template.indexOf('prompt-batch-submit');
+    let body = heroChatSource.slice(footerStart, footerStart + 600);
+    let ignorePos = body.indexOf('prompt-batch-ignore');
+    let submitPos = body.indexOf('prompt-batch-submit');
 
-    assert.ok(ignoreInTemplate > 0, 'Ignore button should exist in template');
-    assert.ok(submitInTemplate > 0, 'Submit button should exist in template');
-    assert.ok(ignoreInTemplate < submitInTemplate,
+    assert.ok(ignorePos > 0, 'Ignore button should exist in footer template');
+    assert.ok(submitPos > 0, 'Submit button should exist in footer template');
+    assert.ok(ignorePos < submitPos,
       'Ignore button should appear before Submit button');
   });
 

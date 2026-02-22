@@ -423,3 +423,103 @@ describe('Message ID Generation', () => {
     assert.strictEqual(elementId, '');
   });
 });
+
+// ============================================================================
+// FOOTER: Message footer bar — inside bubble with meta + actions
+// ============================================================================
+
+describe('FOOTER: message footer bar structure', () => {
+  let source;
+
+  beforeEach(() => {
+    source = fs.readFileSync('public/js/components/hero-chat/hero-chat.js', 'utf8');
+  });
+
+  it('should render message-footer inside message-bubble', () => {
+    // The _renderMessage template should have footerHtml inside message-bubble div
+    // footerHtml is interpolated via ${footerHtml}, so look for it inside the bubble
+    let renderMethod = source.match(/_renderMessage\(message\)\s*\{[\s\S]*?return\s*`([\s\S]*?)`;/);
+    assert.ok(renderMethod, '_renderMessage should exist with a template return');
+
+    let template = renderMethod[1];
+    // footerHtml should appear between message-bubble opening and its closing </div>
+    assert.ok(template.includes('footerHtml'), 'template should interpolate footerHtml');
+
+    // Verify footerHtml is inside the bubble, not after it
+    let bubbleOpenPos = template.indexOf('message-bubble');
+    let footerPos = template.indexOf('footerHtml');
+    assert.ok(bubbleOpenPos > -1, 'template should contain message-bubble');
+    assert.ok(footerPos > bubbleOpenPos, 'footerHtml should be inside the bubble');
+  });
+
+  it('should have footer contain both footer-meta and footer-actions', () => {
+    // _renderFooter should produce both elements
+    assert.ok(source.includes('_renderFooter(message, tokenEstimate)'), '_renderFooter method should be called');
+
+    // Find the _renderFooter method body (from declaration to last line before next method)
+    let footerStart = source.indexOf('_renderFooter(message, tokenEstimate) {');
+    assert.ok(footerStart > -1, '_renderFooter method should exist');
+
+    let footerBody = source.slice(footerStart, footerStart + 600);
+    assert.ok(footerBody.includes('footer-meta'), '_renderFooter should contain footer-meta');
+    assert.ok(footerBody.includes('footer-actions'), '_renderFooter should contain footer-actions');
+  });
+
+  it('should hide footer-actions by default with display:none', () => {
+    let footerStart = source.indexOf('_renderFooter(message, tokenEstimate) {');
+    assert.ok(footerStart > -1, '_renderFooter method should exist');
+
+    let footerBody = source.slice(footerStart, footerStart + 600);
+    assert.ok(footerBody.includes('style="display:none"'), 'footer-actions should have display:none inline style');
+  });
+
+  it('should not have standalone message-timestamp outside bubble', () => {
+    // The old pattern was: </div>\n        ${timestampHtml} — outside the bubble
+    // Now there should be no message-timestamp class in the template at all
+    let renderMethod = source.match(/_renderMessage\(message\)\s*\{[\s\S]*?return\s*`([\s\S]*?)`;/);
+    assert.ok(renderMethod, '_renderMessage should exist');
+
+    let template = renderMethod[1];
+    assert.ok(!template.includes('message-timestamp'), 'template should not contain message-timestamp (replaced by footer)');
+  });
+
+  it('should not create DOM in _addPromptBatchButtons — only queries footer-actions', () => {
+    let methodStart = source.indexOf('_addPromptBatchButtons(element, frameId) {');
+    assert.ok(methodStart > -1, '_addPromptBatchButtons method should exist');
+
+    let body = source.slice(methodStart, methodStart + 1200);
+    // Should NOT create elements
+    assert.ok(!body.includes('createElement'), '_addPromptBatchButtons should not create DOM elements');
+    // Should query for existing footer-actions
+    assert.ok(body.includes('footer-actions'), '_addPromptBatchButtons should query for footer-actions');
+  });
+
+  it('should not have prompt-batch-actions class anywhere in source', () => {
+    // Old class fully replaced — no CSS, no JS references
+    assert.ok(!source.includes('prompt-batch-actions'), 'prompt-batch-actions should be fully removed');
+  });
+
+  it('should not have prompt-batch-done class anywhere in source', () => {
+    assert.ok(!source.includes('prompt-batch-done'), 'prompt-batch-done should be fully removed');
+  });
+
+  it('should not have prompt-batch-count class anywhere in source', () => {
+    assert.ok(!source.includes('prompt-batch-count'), 'prompt-batch-count should be fully removed');
+  });
+
+  it('should have message-footer CSS styles defined', () => {
+    assert.ok(source.includes('.message-footer'), 'CSS should define .message-footer');
+    assert.ok(source.includes('.footer-meta'), 'CSS should define .footer-meta');
+    assert.ok(source.includes('.footer-actions'), 'CSS should define .footer-actions');
+  });
+
+  it('should not render footer in streaming or phantom frames', () => {
+    let streamingMethod = source.match(/_renderStreamingMessage\(\)\s*\{([\s\S]*?)\n  \}/);
+    assert.ok(streamingMethod, '_renderStreamingMessage should exist');
+    assert.ok(!streamingMethod[1].includes('message-footer'), 'streaming should not have footer');
+
+    let phantomMethod = source.match(/_renderPhantomFrame\([\s\S]*?\)\s*\{([\s\S]*?)\n  \}/);
+    assert.ok(phantomMethod, '_renderPhantomFrame should exist');
+    assert.ok(!phantomMethod[1].includes('message-footer'), 'phantom should not have footer');
+  });
+});
