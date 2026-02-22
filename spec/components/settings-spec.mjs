@@ -573,14 +573,13 @@ describe('Component Registration', () => {
     );
   });
 
-  it('should export HeroSettings from components index', () => {
+  it('should be loaded via mythix-require (not JS import)', () => {
+    // Shadow DOM components must NOT be imported in index.js to avoid
+    // a race condition where the class is defined before the template
+    // is injected by mythix-require.
     assert.ok(
-      componentsIndexSource.includes('export { HeroSettings }'),
-      'Components index should export HeroSettings'
-    );
-    assert.ok(
-      componentsIndexSource.includes('./hero-settings/hero-settings.js'),
-      'Should import from hero-settings directory'
+      !componentsIndexSource.includes("export { HeroSettings }"),
+      'Should NOT be exported from index.js (loaded via mythix-require)'
     );
   });
 

@@ -352,10 +352,13 @@ describe('RENDER-001: hero-participant-list component', () => {
     );
   });
 
-  it('should export from components index', () => {
+  it('should be loaded via mythix-require (not JS import)', () => {
+    // Shadow DOM components must NOT be imported in index.js to avoid
+    // a race condition where the class is defined before the template
+    // is injected by mythix-require.
     assert.ok(
-      componentsIndex.includes('HeroParticipantList'),
-      'Should export HeroParticipantList'
+      !componentsIndex.includes("export { HeroParticipantList }"),
+      'Should NOT be exported from index.js (loaded via mythix-require)'
     );
   });
 

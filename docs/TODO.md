@@ -102,6 +102,7 @@ All conversation activity becomes immutable "interaction frames" — like git co
 ---
 
 ## Pending
+[ ] Retry on specific errors - auto-retry agent API calls on transient failures (ETIMEDOUT, connection reset, 529, etc.) with exponential backoff
 [ ] Debug "Show hidden messages" checkbox - debug logging added, needs user testing to verify behavior
 [ ] Add token scalar setting for adjusting cost calculation ratio (mentioned in update_usage requirements)
 

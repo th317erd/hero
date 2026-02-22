@@ -49,23 +49,16 @@ export { HeroModalCreateAgent as HeroModalAgent } from './hero-modal-create-agen
 export { HeroModalConfigureAbility as HeroModalAbility } from './hero-modal-configure-ability/hero-modal-configure-ability.js';
 export { HeroModalAgentSettings as HeroModalAgentConfig } from './hero-modal-agent-settings/hero-modal-agent-settings.js';
 
-// Page components (Shadow DOM - loaded via mythix-require for templates)
-export { HeroLogin } from './hero-login/hero-login.js';
-export { HeroSettings } from './hero-settings/hero-settings.js';
-export { HeroParticipantList } from './hero-participant-list/hero-participant-list.js';
-
-// NOTE: The following Shadow DOM components are loaded via mythix-require in index.html:
-// - hero-modal (and variants)
-// - hero-header
-// - hero-status-bar
-// - hero-main-controls
-// - hero-sessions-list
-// - hero-chat
-// - hero-input
-// - hml-prompt
-// - session-frames-provider
-// - hero-login
-// - hero-settings
+// NOTE: Shadow DOM components are loaded ONLY via mythix-require in index.html.
+// Do NOT import them here — mythix-require injects the template first, then
+// loads the <script> which registers the custom element. Importing here would
+// define the class before the template is available, causing a race condition
+// where the template dedup check matches the component instance.
+//
+// Shadow DOM components loaded via mythix-require:
+// - hero-header, hero-status-bar, hero-main-controls, hero-sessions-list
+// - hero-chat, hero-input, hml-prompt
+// - hero-login, hero-settings, hero-participant-list
 
 // One-time initialization
 if (!window.__heroComponentsLoaded) {

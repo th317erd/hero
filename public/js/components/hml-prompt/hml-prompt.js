@@ -508,6 +508,12 @@ class HmlPrompt extends MythixUIComponent {
     let input = this.shadowRoot.querySelector('.input-text');
     let sizer = this.shadowRoot.querySelector('.sizer');
 
+    // Buffer on change (blur) so typing without Enter is captured on Submit click
+    input.addEventListener('change', () => {
+      let answer = input.value.trim();
+      if (answer) this._bufferAnswer(answer);
+    });
+
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         if (!consumeEvent(e)) return;
@@ -539,6 +545,13 @@ class HmlPrompt extends MythixUIComponent {
     `;
 
     let input = this.shadowRoot.querySelector('.input-number');
+
+    // Buffer on change (blur) so typing without Enter is captured on Submit click
+    input.addEventListener('change', () => {
+      let answer = input.value.trim();
+      if (answer) this._bufferAnswer(answer);
+    });
+
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         if (!consumeEvent(e)) return;
